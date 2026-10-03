@@ -215,6 +215,8 @@ static int command(const char *request, char *response, size_t capacity) {
     }
     animation_set_paused(paused);
     wayland_request_redraw();
+  } else if (strcmp(request, "reset-position") == 0) {
+    result = wayland_reset_position();
   } else if (strcmp(request, "reload") == 0) {
     { result = reload(); }
   } else if (strncmp(request, "state ", 6) == 0) {
@@ -317,6 +319,7 @@ static void help(const char *program) {
       "  --pause, --resume    Display idle frame or resume input animation\n"
       "  --state NAME         Set manual state: idle, working, waiting, done\n"
       "  --sessions           List tracked agent sessions\n"
+      "  --reset-position     Restore configured positions on every output\n"
       "  --hook AGENT         Read one agent lifecycle event from stdin\n"
       "  --reload, --status   Reload config or query running application\n"
       "  --check-config       Strict validation without Wayland or input "
@@ -468,7 +471,7 @@ int main(int argc, char **argv) {
     } else if (!strcmp(arg, "--hide") || !strcmp(arg, "--show") ||
                !strcmp(arg, "--pause") || !strcmp(arg, "--resume") ||
                !strcmp(arg, "--reload") || !strcmp(arg, "--status") ||
-               !strcmp(arg, "--sessions")) {
+               !strcmp(arg, "--sessions") || !strcmp(arg, "--reset-position")) {
       if (request || hook_agent) {
         fprintf(stderr, "Select one control command\n");
         return 1;

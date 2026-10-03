@@ -61,6 +61,7 @@ typedef struct {
   int cat_x_offset;
   int cat_y_offset;
   int cat_height;
+  int cat_draggable;
   int mirror_x;             // Reflect across Y axis (horizontal flip)
   int mirror_y;             // Reflect across X axis (vertical flip)
   int enable_antialiasing;  // Enable bilinear interpolation

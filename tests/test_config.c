@@ -373,6 +373,33 @@ static void test_agent_config(void) {
   unlink(path);
 }
 
+static void test_drag_config(void) {
+  char path[] = "/tmp/bongocat-drag-config-XXXXXX";
+  int fd = mkstemp(path);
+  TEST_ASSERT(fd >= 0, "temporary config created");
+  close(fd);
+  config_t config = {0}, effective;
+  write_temp_config(path, "");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+                 "default drag config loads");
+  TEST_ASSERT_EQ(config.cat_draggable, 1, "dragging defaults to enabled");
+  config_cleanup_full(&config);
+  write_temp_config(path,
+                    "cat_draggable=0\n[monitor:TEST-1]\ncat_draggable=1\n");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+                 "drag monitor override loads");
+  config_for_monitor(&config, "TEST-1", &effective);
+  TEST_ASSERT_EQ(effective.cat_draggable, 1, "monitor can enable dragging");
+  config_for_monitor(&config, "TEST-2", &effective);
+  TEST_ASSERT_EQ(effective.cat_draggable, 0, "other monitor remains disabled");
+  config_cleanup_full(&config);
+  write_temp_config(path, "cat_draggable=2\n");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+                 "drag flag rejects non-boolean values");
+  config_cleanup_full(&config);
+  unlink(path);
+}
+
 int main(void) {
   bongocat_error_init(0);  // Suppress debug output
   printf("=== Config Parser Tests ===\n");
@@ -386,6 +413,7 @@ int main(void) {
   test_enum_parsing();
   test_comments_and_whitespace();
   test_agent_config();
+  test_drag_config();
 
   printf("\nResults: %d passed, %d failed\n", tests_passed, tests_failed);
   return tests_failed > 0 ? 1 : 0;

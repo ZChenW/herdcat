@@ -17,12 +17,18 @@ static struct wl_display *server;
 static struct wl_event_loop *loop;
 static unsigned commits, surfaces;
 static struct wl_resource *toplevel;
+static struct wl_resource *test_pointer, *test_seat;
+static bool drag_mode;
+struct test_rect {
+  int x, y, width, height;
+};
 static struct wl_resource *fractional_objects[32];
 struct monitor {
   struct wl_global *global;
   struct wl_resource *resources[32];
   int width, height, scale;
   const char *name;
+  struct test_surface *surface;
 };
 static struct monitor monitors[2] = {
     {.width = 800,  .height = 600, .scale = 1, .name = "TEST-1"},
@@ -34,6 +40,7 @@ struct test_surface {
   struct wl_event_source *release_timer;
   struct monitor *monitor;
   unsigned height;
+  struct test_rect input;
   bool configure_pending;
 };
 static void destroy_request(struct wl_client *client,
@@ -96,6 +103,8 @@ static void surface_destroyed(struct wl_resource *resource) {
   wl_event_source_remove(surface->release_timer);
   if (surface->layer)
     wl_resource_set_user_data(surface->layer, NULL);
+  if (surface->monitor && surface->monitor->surface == surface)
+    surface->monitor->surface = NULL;
   free(surface);
 }
 static void attach(struct wl_client *client, struct wl_resource *resource,
@@ -129,6 +138,14 @@ static void frame(struct wl_client *client, struct wl_resource *resource,
   wl_callback_send_done(callback, 0);
   wl_resource_destroy(callback);
 }
+static void input_region(struct wl_client *client, struct wl_resource *resource,
+                         struct wl_resource *region) {
+  (void)client;
+  struct test_surface *surface = wl_resource_get_user_data(resource);
+  surface->input = region
+                       ? *(struct test_rect *)wl_resource_get_user_data(region)
+                       : (struct test_rect){0};
+}
 static void region_request(struct wl_client *client,
                            struct wl_resource *resource,
                            struct wl_resource *region) {
@@ -145,6 +162,11 @@ static void commit(struct wl_client *client, struct wl_resource *resource) {
         (uint32_t)surface->monitor->width,
         surface->height ? surface->height : 50);
     surface->configure_pending = false;
+  }
+  if (drag_mode && surface->monitor) {
+    printf("input %s %d %d %d %d\n", surface->monitor->name, surface->input.x,
+           surface->input.y, surface->input.width, surface->input.height);
+    fflush(stdout);
   }
   if (surface->buffer) {
     struct wl_shm_buffer *buffer = wl_shm_buffer_get(surface->buffer);
@@ -179,7 +201,7 @@ static const struct wl_surface_interface surface_impl = {
     .damage = rectangle,
     .frame = frame,
     .set_opaque_region = region_request,
-    .set_input_region = region_request,
+    .set_input_region = input_region,
     .commit = commit,
     .set_buffer_transform = integer_request,
     .set_buffer_scale = integer_request,
@@ -196,14 +218,25 @@ static void create_surface(struct wl_client *client,
                                  surface_destroyed);
   surfaces++;
 }
+static void add_region(struct wl_client *client, struct wl_resource *resource,
+                       int32_t x, int32_t y, int32_t width, int32_t height) {
+  (void)client;
+  *(struct test_rect *)wl_resource_get_user_data(resource) =
+      (struct test_rect){x, y, width, height};
+}
+static void region_destroyed(struct wl_resource *resource) {
+  free(wl_resource_get_user_data(resource));
+}
 static const struct wl_region_interface region_impl = {
-    .destroy = destroy_request, .add = rectangle, .subtract = rectangle};
+    .destroy = destroy_request, .add = add_region, .subtract = rectangle};
 static void create_region(struct wl_client *client,
                           struct wl_resource *resource, uint32_t id) {
   (void)resource;
   struct wl_resource *region =
       wl_resource_create(client, &wl_region_interface, 1, id);
-  wl_resource_set_implementation(region, &region_impl, NULL, NULL);
+  struct test_rect *rect = calloc(1, sizeof(*rect));
+  assert(rect);
+  wl_resource_set_implementation(region, &region_impl, rect, region_destroyed);
 }
 static const struct wl_compositor_interface compositor_impl = {
     .create_surface = create_surface, .create_region = create_region};
@@ -269,11 +302,13 @@ static void unsigned_request(struct wl_client *client,
 static void margin(struct wl_client *client, struct wl_resource *resource,
                    int32_t top, int32_t right, int32_t bottom, int32_t left) {
   (void)client;
-  (void)resource;
-  (void)top;
   (void)right;
-  (void)bottom;
   (void)left;
+  struct test_surface *surface = wl_resource_get_user_data(resource);
+  if (drag_mode) {
+    printf("margin %s %d %d\n", surface->monitor->name, top, bottom);
+    fflush(stdout);
+  }
 }
 static void popup(struct wl_client *client, struct wl_resource *resource,
                   struct wl_resource *object) {
@@ -305,6 +340,7 @@ static void get_layer(struct wl_client *client, struct wl_resource *resource,
   struct test_surface *surface = wl_resource_get_user_data(surface_resource);
   assert(output_resource);
   surface->monitor = wl_resource_get_user_data(output_resource);
+  surface->monitor->surface = surface;
   surface->configure_pending = true;
   surface->layer = wl_resource_create(client, &zwlr_layer_surface_v1_interface,
                                       wl_resource_get_version(resource), id);
@@ -477,6 +513,83 @@ static int step(void *data) {
   fflush(stdout);
   return 0;
 }
+static void pointer_destroyed(struct wl_resource *resource) {
+  if (test_pointer == resource)
+    test_pointer = NULL;
+}
+static void cursor_request(struct wl_client *client,
+                           struct wl_resource *resource, uint32_t serial,
+                           struct wl_resource *surface, int32_t x, int32_t y) {
+  (void)client;
+  (void)resource;
+  (void)serial;
+  (void)surface;
+  (void)x;
+  (void)y;
+}
+static const struct wl_pointer_interface pointer_impl = {
+    .set_cursor = cursor_request, .release = destroy_request};
+static void get_pointer(struct wl_client *client, struct wl_resource *resource,
+                        uint32_t id) {
+  test_pointer = wl_resource_create(client, &wl_pointer_interface,
+                                    wl_resource_get_version(resource), id);
+  wl_resource_set_implementation(test_pointer, &pointer_impl, NULL,
+                                 pointer_destroyed);
+}
+static const struct wl_seat_interface seat_impl = {.get_pointer = get_pointer,
+                                                   .release = destroy_request};
+static void seat_destroyed(struct wl_resource *resource) {
+  if (test_seat == resource)
+    test_seat = NULL;
+}
+static void bind_seat(struct wl_client *client, void *data, uint32_t version,
+                      uint32_t id) {
+  (void)data;
+  test_seat = wl_resource_create(client, &wl_seat_interface, (int)version, id);
+  wl_resource_set_implementation(test_seat, &seat_impl, NULL, seat_destroyed);
+  wl_seat_send_capabilities(test_seat, WL_SEAT_CAPABILITY_POINTER);
+  wl_seat_send_name(test_seat, "fixture");
+}
+static int fixture_command(int fd, uint32_t mask, void *data) {
+  (void)mask;
+  (void)data;
+  char line[128] = {0}, name[32], action[32];
+  int dx, dy;
+  ssize_t bytes = read(fd, line, sizeof(line) - 1);
+  assert(bytes > 0);
+  if (!strncmp(line, "step", 4)) {
+    step(NULL);
+  } else if (!strncmp(line, "capabilities", 12)) {
+    wl_seat_send_capabilities(test_seat, WL_SEAT_CAPABILITY_POINTER);
+  } else if (sscanf(line, "%31s %31s %d %d", action, name, &dx, &dy) == 4) {
+    struct test_surface *surface = NULL;
+    for (size_t i = 0; i < 2; i++)
+      if (!strcmp(name, monitors[i].name))
+        surface = monitors[i].surface;
+    assert(surface && test_pointer);
+    int x = surface->input.x + surface->input.width / 2;
+    int y = surface->input.y + surface->input.height / 2;
+    uint32_t serial = wl_display_next_serial(server);
+    wl_pointer_send_enter(test_pointer, serial, surface->resource,
+                          wl_fixed_from_int(x), wl_fixed_from_int(y));
+    wl_pointer_send_button(test_pointer, serial, 0, 272,
+                           WL_POINTER_BUTTON_STATE_PRESSED);
+    wl_pointer_send_motion(test_pointer, 1, wl_fixed_from_int(x + dx),
+                           wl_fixed_from_int(y + dy));
+    if (!strcmp(action, "leave")) {
+      wl_pointer_send_leave(test_pointer, serial, surface->resource);
+    } else if (!strcmp(action, "lost")) {
+      wl_seat_send_capabilities(test_seat, 0);
+    } else {
+      wl_pointer_send_button(test_pointer, serial, 2, 272,
+                             WL_POINTER_BUTTON_STATE_RELEASED);
+    }
+    wl_pointer_send_frame(test_pointer);
+  } else {
+    assert(false);
+  }
+  return 0;
+}
 static int stop(int signal, void *data) {
   (void)signal;
   (void)data;
@@ -484,6 +597,7 @@ static int stop(int signal, void *data) {
   return 0;
 }
 int main(void) {
+  drag_mode = getenv("BONGOCAT_TEST_DRAG") != NULL;
   server = wl_display_create();
   assert(server);
   wl_display_set_default_max_buffer_size(server, 4 * 1024 * 1024);
@@ -501,13 +615,18 @@ int main(void) {
   struct wl_event_source *timer = wl_event_loop_add_timer(loop, step, NULL);
   wl_event_source_remove(timer);
   struct wl_event_source *steps[4];
-  for (size_t i = 0; i < 4; i++) {
+  for (size_t i = 0; !drag_mode && i < 4; i++) {
     steps[i] = wl_event_loop_add_timer(loop, step, NULL);
     wl_event_source_timer_update(steps[i], (int)(i + 1) * 700);
   }
   wl_event_loop_add_signal(loop, SIGTERM, stop, NULL);
   wl_global_create(server, &zwlr_foreign_toplevel_manager_v1_interface, 3, NULL,
                    bind_fullscreen);
+  if (drag_mode) {
+    wl_global_create(server, &wl_seat_interface, 5, NULL, bind_seat);
+    wl_event_loop_add_fd(loop, STDIN_FILENO, WL_EVENT_READABLE, fixture_command,
+                         NULL);
+  }
   puts("ready");
   fflush(stdout);
   wl_display_run(server);

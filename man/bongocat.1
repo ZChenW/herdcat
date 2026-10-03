@@ -75,6 +75,9 @@ Check configuration, protocols, outputs, devices and permissions.
 .B --hide, --show
 Suppress or restore all overlays without resetting animation state.
 .TP
+.B --reset-position
+Remove saved positions on every output and restore configured horizontal alignment and zero vertical margin. Does not change the configuration file.
+.TP
 .B --pause, --resume
 Show the configured idle frame and discard input, or resume with pending paw activity cleared. Hidden and fullscreen visibility still apply.
 .TP
@@ -94,7 +97,7 @@ SessionStart registers the session; UserPromptSubmit, PreToolUse, PostToolUse an
 .PP
 Approval does not emit a separate hook: waiting continues until PostToolUse after tool completion. Claude may not emit a hook on Escape, leaving working to expire; watched waiting remains until another event or exit. Codex Interrupt clears the session. Merge examples/hooks into existing agent configuration and renew Codex hook trust through /hooks after changes.
 .SH MONITOR SECTIONS AND RELOAD
-Use [monitor:NAME] for appearance overrides and [global] to return to global settings. Global settings apply before monitor overrides regardless of section order. Overrides support cat_height, overlay_height, overlay_opacity, cat_x_offset, cat_y_offset, layer, overlay_position, cat_align, mirror_x, mirror_y, enable_antialiasing and disable_fullscreen_hide. Input and timing remain global.
+Use [monitor:NAME] for appearance overrides and [global] to return to global settings. Global settings apply before monitor overrides regardless of section order. Overrides support cat_height, overlay_height, overlay_opacity, cat_x_offset, cat_y_offset, layer, overlay_position, cat_align, cat_draggable, mirror_x, mirror_y, enable_antialiasing and disable_fullscreen_hide. Input and timing remain global.
 .PP
 Startup tolerates invalid entries with warnings. Reloads are transactional: invalid, missing or unreadable files preserve the working configuration. The parent directory is watched to survive atomic replacement and deletion/recreation; reload happens 300 ms after the final relevant event. Monitor selection is reconciled without restarting.
 .PP
@@ -103,3 +106,7 @@ Animation deadlines are monotonic; fps ranges from 1 to 120 and test_animation_i
 agent_done_timeout sets how many seconds the done agent state lasts before returning to idle (default 5, range 0 to 3600). A value of 0 keeps that session done until another event or removal. Values outside the range reset to 5 at startup and are rejected on strict validation or reload. idle_frame accepts only the original frames 0 to 4.
 .PP
 agent_stale_timeout sets the inactivity limit for working sessions (default 600, range 0 to 86400 seconds; 0 disables it). Waiting sessions expire only if no process watch is available. Out-of-range values reset to 600 at startup and fail strict validation or reload. Both agent timeouts are global, not monitor overrides.
+.SH DRAGGING
+cat_draggable is a boolean (default 1). Hold the left button on the cat to drag; motion under four logical pixels leaves its position unchanged. The cat's bounding rectangle intercepts clicks while the remaining bar is click-through. Set cat_draggable=0 for complete click-through. Hidden and fullscreen-hidden cats intercept no clicks. Pause does not disable dragging.
+.PP
+Each output saves its own logical x and vertical margin on release to ${XDG_STATE_HOME:-$HOME/.local/state}/bongocat/position (directory mode 0700, file mode 0600). Writes are atomic and symbolic links are rejected. Saved positions override cat_align and cat_x_offset, survive restart and reload, and are clamped when output dimensions change. overlay_position chooses the margin's anchor edge; cat_y_offset still applies within the bar. Use --reset-position to restore configured positions. Cross-output dragging is not supported. Cursor grab/grabbing shapes are optional; --doctor reports cursor-shape support.

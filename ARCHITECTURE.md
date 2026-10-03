@@ -45,6 +45,32 @@ exit status and termination/reaping on failure. It does not block Wayland.
 
 ## Configuration and control
 
+The first Wayland seat supplies `wl_pointer` events only; no keyboard seat is
+requested. Pointer enter selects an overlay. Its input region is the cat's
+logical bounding rectangle when configured, visible and draggable, otherwise
+empty. Region and pixels are committed together after configure, scale, reload,
+visibility/fullscreen and horizontal-position changes. Pointer capabilities,
+seat removal and overlay teardown share cleanup paths. Optional cursor-shape
+objects follow the pointer lifetime and add no library dependency.
+
+After four logical pixels of left-button motion, x changes the cat's in-buffer
+position and marks a redraw. Y changes the layer margin, with at most one
+margin submission per surface frame callback. During the implicit button
+grab the compositor reports coordinates against the surface position at press,
+so they do not shift as the margin moves the surface; the margin is computed
+absolutely from the press-time margin and grab point (`drag_margin_follow`),
+and the callback submits any travel that arrived while it was pending.
+Horizontal motion continues
+while waiting for a callback. Release, leave or pointer loss saves the position
+and destroys outstanding callbacks. Pause preserves pointer interaction.
+
+`platform/drag.c` owns geometry and the bounded per-output position file in the
+XDG state directory. Positions use logical pixels and convert to physical pixels
+only for rendering. The directory is mode 0700 and the atomic replacement file
+mode 0600; descriptor-based opens reject symlinks and non-regular files. Reload,
+scale/output changes and reconnection clamp saved positions. `reset-position`
+removes the state file and resets all overlays without rewriting configuration.
+
 `config/config.c` parses and validates without input access. Flat files remain
 supported. `[monitor:NAME]` overrides appearance; `[global]` returns to global
 settings. Overrides are applied after all global settings, independent of
@@ -85,6 +111,10 @@ the agent PID by walking at most eight process ancestors, skipping shell wrapper
 `--state` controls the reserved manual session; `--sessions` lists the table.
 
 ## Input and privilege boundaries
+
+Dragging adds compositor-delivered `wl_pointer` input in the unprivileged
+renderer. Keyboard animation continues to use the existing evdev helper;
+dragging never requests `wl_keyboard` or changes device permissions.
 
 The renderer drops real, effective and saved setgid privilege before loading
 configuration. Executing the installed binary reacquires its setgid group

@@ -193,6 +193,7 @@ static bongocat_error_t config_validate(config_t *config) {
   config_validate_positioning(config);
 
   // Normalize boolean values
+  config->cat_draggable = config->cat_draggable ? 1 : 0;
   config->mirror_x = config->mirror_x ? 1 : 0;
   config->mirror_y = config->mirror_y ? 1 : 0;
   config->enable_antialiasing = config->enable_antialiasing ? 1 : 0;
@@ -312,6 +313,8 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
     target = &config->cat_x_offset;
   } else if (strcmp(key, "cat_y_offset") == 0) {
     target = &config->cat_y_offset;
+  } else if (strcmp(key, "cat_draggable") == 0) {
+    target = &config->cat_draggable;
   } else if (strcmp(key, "cat_height") == 0) {
     target = &config->cat_height;
   } else if (strcmp(key, "overlay_height") == 0) {
@@ -363,8 +366,8 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
   }
 
   bool boolean_key =
-      (target == &config->mirror_x || target == &config->mirror_y ||
-       target == &config->enable_antialiasing ||
+      (target == &config->cat_draggable || target == &config->mirror_x ||
+       target == &config->mirror_y || target == &config->enable_antialiasing ||
        target == &config->enable_hand_mapping ||
        target == &config->enable_debug ||
        target == &config->enable_scheduled_sleep ||
@@ -636,11 +639,19 @@ static bongocat_error_t config_parse_monitor_setting(config_t *config,
                                                      const char *monitor,
                                                      const char *key,
                                                      const char *value) {
-  const char *allowed[] = {
-      "cat_height",       "overlay_height",      "overlay_opacity",
-      "cat_x_offset",     "cat_y_offset",        "layer",
-      "overlay_position", "cat_align",           "mirror_x",
-      "mirror_y",         "enable_antialiasing", "disable_fullscreen_hide"};
+  const char *allowed[] = {"cat_draggable",
+                           "cat_height",
+                           "overlay_height",
+                           "overlay_opacity",
+                           "cat_x_offset",
+                           "cat_y_offset",
+                           "layer",
+                           "overlay_position",
+                           "cat_align",
+                           "mirror_x",
+                           "mirror_y",
+                           "enable_antialiasing",
+                           "disable_fullscreen_hide"};
   bool appearance = false;
   for (size_t k = 0; k < sizeof(allowed) / sizeof(allowed[0]); k++) {
     appearance |= strcmp(key, allowed[k]) == 0;
@@ -858,6 +869,7 @@ static void config_set_defaults(config_t *config) {
       .cat_x_offset = 100,
       .cat_y_offset = 10,
       .cat_height = 40,
+      .cat_draggable = 1,
       .overlay_height = 50,
       .idle_frame = 0,
       .agent_done_timeout = DEFAULT_AGENT_DONE_TIMEOUT,

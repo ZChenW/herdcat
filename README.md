@@ -37,6 +37,28 @@ sudo usermod -a -G input $USER
 # Log out and back in
 ```
 
+### Arch package for this fork
+
+The VCS package builds `feature/agent-state` and replaces packages providing
+`bongocat`. From the repository root:
+
+```bash
+cd packaging/arch
+makepkg -si
+```
+
+The package installs under `/usr`. If this fork was previously installed with
+`sudo make install`, remove those `/usr/local` files after the package installs
+successfully so they do not shadow `/usr/bin/bongocat`:
+
+```bash
+# From the repository root; preserves user configuration and saved positions.
+sudo make PREFIX=/usr/local uninstall
+```
+
+Manual installs still default to `/usr/local`; override with `PREFIX` and use
+`DESTDIR` for staging. No package script changes input-device permissions.
+
 ### Find Your Keyboard
 
 ```bash
@@ -96,6 +118,7 @@ overlay_position=bottom
 | `cat_height`               | 10-200            | 40       | Cat size in pixels                   |
 | `cat_align`                | left/center/right | center   | Horizontal alignment                 |
 | `cat_x_offset`             | any int           | 100      | Horizontal offset from alignment     |
+| `cat_draggable`            | 0/1               | 1        | Drag with the left mouse button      |
 | `cat_y_offset`             | any int           | 10       | Vertical offset from center          |
 | `enable_antialiasing`      | 0/1               | 1        | **Deprecated** — no-op with SVG      |
 | `overlay_height`           | 20-300            | 50       | Overlay bar height in pixels         |
@@ -131,7 +154,8 @@ Use `[monitor:NAME]` for appearance overrides and `[global]` to return to global
 settings. Global defaults apply before overrides regardless of section order.
 Supported overrides: `cat_height`, `overlay_height`, `overlay_opacity`,
 `cat_x_offset`, `cat_y_offset`, `layer`, `overlay_position`, `cat_align`,
-`mirror_x`, `mirror_y`, `enable_antialiasing`, and `disable_fullscreen_hide`.
+`mirror_x`, `mirror_y`, `cat_draggable`, `enable_antialiasing`, and
+`disable_fullscreen_hide`.
 Input selectors and animation timing remain global.
 
 ```ini
@@ -169,6 +193,7 @@ bongocat [OPTIONS]
   --state NAME        Set manual state: idle, working, waiting, done
   --sessions          List tracked agent sessions
   --hook AGENT        Read a lifecycle event from stdin
+  --reset-position    Restore configured positions on every output
   --reload / --status Reload config or query the running instance
   -h, --help           Help
   -v, --version        Version
@@ -190,9 +215,33 @@ are supported and devices are deduplicated by identity. No permission changes
 are made automatically. Keycodes are never transmitted or logged, including
 with `enable_debug=1`.
 
+## Dragging
+
+Hold the left mouse button on the cat and move it horizontally or vertically.
+A movement of at least four logical pixels starts a drag; clicking alone keeps
+the position. With cursor-shape support the cursor changes to grab/grabbing.
+`--doctor` reports whether the protocol is available.
+
+Each output saves its position on release to
+`${XDG_STATE_HOME:-$HOME/.local/state}/bongocat/position`. Positions survive
+restart, reload and output reconnection, and are clamped when output dimensions
+change. `bongocat --reset-position` removes saved positions for every output
+and restores `cat_align` / `cat_x_offset` and zero vertical margin. Configuration
+files are never rewritten. `overlay_position` chooses the edge from which the
+saved vertical margin is measured; `cat_y_offset` still applies inside the bar.
+
+The cat's bounding rectangle intercepts clicks; the rest of the bar remains
+click-through. Hidden cats intercept no clicks, including fullscreen hiding
+when enabled. Pause still allows dragging. Set `cat_draggable=0` globally or
+in a monitor section for complete click-through. Dragging between outputs is
+not supported; each output has its own cat and saved position.
+
 ## Agent status
 
 This fork keeps the keyboard paw animation and tracks up to 32 agent sessions.
+[Native screenshots and validation](docs/agent-validation.md) show the final
+artwork and tested runtime behavior.
+
 The shared indicator displays the highest priority state:
 **waiting > done > working > idle**. A working session cannot overwrite another
 session's waiting state. Each done session expires independently after

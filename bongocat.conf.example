@@ -14,6 +14,9 @@ cat_height=110
 cat_align=center
 cat_x_offset=0
 cat_y_offset=0
+# Left-button dragging; 0 restores complete click-through.
+# Saved positions override cat_align/cat_x_offset until --reset-position.
+cat_draggable=1
 
 # Deprecated: no-op with SVG rendering (antialiasing is always enabled)
 # enable_antialiasing=1

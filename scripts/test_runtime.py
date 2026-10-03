@@ -24,7 +24,8 @@ def wait_for(condition, seconds=4):
 
 with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
     root = Path(directory)
-    env = dict(os.environ, XDG_RUNTIME_DIR=directory, WAYLAND_DISPLAY="wayland-test")
+    env = dict(os.environ, XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
+               WAYLAND_DISPLAY="wayland-test")
     config = root / "cat.conf"
     config.write_text("monitor=TEST-1,TEST-2\noverlay_opacity=0\nfps=1\n"
                       "agent_done_timeout=1\ntest_animation_interval=1\n[monitor:TEST-2]\ncat_height=60\n"

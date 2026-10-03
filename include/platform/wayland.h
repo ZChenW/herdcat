@@ -59,6 +59,7 @@ void wayland_update_config(config_t *config);
 
 int wayland_list_monitors(bool doctor);
 void wayland_set_hidden(bool value);
+int wayland_reset_position(void);
 void wayland_set_runtime_timeout(int (*callback)(void));
 void wayland_set_runtime_fds(int (*callback)(int *, size_t));
 

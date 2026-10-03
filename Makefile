@@ -1,6 +1,7 @@
 # Compiler
 .DEFAULT_GOAL := all
 CC = gcc
+PREFIX ?= /usr/local
 
 # Build type (debug or release)
 BUILD_TYPE ?= release
@@ -46,8 +47,8 @@ EMBEDDED_ASSETS_H = $(INCDIR)/graphics/embedded_assets.h
 EMBEDDED_ASSETS_C = $(SRCDIR)/graphics/embedded_assets.c
 
 # Protocol files
-C_PROTOCOL_SRC = $(PROTOCOLDIR)/zwlr-layer-shell-v1-protocol.c $(PROTOCOLDIR)/xdg-shell-protocol.c $(PROTOCOLDIR)/wlr-foreign-toplevel-management-v1-protocol.c $(PROTOCOLDIR)/xdg-output-unstable-v1-protocol.c $(PROTOCOLDIR)/fractional-scale-v1-protocol.c $(PROTOCOLDIR)/viewporter-protocol.c
-H_PROTOCOL_HDR = $(PROTOCOLDIR)/zwlr-layer-shell-v1-client-protocol.h $(PROTOCOLDIR)/wlr-foreign-toplevel-management-v1-client-protocol.h $(PROTOCOLDIR)/xdg-output-unstable-v1-client-protocol.h $(PROTOCOLDIR)/fractional-scale-v1-client-protocol.h $(PROTOCOLDIR)/viewporter-client-protocol.h
+C_PROTOCOL_SRC = $(PROTOCOLDIR)/zwlr-layer-shell-v1-protocol.c $(PROTOCOLDIR)/xdg-shell-protocol.c $(PROTOCOLDIR)/wlr-foreign-toplevel-management-v1-protocol.c $(PROTOCOLDIR)/xdg-output-unstable-v1-protocol.c $(PROTOCOLDIR)/fractional-scale-v1-protocol.c $(PROTOCOLDIR)/viewporter-protocol.c $(PROTOCOLDIR)/cursor-shape-v1-protocol.c $(PROTOCOLDIR)/tablet-unstable-v2-protocol.c
+H_PROTOCOL_HDR = $(PROTOCOLDIR)/zwlr-layer-shell-v1-client-protocol.h $(PROTOCOLDIR)/wlr-foreign-toplevel-management-v1-client-protocol.h $(PROTOCOLDIR)/xdg-output-unstable-v1-client-protocol.h $(PROTOCOLDIR)/fractional-scale-v1-client-protocol.h $(PROTOCOLDIR)/viewporter-client-protocol.h $(PROTOCOLDIR)/cursor-shape-v1-client-protocol.h $(PROTOCOLDIR)/tablet-unstable-v2-client-protocol.h
 PROTOCOL_OBJECTS = $(C_PROTOCOL_SRC:$(PROTOCOLDIR)/%.c=$(OBJDIR)/%.o)
 
 # Target executable
@@ -109,6 +110,10 @@ protocols:
 	wayland-scanner private-code $(PROTOCOLDIR)/fractional-scale-v1.xml $(PROTOCOLDIR)/fractional-scale-v1-protocol.c
 	wayland-scanner client-header $(PROTOCOLDIR)/viewporter.xml $(PROTOCOLDIR)/viewporter-client-protocol.h
 	wayland-scanner private-code $(PROTOCOLDIR)/viewporter.xml $(PROTOCOLDIR)/viewporter-protocol.c
+	wayland-scanner client-header $(PROTOCOLDIR)/cursor-shape-v1.xml $(PROTOCOLDIR)/cursor-shape-v1-client-protocol.h
+	wayland-scanner private-code $(PROTOCOLDIR)/cursor-shape-v1.xml $(PROTOCOLDIR)/cursor-shape-v1-protocol.c
+	wayland-scanner client-header $(PROTOCOLDIR)/tablet-unstable-v2.xml $(PROTOCOLDIR)/tablet-unstable-v2-client-protocol.h
+	wayland-scanner private-code $(PROTOCOLDIR)/tablet-unstable-v2.xml $(PROTOCOLDIR)/tablet-unstable-v2-protocol.c
 
 clean:
 	rm -rf $(BUILDDIR)
@@ -125,15 +130,17 @@ release:
 	$(MAKE) BUILD_TYPE=release
 
 install: $(TARGET)
-	install -D $(TARGET) $(DESTDIR)/usr/local/bin/bongocat
-	install -D bongocat.conf.example $(DESTDIR)/usr/local/share/bongocat/bongocat.conf.example
-	install -D scripts/find_input_devices.sh $(DESTDIR)/usr/local/bin/bongocat-find-devices
-	install -D man/bongocat.1 $(DESTDIR)/usr/local/share/man/man1/bongocat.1
+	install -Dm755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/bongocat
+	install -Dm644 bongocat.conf.example $(DESTDIR)$(PREFIX)/share/bongocat/bongocat.conf.example
+	install -Dm755 scripts/find_input_devices.sh $(DESTDIR)$(PREFIX)/bin/bongocat-find-devices
+	install -Dm644 man/bongocat.1 $(DESTDIR)$(PREFIX)/share/man/man1/bongocat.1
 
 uninstall:
-	rm -f $(DESTDIR)/usr/local/bin/bongocat
-	rm -f $(DESTDIR)/usr/local/bin/bongocat-find-devices
-	rm -rf $(DESTDIR)/usr/local/share/bongocat
+	rm -f $(DESTDIR)$(PREFIX)/bin/bongocat
+	rm -f $(DESTDIR)$(PREFIX)/bin/bongocat-find-devices
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/bongocat.1
+	rm -f $(DESTDIR)$(PREFIX)/share/bongocat/bongocat.conf.example
+	-rmdir $(DESTDIR)$(PREFIX)/share/bongocat
 
 # Memory check (requires valgrind)
 memcheck: debug
@@ -217,7 +224,10 @@ $(BUILDDIR)/test_fullscreen_state: $(TESTDIR)/test_fullscreen_state.c | $(OBJDIR
 $(BUILDDIR)/test_runtime: $(TESTDIR)/test_runtime.c src/core/control.c src/config/config_watcher.c $(CONFIG_TEST_DEPS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-TEST_BINARIES = $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state
+TEST_BINARIES = $(BUILDDIR)/test_drag $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state
+
+$(BUILDDIR)/test_drag: tests/test_drag.c src/platform/drag.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(BUILDDIR)/test_agent_hook: tests/test_agent_hook.c src/core/agent_hook.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
@@ -272,6 +282,7 @@ $(BUILDDIR)/test_hyprland: tests/test_hyprland.c src/platform/hyprland.c src/uti
 test-runtime: all compositor-test-build
 	python3 scripts/test_runtime.py
 	python3 scripts/test_hook_client.py
+	python3 scripts/test_drag_runtime.py
 
 $(BUILDDIR)/test_input: tests/test_input.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=ioctl,--wrap=stat
