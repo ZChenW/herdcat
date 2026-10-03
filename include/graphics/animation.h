@@ -2,6 +2,7 @@
 #define ANIMATION_H
 
 #include "config/config.h"
+#include "core/agent_state.h"
 #include "core/bongocat.h"
 #include "utils/error.h"
 
@@ -40,6 +41,8 @@ void animation_overlay_cache(int width, int height);
 void animation_overlay_destroy(void *opaque);
 int animation_tick(unsigned paws);
 void animation_set_paused(bool value);
+void animation_set_agent_state(agent_state_t state);
+agent_state_t animation_get_agent_state(void);
 
 // Compatibility lifecycle entrypoint - must be checked
 BONGOCAT_NODISCARD bongocat_error_t animation_start(void);

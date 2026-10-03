@@ -217,7 +217,19 @@ $(BUILDDIR)/test_fullscreen_state: $(TESTDIR)/test_fullscreen_state.c | $(OBJDIR
 $(BUILDDIR)/test_runtime: $(TESTDIR)/test_runtime.c src/core/control.c src/config/config_watcher.c $(CONFIG_TEST_DEPS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-TEST_BINARIES = $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state
+TEST_BINARIES = $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state
+
+$(BUILDDIR)/test_agent_hook: tests/test_agent_hook.c src/core/agent_hook.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_watch: tests/test_agent_watch.c src/platform/agent_watch.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_sessions: tests/test_agent_sessions.c src/core/agent_sessions.c src/core/agent_state.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_state: tests/test_agent_state.c src/core/agent_state.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(TEST_BINARIES): $(PROJECT_HEADERS) tests/test_helpers.h
 
@@ -250,7 +262,7 @@ compositor-test-build:
 	wayland-scanner server-header protocols/wlr-foreign-toplevel-management-unstable-v1.xml $(BUILDDIR)/compositor/fullscreen-server.h
 	$(CC) -std=c2x -g -Wall -Wextra -I$(BUILDDIR)/compositor tests/test_compositor.c protocols/zwlr-layer-shell-v1-protocol.c protocols/xdg-shell-protocol.c protocols/viewporter-protocol.c protocols/fractional-scale-v1-protocol.c protocols/wlr-foreign-toplevel-management-v1-protocol.c -o $(BUILDDIR)/compositor/server -lwayland-server
 
-$(BUILDDIR)/test_animation: tests/test_animation.c src/graphics/animation.c src/graphics/embedded_assets.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_animation: tests/test_animation.c src/core/agent_state.c src/graphics/animation.c src/graphics/embedded_assets.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(BUILDDIR)/test_hyprland: tests/test_hyprland.c src/platform/hyprland.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
@@ -259,6 +271,7 @@ $(BUILDDIR)/test_hyprland: tests/test_hyprland.c src/platform/hyprland.c src/uti
 .PHONY: test-runtime
 test-runtime: all compositor-test-build
 	python3 scripts/test_runtime.py
+	python3 scripts/test_hook_client.py
 
 $(BUILDDIR)/test_input: tests/test_input.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=ioctl,--wrap=stat

@@ -88,6 +88,13 @@ static void test_defaults(void) {
   TEST_ASSERT_EQ(config.cat_y_offset, 10, "default cat_y_offset is 10");
   TEST_ASSERT_EQ(config.keypress_duration, 100,
                  "default keypress_duration is 100");
+  TEST_ASSERT_EQ(config.agent_stale_timeout, 600,
+                 "default agent_stale_timeout is 600 seconds");
+  TEST_ASSERT_EQ(config.agent_done_timeout, 5,
+                 "default agent_done_timeout is 5 seconds");
+  for (int i = 0; i < NUM_FRAMES; i++) {
+    TEST_ASSERT(config.asset_paths[i] != NULL, "all frames have an asset path");
+  }
 
   config_cleanup_full(&config);
   unlink(path);
@@ -303,6 +310,69 @@ static void test_comments_and_whitespace(void) {
   unlink(path);
 }
 
+static void test_agent_config(void) {
+  char path[] = "/tmp/bongocat_test_XXXXXX";
+  int fd = mkstemp(path);
+  assert(fd >= 0);
+  close(fd);
+  const int values[] = {0, 1, 3600, -1, 3601};
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+    char text[64];
+    snprintf(text, sizeof(text), "agent_done_timeout=%d\n", values[i]);
+    write_temp_config(path, text);
+    config_t config = {0};
+    TEST_ASSERT_EQ(load_config(&config, path), BONGOCAT_SUCCESS,
+                   "startup loads agent timeout");
+    bool valid = values[i] >= 0 && values[i] <= 3600;
+    TEST_ASSERT_EQ(config.agent_done_timeout, valid ? values[i] : 5,
+                   "out-of-range timeout resets to default");
+    config_cleanup_full(&config);
+    TEST_ASSERT_EQ(load_config_strict(&config, path),
+                   valid ? BONGOCAT_SUCCESS : BONGOCAT_ERROR_CONFIG,
+                   "strict loading rejects invalid timeout");
+    config_cleanup_full(&config);
+  }
+  const int stale_values[] = {0, 1, 600, 3601, 86400, -1, 86401};
+  for (size_t i = 0; i < sizeof(stale_values) / sizeof(stale_values[0]); i++) {
+    char text[64];
+    snprintf(text, sizeof(text), "agent_stale_timeout=%d\n", stale_values[i]);
+    write_temp_config(path, text);
+    config_t config = {0};
+    bool valid = stale_values[i] >= 0 && stale_values[i] <= 86400;
+    TEST_ASSERT_EQ(load_config(&config, path), BONGOCAT_SUCCESS,
+                   "startup loads stale timeout");
+    TEST_ASSERT_EQ(config.agent_stale_timeout, valid ? stale_values[i] : 600,
+                   "invalid stale timeout resets to default");
+    config_cleanup_full(&config);
+    TEST_ASSERT_EQ(load_config_strict(&config, path),
+                   valid ? BONGOCAT_SUCCESS : BONGOCAT_ERROR_CONFIG,
+                   "strict loading rejects invalid stale timeout");
+    config_cleanup_full(&config);
+  }
+  for (int frame = BONGOCAT_FRAME_SLEEPING; frame < NUM_FRAMES; frame++) {
+    char text[32];
+    snprintf(text, sizeof(text), "idle_frame=%d\n", frame);
+    write_temp_config(path, text);
+    config_t config = {0};
+    TEST_ASSERT_EQ(load_config(&config, path), BONGOCAT_SUCCESS,
+                   "startup validates idle frame");
+    TEST_ASSERT_EQ(config.idle_frame,
+                   frame <= BONGOCAT_FRAME_LAST_USER ? frame : 0,
+                   "agent frames cannot be used as idle_frame");
+    config_cleanup_full(&config);
+  }
+  write_temp_config(path, "[monitor:TEST-1]\nagent_done_timeout=10\n");
+  config_t config = {0};
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+                 "agent timing must remain global");
+  config_cleanup_full(&config);
+  write_temp_config(path, "[monitor:TEST-1]\nagent_stale_timeout=10\n");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+                 "stale timing must remain global");
+  config_cleanup_full(&config);
+  unlink(path);
+}
+
 int main(void) {
   bongocat_error_init(0);  // Suppress debug output
   printf("=== Config Parser Tests ===\n");
@@ -315,6 +385,7 @@ int main(void) {
   test_keyboard_device_validation();
   test_enum_parsing();
   test_comments_and_whitespace();
+  test_agent_config();
 
   printf("\nResults: %d passed, %d failed\n", tests_passed, tests_failed);
   return tests_failed > 0 ? 1 : 0;

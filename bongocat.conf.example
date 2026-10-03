@@ -75,6 +75,15 @@ enable_hand_mapping=1
 # When triggered, displays a dedicated sleeping animation frame
 idle_sleep_timeout=0
 
+# Seconds the "done" agent state stays visible before returning to idle
+# (0 = stay until another event for that session; valid range 0..3600)
+agent_done_timeout=5
+
+# Inactive working sessions return to idle after this many seconds.
+# Waiting expires only without a working process watch. 0 disables stale expiry.
+# Global setting, valid range 0..86400 seconds.
+agent_stale_timeout=600
+
 # Scheduled sleep (requires enable_scheduled_sleep=1)
 enable_scheduled_sleep=0
 sleep_begin=22:00

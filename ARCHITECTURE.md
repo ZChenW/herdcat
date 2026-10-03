@@ -8,8 +8,8 @@ processes. Runtime dependencies remain C23, Linux evdev and Wayland client.
 ## Ownership and event flow
 
 The renderer polls Wayland, the private input socket, directory inotify,
-authenticated control connections and a signal eventfd. Timeouts are the
-nearest animation, debounce, helper-recovery, control or Hyprland deadline.
+authenticated control connections, agent process epoll and a signal eventfd. Timeouts are the
+nearest animation, debounce, helper-recovery, control, agent session or Hyprland deadline.
 Idle overlays have no animation timeout; sleeping overlays wait for meaningful
 deadlines. Animation redraws respect live FPS changes, including `fps=1`.
 Wayland read preparation is cancelled whenever a poll wakeup has no display
@@ -62,6 +62,27 @@ held until all cleanup finishes. Controls use a mode-0600 Unix sequenced-packet
 socket, SO_PEERCRED same-UID authentication, bounded messages and deadlines.
 Toggle requests a stop through the socket; it never trusts a stale PID to
 signal an unrelated process group.
+
+## Agent sessions and hooks
+
+`core/agent_sessions.c` owns a fixed 32-slot table keyed by the FNV-1a hash of
+agent and session ID; key zero is the manual session. The table resolves waiting
+before done, working and idle. It owns all done/stale deadlines; animation only
+receives the resolved state and redraws when it changes. Display priority is
+scheduled sleep, held paws, resolved agent artwork, idle sleep, then idle frame.
+Pause and hidden outputs do not suspend session expiry. Reload preserves sessions.
+
+`platform/agent_watch.c` deduplicates process pidfds under one epoll fd. The main
+loop removes sessions for exited processes, expires deadlines and resolves state
+before processing controls. END, eviction and PID replacement prune watches
+only when no remaining session references them. Unavailable pidfds fall back to
+stale expiry; watched waiting sessions do not expire. There is no polling worker.
+
+`core/agent_hook.c` streams stdin into a bounded JSON scanner, maps lifecycle
+events and sends a short `ev` request through the existing authenticated control
+socket. It never emits stdout and has a two-second alarm. The caller discovers
+the agent PID by walking at most eight process ancestors, skipping shell wrappers.
+`--state` controls the reserved manual session; `--sessions` lists the table.
 
 ## Input and privilege boundaries
 

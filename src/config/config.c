@@ -15,15 +15,18 @@
 // CONFIGURATION CONSTANTS AND VALIDATION RANGES
 // =============================================================================
 
-#define MIN_CAT_HEIGHT     10
-#define MAX_CAT_HEIGHT     200
-#define MIN_OVERLAY_HEIGHT 20
-#define MAX_OVERLAY_HEIGHT 300
-#define MIN_FPS            1
-#define MAX_FPS            120
-#define MIN_DURATION       10
-#define MAX_DURATION       5000
-#define MAX_INTERVAL       3600
+#define MIN_CAT_HEIGHT              10
+#define MAX_CAT_HEIGHT              200
+#define MIN_OVERLAY_HEIGHT          20
+#define MAX_OVERLAY_HEIGHT          300
+#define MIN_FPS                     1
+#define MAX_FPS                     120
+#define MIN_DURATION                10
+#define MAX_DURATION                5000
+#define MAX_INTERVAL                3600
+#define DEFAULT_AGENT_DONE_TIMEOUT  5
+#define DEFAULT_AGENT_STALE_TIMEOUT 600
+#define MAX_AGENT_STALE_TIMEOUT     86400
 
 // =============================================================================
 // CONFIGURATION VALIDATION MODULE
@@ -67,6 +70,23 @@ static void config_validate_dimensions(config_t *config) {
 }
 
 static void config_validate_timing(config_t *config) {
+  if (config->agent_done_timeout < 0 ||
+      config->agent_done_timeout > MAX_INTERVAL) {
+    validation_failed = true;
+    bongocat_log_warning(
+        "agent_done_timeout %d out of range [0-%d], resetting to %d",
+        config->agent_done_timeout, MAX_INTERVAL, DEFAULT_AGENT_DONE_TIMEOUT);
+    config->agent_done_timeout = DEFAULT_AGENT_DONE_TIMEOUT;
+  }
+  if (config->agent_stale_timeout < 0 ||
+      config->agent_stale_timeout > MAX_AGENT_STALE_TIMEOUT) {
+    validation_failed = true;
+    bongocat_log_warning(
+        "agent_stale_timeout %d out of range [0-%d], resetting to %d",
+        config->agent_stale_timeout, MAX_AGENT_STALE_TIMEOUT,
+        DEFAULT_AGENT_STALE_TIMEOUT);
+    config->agent_stale_timeout = DEFAULT_AGENT_STALE_TIMEOUT;
+  }
   config_clamp_int(&config->fps, MIN_FPS, MAX_FPS, "fps");
   config_clamp_int(&config->keypress_duration, MIN_DURATION, MAX_DURATION,
                    "keypress_duration");
@@ -109,10 +129,10 @@ static void config_validate_appearance(config_t *config) {
   config_clamp_int(&config->overlay_opacity, 0, 255, "overlay_opacity");
 
   // Validate idle frame
-  if (config->idle_frame < 0 || config->idle_frame >= NUM_FRAMES) {
+  if (config->idle_frame < 0 || config->idle_frame > BONGOCAT_FRAME_LAST_USER) {
     validation_failed = true;
     bongocat_log_warning("idle_frame %d out of range [0-%d], resetting to 0",
-                         config->idle_frame, NUM_FRAMES - 1);
+                         config->idle_frame, BONGOCAT_FRAME_LAST_USER);
     config->idle_frame = 0;
   }
 }
@@ -298,6 +318,10 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
     target = &config->overlay_height;
   } else if (strcmp(key, "idle_frame") == 0) {
     target = &config->idle_frame;
+  } else if (strcmp(key, "agent_stale_timeout") == 0) {
+    target = &config->agent_stale_timeout;
+  } else if (strcmp(key, "agent_done_timeout") == 0) {
+    target = &config->agent_done_timeout;
   } else if (strcmp(key, "keypress_duration") == 0) {
     target = &config->keypress_duration;
   } else if (strcmp(key, "test_animation_duration") == 0) {
@@ -823,7 +847,9 @@ static void config_set_defaults(config_t *config) {
       .num_output_names = 0,
       .asset_paths = {"assets/new/bongo-both-up.svg",
                       "assets/new/bongo-left-down.svg", "assets/new/bongo-right-down.svg",
-                      "assets/new/bongo-both-down.svg", "assets/new/bongo-sleeping.svg"},
+                      "assets/new/bongo-both-down.svg", "assets/new/bongo-sleeping.svg",
+                      "assets/new/bongo-agent-working.svg", "assets/new/bongo-agent-waiting.svg",
+                      "assets/new/bongo-agent-done.svg"},
       .keyboard_devices = NULL,
       .num_keyboard_devices = 0,
       .hotplug_scan_interval = 30,
@@ -834,6 +860,8 @@ static void config_set_defaults(config_t *config) {
       .cat_height = 40,
       .overlay_height = 50,
       .idle_frame = 0,
+      .agent_done_timeout = DEFAULT_AGENT_DONE_TIMEOUT,
+      .agent_stale_timeout = DEFAULT_AGENT_STALE_TIMEOUT,
       .keypress_duration = 100,
       .test_animation_duration = 200,
       .test_animation_interval = 0,

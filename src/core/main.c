@@ -1,14 +1,19 @@
 #define _GNU_SOURCE
 #include "config/config.h"
+#include "core/agent_hook.h"
+#include "core/agent_sessions.h"
+#include "core/agent_state.h"
 #include "core/bongocat.h"
 #include "core/control.h"
 #include "graphics/animation.h"
+#include "platform/agent_watch.h"
 #include "platform/hyprland.h"
 #include "platform/input.h"
 #include "platform/wayland.h"
 #include "utils/error.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -129,6 +134,67 @@ static void changed(const char *path) {
   (void)path;
   reload_pending = true;
 }
+static void agent_refresh(void) {
+  agent_state_t state = agent_sessions_resolve();
+  if (state != animation_get_agent_state()) {
+    animation_set_agent_state(state);
+  }
+}
+
+static bool has_pid(const pid_t *pids, int count, pid_t pid) {
+  for (int i = 0; i < count; i++) {
+    if (pids[i] == pid) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static int agent_apply(uint64_t key, const char *agent, agent_event_t event,
+                       pid_t pid) {
+  pid_t before[AGENT_SESSIONS_MAX], after[AGENT_SESSIONS_MAX];
+  int before_count = agent_sessions_pids(before, AGENT_SESSIONS_MAX);
+  if (agent_sessions_apply(key, agent, event, pid, monotonic_ms(),
+                           config.agent_done_timeout, NULL) < 0) {
+    return 1;
+  }
+  int after_count = agent_sessions_pids(after, AGENT_SESSIONS_MAX);
+  for (int i = 0; i < before_count; i++) {
+    if (!has_pid(after, after_count, before[i])) {
+      agent_watch_remove(before[i]);
+    }
+  }
+  pid = agent_sessions_pid(key);
+  if (pid > 0) {
+    agent_sessions_set_watched(key, agent_watch_add(pid) == 0);
+  }
+  agent_refresh();
+  return 0;
+}
+
+static int agent_command(const char *request) {
+  char agent[AGENT_NAME_MAX + 1], event_name[8], key_text[17], pid_text[8];
+  int agent_end = 0, event_end = 0, key_end = 0, end = 0;
+  if (sscanf(request, "ev %8[a-z]%n %7[a-z]%n %16[0-9a-fA-F]%n %7[0-9]%n",
+             agent, &agent_end, event_name, &event_end, key_text, &key_end,
+             pid_text, &end) != 4 ||
+      request[agent_end] != ' ' || request[event_end] != ' ' ||
+      request[key_end] != ' ' || request[end] != '\0' ||
+      strlen(key_text) != 16) {
+    return 1;
+  }
+  agent_event_t event;
+  if (agent_event_parse(event_name, &event) < 0) {
+    return 1;
+  }
+  uint64_t key = strtoull(key_text, NULL, 16);
+  unsigned long pid = strtoul(pid_text, NULL, 10);
+  if (!key || pid > 4194304UL) {
+    return 1;
+  }
+  return agent_apply(key, agent, event, (pid_t)pid);
+}
+
 static int command(const char *request, char *response, size_t capacity) {
   int result = 0;
   if (strcmp(request, "stop") == 0) {
@@ -151,13 +217,32 @@ static int command(const char *request, char *response, size_t capacity) {
     wayland_request_redraw();
   } else if (strcmp(request, "reload") == 0) {
     { result = reload(); }
+  } else if (strncmp(request, "state ", 6) == 0) {
+    agent_state_t state;
+    if (agent_state_parse(request + 6, &state) == 0) {
+      agent_event_t event;
+      agent_event_parse(request + 6, &event);
+      result = agent_apply(
+          0, "manual", state == AGENT_STATE_IDLE ? AGENT_EVENT_END : event, 0);
+    } else {
+      result = 1;
+    }
+  } else if (strncmp(request, "ev ", 3) == 0) {
+    result = agent_command(request);
+  } else if (strcmp(request, "sessions") == 0) {
+    if (agent_sessions_format(response, capacity, monotonic_ms()) == 0) {
+      snprintf(response, capacity, "No agent sessions");
+    }
+    return 0;
   } else if (strcmp(request, "status") == 0) {
     snprintf(
         response, capacity,
-        "running pid=%ld hidden=%s paused=%s input=%s devices=%u config=%s",
+        "running pid=%ld hidden=%s paused=%s input=%s devices=%u config=%s "
+        "agent=%s sessions=%d",
         (long)getpid(), (int)hidden ? "yes" : "no", (int)paused ? "yes" : "no",
         (int)input_child_is_alive() ? "connected" : "restarting",
-        input_device_count(), config_path);
+        input_device_count(), config_path,
+        agent_state_name(animation_get_agent_state()), agent_sessions_count());
     return 0;
   } else {
     { result = 1; }
@@ -172,6 +257,9 @@ static void tick(void) {
     reload_pending = false;
     reload();
   }
+  agent_watch_process(agent_sessions_remove_pid);
+  agent_sessions_expire(monotonic_ms(), config.agent_stale_timeout);
+  agent_refresh();
   control_process(command);
   if (!input_child_is_alive() && monotonic_ms() >= input_retry_at) {
     input_retry_at = monotonic_ms() + 5000;
@@ -186,10 +274,17 @@ static void tick(void) {
 }
 static int runtime_timeout(void) {
   int candidates[] = {config_watcher_timeout(&watcher), control_timeout(),
-                      hypr_timeout(), -1};
+                      hypr_timeout(), -1, -1};
   if (!input_child_is_alive()) {
     int64_t remaining = input_retry_at - monotonic_ms();
     candidates[3] = remaining > 0 ? (int)remaining : 0;
+  }
+  int64_t until = agent_sessions_next_deadline(config.agent_stale_timeout);
+  if (until) {
+    int64_t remaining = until - monotonic_ms();
+    candidates[4] = remaining <= 0        ? 0
+                    : remaining > INT_MAX ? INT_MAX
+                                          : (int)remaining;
   }
   int timeout = -1;
   for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
@@ -202,7 +297,7 @@ static int runtime_timeout(void) {
 static int runtime_fds(int *fds, size_t capacity) {
   size_t count = 0;
   int basic[] = {signal_fd, input_get_wake_fd(), watcher.inotify_fd,
-                 hypr_poll_fd()};
+                 hypr_poll_fd(), agent_watch_fd()};
   for (size_t i = 0; i < sizeof(basic) / sizeof(basic[0]) && count < capacity;
        i++) {
     if (basic[i] >= 0) {
@@ -212,23 +307,27 @@ static int runtime_fds(int *fds, size_t capacity) {
   return (int)count + control_fds(fds + count, capacity - count);
 }
 static void help(const char *program) {
-  printf("Usage: %s [options]\n"
-         "  -c, --config FILE    Configuration path (XDG search by default)\n"
-         "  -w, --watch-config   Reload 300 ms after config changes settle\n"
-         "  -m, --monitor NAME   Override configured output selection\n"
-         "  -t, --toggle         Start or stop the running application\n"
-         "  --hide, --show       Control visibility of every overlay\n"
-         "  --pause, --resume    Display idle frame or resume input animation\n"
-         "  --reload, --status   Reload config or query running application\n"
-         "  --check-config       Strict validation without Wayland or input "
-         "access\n"
-         "  --list-devices       List evdev devices and keyboard capabilities\n"
-         "  --list-monitors      List Wayland outputs, dimensions and scales\n"
-         "  --doctor             Check config, protocols, devices and "
-         "permissions\n"
-         "  -h, --help           Show help\n"
-         "  -v, --version        Show version\n",
-         program);
+  printf(
+      "Usage: %s [options]\n"
+      "  -c, --config FILE    Configuration path (XDG search by default)\n"
+      "  -w, --watch-config   Reload 300 ms after config changes settle\n"
+      "  -m, --monitor NAME   Override configured output selection\n"
+      "  -t, --toggle         Start or stop the running application\n"
+      "  --hide, --show       Control visibility of every overlay\n"
+      "  --pause, --resume    Display idle frame or resume input animation\n"
+      "  --state NAME         Set manual state: idle, working, waiting, done\n"
+      "  --sessions           List tracked agent sessions\n"
+      "  --hook AGENT         Read one agent lifecycle event from stdin\n"
+      "  --reload, --status   Reload config or query running application\n"
+      "  --check-config       Strict validation without Wayland or input "
+      "access\n"
+      "  --list-devices       List evdev devices and keyboard capabilities\n"
+      "  --list-monitors      List Wayland outputs, dimensions and scales\n"
+      "  --doctor             Check config, protocols, devices and "
+      "permissions\n"
+      "  -h, --help           Show help\n"
+      "  -v, --version        Show version\n",
+      program);
 }
 static int run_application(bool watch, bongocat_error_t result) {
   int exit_code = 1;
@@ -242,6 +341,9 @@ static int run_application(bool watch, bongocat_error_t result) {
   }
   if (control_start() < 0 || setup_signals() < 0) {
     goto cleanup;
+  }
+  if (agent_watch_init() < 0) {
+    bongocat_log_warning("Agent process watches unavailable; using timeouts");
   }
   if (watch && config_watcher_init(&watcher, config_path, changed) == 0) {
     config_watcher_start(&watcher);
@@ -274,6 +376,8 @@ cleanup:
   input_cleanup();
   wayland_cleanup();
   animation_cleanup();
+  agent_watch_cleanup();
+  agent_sessions_reset();
   control_cleanup();
   if (signal_fd >= 0) {
     int fd = signal_fd;
@@ -295,6 +399,8 @@ int main(int argc, char **argv) {
   bongocat_error_init(0);
   const char *explicit_path = NULL;
   const char *request = NULL;
+  const char *hook_agent = NULL;
+  static char state_request[32];
   bool watch = false;
   bool toggle = false;
   bool check = false;
@@ -322,6 +428,31 @@ int main(int argc, char **argv) {
       } else {
         monitor_override = argv[i];
       }
+    } else if (!strcmp(arg, "--hook")) {
+      if (request || hook_agent) {
+        fprintf(stderr, "Select one control command\n");
+        return 1;
+      }
+      if (++i >= argc || !agent_hook_valid_agent(argv[i])) {
+        fprintf(stderr, "--hook requires an agent name matching [a-z]{1,8}\n");
+        return 1;
+      }
+      hook_agent = argv[i];
+    } else if (!strcmp(arg, "--state")) {
+      if (request || hook_agent) {
+        fprintf(stderr, "Select one control command\n");
+        return 1;
+      }
+      if (++i >= argc) {
+        fprintf(stderr, "%s requires a value\n", arg);
+        return 1;
+      }
+      if (strlen(argv[i]) > 24) {
+        fprintf(stderr, "Unknown agent state\n");
+        return 1;
+      }
+      snprintf(state_request, sizeof(state_request), "state %s", argv[i]);
+      request = state_request;
     } else if (!strcmp(arg, "--watch-config") || !strcmp(arg, "-w")) {
       watch = true;
     } else if (!strcmp(arg, "--toggle") || !strcmp(arg, "-t")) {
@@ -336,8 +467,9 @@ int main(int argc, char **argv) {
       doctor = true;
     } else if (!strcmp(arg, "--hide") || !strcmp(arg, "--show") ||
                !strcmp(arg, "--pause") || !strcmp(arg, "--resume") ||
-               !strcmp(arg, "--reload") || !strcmp(arg, "--status")) {
-      if (request) {
+               !strcmp(arg, "--reload") || !strcmp(arg, "--status") ||
+               !strcmp(arg, "--sessions")) {
+      if (request || hook_agent) {
         fprintf(stderr, "Select one control command\n");
         return 1;
       }
@@ -346,6 +478,9 @@ int main(int argc, char **argv) {
       fprintf(stderr, "Unknown option: %s\n", arg);
       return 1;
     }
+  }
+  if (hook_agent) {
+    return agent_hook_run(hook_agent);
   }
   if (request) {
     return control_request(request) == 0 ? 0 : 1;

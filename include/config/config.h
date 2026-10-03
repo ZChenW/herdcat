@@ -68,6 +68,8 @@ typedef struct {
 
   // Animation timing
   int idle_frame;
+  int agent_stale_timeout;  // Seconds; 0 disables stale session expiry
+  int agent_done_timeout;  // Seconds; 0 keeps done until the next session event
   int keypress_duration;
   int test_animation_duration;
   int test_animation_interval;

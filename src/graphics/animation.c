@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 199309L
 #include "config/config.h"
+#include "core/agent_state.h"
 #include "core/bongocat.h"
 #include "utils/error.h"
 
@@ -43,6 +44,8 @@ static NSVGrasterizer *anim_rasterizer;
 
 // Animation system state
 static config_t *current_config;
+// Global timing remains valid even when the active output is removed.
+static agent_state_t agent_state = AGENT_STATE_IDLE;
 static bool paused;
 static unsigned reset_generation;
 static uint32_t random_state = 1;
@@ -153,33 +156,26 @@ static void anim_take_pending_paws(animation_state_t *state,
       current_time_us + (current_config->test_animation_interval * 1000000L);
 }
 
-// Derive anim_index from sleep state, then per-paw deadlines.
+// Scheduled sleep, live paws, agent state, idle sleep, then the idle frame.
 static void anim_select_frame(animation_state_t *state,
                               int64_t current_time_us) {
-  int show_sleep_frame = 0;
-  if (current_config->enable_scheduled_sleep &&
-      anim_is_sleep_time(current_config)) {
-    show_sleep_frame = 1;
-  }
-  if (current_config->idle_sleep_timeout_sec > 0 &&
-      state->last_key_pressed_timestamp > 0 &&
-      anim_get_current_time_us() - state->last_key_pressed_timestamp >=
-          current_config->idle_sleep_timeout_sec * 1000000L) {
-    show_sleep_frame = 1;
-  }
-
-  if (show_sleep_frame) {
-    if (anim_index != BONGOCAT_FRAME_SLEEPING) {
-      bongocat_log_debug("Returning to sleep frame");
-      anim_index = BONGOCAT_FRAME_SLEEPING;
-    }
-    return;
-  }
-
   bool left_live = current_time_us < state->left_hold_until;
   bool right_live = current_time_us < state->right_hold_until;
-  int new_frame =
-      frame_from_paw_state(left_live, right_live, current_config->idle_frame);
+  int new_frame = current_config->idle_frame;
+  if (current_config->enable_scheduled_sleep &&
+      anim_is_sleep_time(current_config)) {
+    new_frame = BONGOCAT_FRAME_SLEEPING;
+  } else if (left_live || right_live) {
+    new_frame =
+        frame_from_paw_state(left_live, right_live, current_config->idle_frame);
+  } else if (agent_state != AGENT_STATE_IDLE) {
+    new_frame = agent_state_frame(agent_state);
+  } else if (current_config->idle_sleep_timeout_sec > 0 &&
+             state->last_key_pressed_timestamp > 0 &&
+             current_time_us - state->last_key_pressed_timestamp >=
+                 current_config->idle_sleep_timeout_sec * 1000000L) {
+    new_frame = BONGOCAT_FRAME_SLEEPING;
+  }
   if (new_frame != anim_index && current_config->enable_debug) {
     bongocat_log_debug("Frame -> %d (left=%d right=%d)", new_frame,
                        (int)left_live, (int)right_live);
@@ -277,6 +273,7 @@ void animation_overlay_destroy(void *opaque) {
 }
 
 int animation_tick(unsigned paws) {
+  int64_t now = anim_get_current_time_us();
   animation_overlay_t *ctx = active_animation;
   if (!ctx) {
     return -1;
@@ -287,7 +284,6 @@ int animation_tick(unsigned paws) {
     ctx->last_drawn = -1;
     ctx->next_draw_us = 0;
   }
-  int64_t now = anim_get_current_time_us();
   if (ctx->fps != current_config->fps) {
     ctx->fps = current_config->fps;
     ctx->next_draw_us = now;
@@ -311,7 +307,9 @@ int animation_tick(unsigned paws) {
       ctx->last_drawn = anim_index;
       ctx->next_draw_us = now + (1000000L / current_config->fps);
     } else {
-      { deadline = ctx->next_draw_us; }
+      if (!deadline || ctx->next_draw_us < deadline) {
+        deadline = ctx->next_draw_us;
+      }
     }
   }
   int64_t candidates[] = {
@@ -347,6 +345,19 @@ void animation_set_paused(bool value) {
   reset_generation++;
 }
 
+void animation_set_agent_state(agent_state_t state) {
+  if (state < AGENT_STATE_IDLE || state >= AGENT_STATE_COUNT ||
+      state == agent_state) {
+    return;
+  }
+  agent_state = state;
+  wayland_request_redraw();
+}
+
+agent_state_t animation_get_agent_state(void) {
+  return agent_state;
+}
+
 // =============================================================================
 // SVG LOADING MODULE
 // =============================================================================
@@ -370,6 +381,14 @@ static void init_embedded_svgs(void) {
       bongo_both_down_svg, bongo_both_down_svg_size, "bongo-both-down.svg"};
   embedded_svgs[BONGOCAT_FRAME_SLEEPING] = (embedded_svg_t){
       bongo_sleeping_svg, bongo_sleeping_svg_size, "bongo-sleeping.svg"};
+  embedded_svgs[BONGOCAT_FRAME_AGENT_WORKING] =
+      (embedded_svg_t){bongo_agent_working_svg, bongo_agent_working_svg_size,
+                       "bongo-agent-working.svg"};
+  embedded_svgs[BONGOCAT_FRAME_AGENT_WAITING] =
+      (embedded_svg_t){bongo_agent_waiting_svg, bongo_agent_waiting_svg_size,
+                       "bongo-agent-waiting.svg"};
+  embedded_svgs[BONGOCAT_FRAME_AGENT_DONE] = (embedded_svg_t){
+      bongo_agent_done_svg, bongo_agent_done_svg_size, "bongo-agent-done.svg"};
 }
 
 static void anim_cleanup_svgs(void) {
@@ -565,6 +584,7 @@ bongocat_error_t animation_init(config_t *config) {
   BONGOCAT_CHECK_NULL(config, BONGOCAT_ERROR_INVALID_PARAM);
 
   current_config = config;
+  agent_state = AGENT_STATE_IDLE;
   bongocat_log_info("Initializing animation system");
 
   // Parse embedded SVG assets
@@ -595,6 +615,7 @@ bongocat_error_t animation_start(void) {
 }
 
 void animation_cleanup(void) {
+  agent_state = AGENT_STATE_IDLE;
   // Cleanup cached frames
   animation_invalidate_cache();
 
