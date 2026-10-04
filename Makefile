@@ -13,6 +13,9 @@ BASE_CFLAGS += -Wmissing-prototypes -Wold-style-definition -Wredundant-decls
 BASE_CFLAGS += -Wnested-externs -Wmissing-include-dirs -Wlogical-op
 BASE_CFLAGS += -Wjump-misses-init -Wdouble-promotion -Wshadow
 BASE_CFLAGS += -fstack-protector-strong
+TEXT_CFLAGS := $(shell pkg-config --cflags freetype2 fontconfig)
+TEXT_LIBS := $(shell pkg-config --libs freetype2 fontconfig)
+BASE_CFLAGS += $(TEXT_CFLAGS)
 
 # Debug flags
 DEBUG_CFLAGS = $(BASE_CFLAGS) -g3 -O0 -DDEBUG -fsanitize=address -fsanitize=undefined
@@ -29,6 +32,8 @@ else
     CFLAGS = $(RELEASE_CFLAGS)
     LDFLAGS = -lwayland-client -lm -lpthread -flto -pie -Wl,-z,relro,-z,now -Wl,-z,noexecstack
 endif
+
+LDFLAGS += $(TEXT_LIBS)
 
 # Directories
 SRCDIR = src
@@ -224,7 +229,25 @@ $(BUILDDIR)/test_fullscreen_state: $(TESTDIR)/test_fullscreen_state.c | $(OBJDIR
 $(BUILDDIR)/test_runtime: $(TESTDIR)/test_runtime.c src/core/control.c src/config/config_watcher.c $(CONFIG_TEST_DEPS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-TEST_BINARIES = $(BUILDDIR)/test_drag $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state
+$(BUILDDIR)/test_focus: tests/test_focus.c src/platform/focus.c src/platform/focus_json.c src/core/agent_hook.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_focus_watch: tests/test_focus_watch.c src/platform/focus_watch.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/core/agent_hook.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_text: tests/test_text.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+
+$(BUILDDIR)/test_signs: tests/test_signs.c src/graphics/signs.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_sign_draw: tests/test_sign_draw.c src/graphics/sign_draw.c src/graphics/signs.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+
+$(BUILDDIR)/test_overlay_signs: tests/test_overlay_signs.c src/config/config.c src/platform/overlay_signs.c src/graphics/signs.c src/core/agent_sessions.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/core/agent_hook.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+TEST_BINARIES = $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state
 
 $(BUILDDIR)/test_drag: tests/test_drag.c src/platform/drag.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
@@ -279,10 +302,14 @@ $(BUILDDIR)/test_hyprland: tests/test_hyprland.c src/platform/hyprland.c src/uti
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 .PHONY: test-runtime
-test-runtime: all compositor-test-build
+test-runtime: all compositor-test-build $(BUILDDIR)/test_focus
 	python3 scripts/test_runtime.py
 	python3 scripts/test_hook_client.py
-	python3 scripts/test_drag_runtime.py
+	python3 scripts/test_focus_client.py
+	python3 scripts/test_sign_options.py
+	python3 scripts/test_drag_runtime.py --sign-style fan
+	python3 scripts/test_drag_runtime.py --sign-style post
+	python3 scripts/test_drag_runtime.py --sign-style off
 
 $(BUILDDIR)/test_input: tests/test_input.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=ioctl,--wrap=stat

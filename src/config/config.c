@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "config/config.h"
 
+#include "config/sign_options.h"
 #include "core/bongocat.h"
 #include "utils/error.h"
 
@@ -125,6 +126,8 @@ static void config_validate_timing(config_t *config) {
 }
 
 static void config_validate_appearance(config_t *config) {
+  config_clamp_int(&config->sign_max, 1, 5, "sign_max");
+  config_clamp_int(&config->sign_font_size, 10, 20, "sign_font_size");
   // Validate opacity
   config_clamp_int(&config->overlay_opacity, 0, 255, "overlay_opacity");
 
@@ -309,7 +312,13 @@ static bongocat_error_t
 config_parse_integer_key(config_t *config, const char *key, const char *value) {
   // Identify which field this key maps to (NULL = not an integer key)
   int *target = NULL;
-  if (strcmp(key, "cat_x_offset") == 0) {
+  if (strcmp(key, "sign_max") == 0) {
+    target = &config->sign_max;
+  } else if (strcmp(key, "sign_font_size") == 0) {
+    target = &config->sign_font_size;
+  } else if (strcmp(key, "sign_typing_desk") == 0) {
+    target = &config->sign_typing_desk;
+  } else if (strcmp(key, "cat_x_offset") == 0) {
     target = &config->cat_x_offset;
   } else if (strcmp(key, "cat_y_offset") == 0) {
     target = &config->cat_y_offset;
@@ -366,7 +375,8 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
   }
 
   bool boolean_key =
-      (target == &config->cat_draggable || target == &config->mirror_x ||
+      (target == &config->sign_typing_desk ||
+       target == &config->cat_draggable || target == &config->mirror_x ||
        target == &config->mirror_y || target == &config->enable_antialiasing ||
        target == &config->enable_hand_mapping ||
        target == &config->enable_debug ||
@@ -381,6 +391,8 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
     const char *key;
     int minimum, maximum;
   } ranges[] = {
+      {"sign_max",                1,  5             },
+      {"sign_font_size",          10, 20            },
       {"cat_height",              10, 200           },
       {"overlay_height",          20, 300           },
       {"fps",                     1,  120           },
@@ -407,6 +419,40 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
 
 static bongocat_error_t config_parse_enum_key(config_t *config, const char *key,
                                               const char *value) {
+  const struct {
+    const char *key, *value;
+    int number;
+  } signs[] = {
+      {"sign_style",      "fan",     SIGN_STYLE_FAN    },
+      {"sign_style",      "post",    SIGN_STYLE_POST   },
+      {"sign_style",      "off",     SIGN_STYLE_OFF    },
+      {"sign_idle",       "hover",   SIGN_IDLE_HOVER   },
+      {"sign_idle",       "always",  SIGN_IDLE_ALWAYS  },
+      {"sign_idle",       "never",   SIGN_IDLE_NEVER   },
+      {"sign_animations", "full",    SIGN_ANIM_FULL    },
+      {"sign_animations", "reduced", SIGN_ANIM_REDUCED },
+      {"sign_animations", "off",     SIGN_ANIM_OFF     },
+      {"sign_language",   "auto",    SIGN_LANGUAGE_AUTO},
+      {"sign_language",   "en",      SIGN_LANGUAGE_EN  },
+      {"sign_language",   "zh",      SIGN_LANGUAGE_ZH  },
+      {"sign_done",       "sticky",  SIGN_DONE_STICKY  },
+      {"sign_done",       "timeout", SIGN_DONE_TIMEOUT },
+  };
+  for (size_t i = 0; i < sizeof(signs) / sizeof(signs[0]); i++) {
+    if (strcmp(key, signs[i].key) || strcmp(value, signs[i].value))
+      continue;
+    if (!strcmp(key, "sign_style"))
+      config->sign_style = (sign_style_t)signs[i].number;
+    else if (!strcmp(key, "sign_idle"))
+      config->sign_idle = (sign_idle_t)signs[i].number;
+    else if (!strcmp(key, "sign_animations"))
+      config->sign_animations = (sign_animations_t)signs[i].number;
+    else if (!strcmp(key, "sign_language"))
+      config->sign_language = (sign_language_t)signs[i].number;
+    else
+      config->sign_done = (sign_done_t)signs[i].number;
+    return BONGOCAT_SUCCESS;
+  }
   if (strcmp(key, "layer") == 0) {
     if (strcmp(value, "background") == 0) {
       config->layer = LAYER_BACKGROUND;
@@ -535,7 +581,15 @@ static bongocat_error_t config_parse_monitor_list(config_t *config,
 
 static bongocat_error_t
 config_parse_string_key(config_t *config, const char *key, const char *value) {
-  if (strcmp(key, "monitor") == 0) {
+  if (strcmp(key, "sign_font") == 0) {
+    if (strlen(value) >= sizeof(config->sign_font))
+      return BONGOCAT_ERROR_INVALID_PARAM;
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++)
+      if (*p < 32 || *p == 127)
+        return BONGOCAT_ERROR_INVALID_PARAM;
+    snprintf(config->sign_font, sizeof(config->sign_font), "%s", value);
+    return BONGOCAT_SUCCESS;
+  } else if (strcmp(key, "monitor") == 0) {
     return config_parse_monitor_list(config, value);
   } else if (strcmp(key, "keyboard_name") == 0) {
     return config_expand_array(&config->keyboard_names, &config->num_names,
@@ -870,6 +924,14 @@ static void config_set_defaults(config_t *config) {
       .cat_y_offset = 10,
       .cat_height = 40,
       .cat_draggable = 1,
+      .sign_style = SIGN_STYLE_FAN,
+      .sign_max = 5,
+      .sign_font_size = 13,
+      .sign_idle = SIGN_IDLE_HOVER,
+      .sign_animations = SIGN_ANIM_FULL,
+      .sign_language = SIGN_LANGUAGE_AUTO,
+      .sign_done = SIGN_DONE_STICKY,
+      .sign_typing_desk = 1,
       .overlay_height = 50,
       .idle_frame = 0,
       .agent_done_timeout = DEFAULT_AGENT_DONE_TIMEOUT,
@@ -1061,4 +1123,15 @@ bongocat_error_t load_config_report(config_t *config, const char *path,
   diagnostic_callback = NULL;
   diagnostic_data = NULL;
   return result;
+}
+
+bool config_sign_english(const config_t *config) {
+  if (config->sign_language != SIGN_LANGUAGE_AUTO)
+    return config->sign_language == SIGN_LANGUAGE_EN;
+  const char *locale = getenv("LC_MESSAGES");
+  if (!locale || !*locale)
+    locale = getenv("LANG");
+  return !(locale && !strncmp(locale, "zh", 2) &&
+           (locale[2] == '_' || locale[2] == '.' || locale[2] == '-' ||
+            locale[2] == '@' || locale[2] == '\0'));
 }

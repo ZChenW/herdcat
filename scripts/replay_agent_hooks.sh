@@ -2,11 +2,13 @@
 # Replay against a dedicated running overlay. The supplied PID is stopped at end.
 # Usage: BONGOCAT_BIN=./build/bongocat scripts/replay_agent_hooks.sh \
 #          --config /path/to/test.conf --pid <test-overlay-pid>
+# Optional real niri check: --focus-pid <owned-kitty-child> --focus-window <id>
 set -euo pipefail
 exec python3 - "$@" <<'PY'
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import subprocess
@@ -17,7 +19,11 @@ import time
 parser = argparse.ArgumentParser(description='Replay hooks against an empty test overlay; stops it on success.')
 parser.add_argument('--config', type=Path, required=True)
 parser.add_argument('--pid', type=int, required=True)
+parser.add_argument('--focus-pid', type=int, help='PID inside an owned kitty window')
+parser.add_argument('--focus-window', type=int, help='Expected niri window ID')
 args = parser.parse_args()
+if (args.focus_pid is None) != (args.focus_window is None):
+    parser.error('--focus-pid and --focus-window must be supplied together')
 binary = os.environ.get('BONGOCAT_BIN', 'bongocat')
 env = dict(os.environ)
 env.pop('BONGOCAT_HOOK_DEBUG', None)
@@ -26,8 +32,8 @@ mode = args.config.stat().st_mode & 0o777
 child = None
 stopped = False
 
-def control(name, success=True):
-    result = subprocess.run([binary, '--' + name], env=env, capture_output=True,
+def control(name, success=True, *arguments):
+    result = subprocess.run([binary, '--' + name, *arguments], env=env, capture_output=True,
                             text=True, timeout=3)
     assert (result.returncode == 0) == success, (name, result.stdout, result.stderr)
     return result.stdout.strip()
@@ -54,8 +60,8 @@ def hook(event, session, **fields):
                             capture_output=True, timeout=3)
     assert result.returncode == 0 and not result.stdout and not result.stderr, result
 
-def config(stale):
-    text = original.decode().rstrip() + f'\n[global]\nagent_done_timeout=5\nagent_stale_timeout={stale}\n'
+def config(stale, extra=""):
+    text = original.decode().rstrip() + f'\n[global]\nsign_done=timeout\nagent_done_timeout=5\nagent_stale_timeout={stale}\n' + extra
     replace(text.encode())
     control('reload')
 
@@ -72,10 +78,70 @@ def replace(data):
         if os.path.exists(temp):
             os.unlink(temp)
 
+def wire(request, success=True):
+    runtime = env.get('XDG_RUNTIME_DIR')
+    path = str(Path(runtime) / 'bongocat.sock') if runtime else f'/tmp/bongocat-{os.getuid()}.sock'
+    with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as client:
+        client.settimeout(2)
+        client.connect(path)
+        client.sendall(request.encode())
+        reply = client.recv(512).decode()
+    assert reply.startswith('0 ') == success, (request, reply)
+    return reply
+
+def niri(*arguments):
+    result = subprocess.run(['niri', 'msg', *arguments], env=env,
+                            capture_output=True, text=True, timeout=3, check=True)
+    return result.stdout
+
+names = ['demo-a', '工具', 'same', 'same', 'long-name-abcdefghijklmnop', 'demo-f']
+focus_key = '1111222233334444'
+
 initial = control('status')
 assert f'pid={args.pid} ' in initial and f'config={args.config} ' in initial, initial
 assert 'sessions=0' in initial, 'Use an empty, dedicated overlay; existing sessions are preserved.'
 try:
+    config(600)
+    for i, name in enumerate(names):
+        hook('SessionStart', f'replay-name-{i}', cwd='/synthetic/' + name)
+    lines = control('sessions').splitlines()
+    assert len(lines) == 6 and [line.split(maxsplit=5)[5] for line in lines] == names, lines
+    hook('UserPromptSubmit', 'replay-name-5', cwd='/synthetic/' + names[5])
+    lines = control('sessions').splitlines()
+    assert [line.split(maxsplit=5)[5] for line in lines] == names, lines
+    for style in ('fan', 'post'):
+        config(600, f'sign_style={style}\nsign_language=zh\n')
+        hook('PermissionRequest', 'replay-name-1', cwd='/synthetic/' + names[1])
+        time.sleep(.7)  # Render transitions and populate text/bitmap caches.
+        status('waiting', 6)
+        hook('PostToolUse', 'replay-name-1')
+    control('focus', False, 'eeeeeeeeeeeeeeee')
+    for i in range(6):
+        hook('SessionEnd', f'replay-name-{i}')
+    status('idle', 0)
+    if args.focus_pid is not None:
+        previous = json.loads(niri('-j', 'focused-window'))
+        assert previous and previous['id'] != args.focus_window, 'Start from another window.'
+        wire(f'ev claude start {focus_key} {args.focus_pid}')
+        wire(f'name {focus_key} demo-focus')
+        try:
+            for key in (focus_key, focus_key[:8]):
+                niri('action', 'focus-window', '--id', str(previous['id']))
+                control('focus', True, key)
+                deadline = time.monotonic() + 3
+                while True:
+                    focused = json.loads(niri('-j', 'focused-window'))
+                    if focused and focused['id'] == args.focus_window:
+                        break
+                    assert time.monotonic() < deadline, 'focus request did not reach the kitty window'
+                    time.sleep(.03)
+        finally:
+            wire(f'ev claude end {focus_key} 0')
+            niri('action', 'focus-window', '--id', str(previous['id']))
+        print('PASS: real niri kitty focus with full key and unique prefix.')
+    else:
+        print('NOT RUN: real kitty focus (supply --focus-pid and --focus-window).')
+    print('PASS: six session names/order, both styles, nonexistent focus key.')
     config(600)
     hook('UserPromptSubmit', 'replay-A')
     status('working', 1)
@@ -107,6 +173,11 @@ os.execv('/usr/bin/sleep', ['sleep', '30'])
     while Path(f'/proc/{child.pid}/comm').read_text().strip() != 'sleep':
         assert time.monotonic() < deadline
         time.sleep(.02)
+    # A pidfd tag must have zero upper bits: nonzero bits identify extra fds.
+    infos = [entry.read_text() for entry in Path(f'/proc/{args.pid}/fdinfo').iterdir()]
+    tags = [int(match.group(1), 16) for info in infos
+            for match in re.finditer(r'tfd:.*? data:\s*([0-9a-fA-F]+)', info)]
+    assert child.pid in tags, ('pidfd tag corrupted', child.pid, tags)
     child.terminate()
     child.wait(timeout=3)
     wait_state('idle', 0, 2)
@@ -140,7 +211,12 @@ finally:
         child.wait(timeout=3)
     replace(original)
     if not stopped:
-        for session in ('replay-A', 'replay-B', 'replay-stale', 'replay-process'):
+        try:
+            wire(f'ev claude end {focus_key} 0')
+        except OSError:
+            pass
+        for session in ('replay-A', 'replay-B', 'replay-stale', 'replay-process',
+                        *(f'replay-name-{i}' for i in range(6))):
             hook('SessionEnd', session)
         subprocess.run([binary, '--reload'], env=env, capture_output=True)
 PY

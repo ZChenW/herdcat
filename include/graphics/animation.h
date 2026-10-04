@@ -40,8 +40,11 @@ void animation_overlay_activate(void *opaque, config_t *config);
 void animation_overlay_cache(int width, int height);
 void animation_overlay_destroy(void *opaque);
 int animation_tick(unsigned paws);
+// Invoked when a paw arrives. The hook is not told which key it was.
+void animation_set_key_hook(void (*hook)(void));
 void animation_set_paused(bool value);
 void animation_set_agent_state(agent_state_t state);
+void animation_use_agent_frames(bool enabled);
 agent_state_t animation_get_agent_state(void);
 
 // Compatibility lifecycle entrypoint - must be checked

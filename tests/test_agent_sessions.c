@@ -57,6 +57,8 @@ static void test_priority_and_lifecycle(void) {
   TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_WAITING);
   apply(1, AGENT_EVENT_REST, 0, 4500, 5);
   TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_WAITING);
+  uint64_t seen = 1;
+  agent_sessions_observe_focus(true, &seen, 1);
   apply(1, AGENT_EVENT_DONE, 42, 5000, 5);
   TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_DONE);
   TEST_ASSERT(agent_sessions_next_deadline(600) == 10000);
@@ -110,8 +112,9 @@ static void test_expiration(void) {
   TEST_ASSERT(agent_sessions_pid(1) == 43);
   TEST_ASSERT(agent_sessions_next_deadline(1) == 17000);
   apply(1, AGENT_EVENT_DONE, 0, INT64_MAX - 1, INT_MAX);
-  TEST_ASSERT(agent_sessions_next_deadline(1) == INT64_MAX);
-  TEST_ASSERT(agent_sessions_expire(INT64_MAX, 1));
+  TEST_ASSERT(agent_sessions_next_deadline(1) == 0);
+  TEST_ASSERT(!agent_sessions_expire(INT64_MAX, 1));
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_DONE);
   apply(0, AGENT_EVENT_DONE, 0, 10, 5);
   TEST_ASSERT(agent_sessions_count() == 2);
   apply(0, AGENT_EVENT_END, 0, 11, 5);
@@ -157,8 +160,9 @@ static void test_format(void) {
   apply(0, AGENT_EVENT_START, 0, 1000, 5);
   int n = agent_sessions_format(buffer, sizeof(buffer), 3000);
   TEST_ASSERT(n == (int)strlen(buffer));
-  TEST_ASSERT(strcmp(buffer, "claude 12345678 working 2s pid=42\n"
-                             "claude 00000000 idle 2s pid=-\n") == 0);
+  TEST_ASSERT(strcmp(buffer,
+                     "claude 12345678 working 2s pid=42 claude 1234\n"
+                     "claude 00000000 idle 2s pid=- claude 0000\n") == 0);
   memset(buffer, 'X', sizeof(buffer));
   TEST_ASSERT(agent_sessions_format(buffer, 8, 3000) == 7);
   TEST_ASSERT(buffer[7] == '\0' && buffer[8] == 'X');
@@ -170,11 +174,150 @@ static void test_format(void) {
   TEST_ASSERT(agent_sessions_format(buffer, sizeof(buffer), 0) == 0);
 }
 
+static void test_names_and_selection(void) {
+  agent_sessions_reset();
+  agent_session_view_t all[32], selected[5];
+  for (uint64_t i = 1; i <= 8; i++)
+    apply(i, AGENT_EVENT_START, (pid_t)i, (int64_t)i * 100, 5);
+  TEST_ASSERT(agent_sessions_set_name(99, "unknown") == 0);
+  TEST_ASSERT(agent_sessions_count() == 8);
+  TEST_ASSERT(agent_sessions_set_name(1, "项目 with spaces") == 0);
+  TEST_ASSERT(agent_sessions_set_name(1, "bad\nname") == -1);
+  TEST_ASSERT(agent_sessions_set_name(1, "\xc0\xaf") == -1);
+  TEST_ASSERT(agent_sessions_set_name(
+                  1, "12345678901234567890123456789012345678901") == -1);
+  TEST_ASSERT(agent_sessions_snapshot(all, 32) == 8);
+  TEST_ASSERT(strcmp(all[0].name, "项目 with spaces") == 0);
+  TEST_ASSERT(all[0].created_ms == 100 && all[0].state_since_ms == 100);
+  TEST_ASSERT(agent_sessions_select(all, 8, selected, 5) == 5);
+  for (int i = 0; i < 5; i++)
+    TEST_ASSERT(selected[i].key == (uint64_t)i + 4);
+  apply(1, AGENT_EVENT_WORKING, 1, 900, 5);
+  apply(1, AGENT_EVENT_WORKING, 1, 1000, 5);
+  apply(2, AGENT_EVENT_WAITING, 2, 1100, 5);
+  TEST_ASSERT(agent_sessions_snapshot(all, 32) == 8);
+  TEST_ASSERT(all[0].created_ms == 100 && all[0].state_since_ms == 900);
+  TEST_ASSERT(agent_sessions_select(all, 8, selected, 5) == 5);
+  const uint64_t expected[] = {1, 2, 6, 7, 8};
+  for (int i = 0; i < 5; i++)
+    TEST_ASSERT(selected[i].key == expected[i]);
+  apply(1, AGENT_EVENT_END, 1, 1200, 5);
+  apply(9, AGENT_EVENT_START, 9, 1300, 5);
+  TEST_ASSERT(agent_sessions_snapshot(all, 32) == 8);
+  TEST_ASSERT(all[0].key == 2 && all[7].key == 9);
+  TEST_ASSERT(agent_sessions_snapshot(all, 1) == 1);
+  TEST_ASSERT(agent_sessions_select(all, 1, selected, 5) == 1);
+}
+
+static int unread_of(uint64_t key) {
+  agent_session_view_t view[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(view, AGENT_SESSIONS_MAX);
+  for (int i = 0; i < count; i++) {
+    if (view[i].key == key) {
+      return view[i].unread ? 1 : 0;
+    }
+  }
+  return -1;
+}
+
+static void test_done_reload(void) {
+  agent_sessions_reset();
+  apply(0, AGENT_EVENT_DONE, 0, 1000, 5);
+  apply(1, AGENT_EVENT_DONE, 42, 1000, 5);
+  TEST_ASSERT(unread_of(0) == 1 && unread_of(1) == 1);
+  agent_sessions_configure_done(false, 2000, 2);
+  TEST_ASSERT(unread_of(0) == 0 && unread_of(1) == 0);
+  TEST_ASSERT(agent_sessions_next_deadline(0) == 4000);
+  agent_sessions_configure_done(false, 3000, 2);
+  TEST_ASSERT(agent_sessions_next_deadline(0) == 4000);
+  TEST_ASSERT(agent_sessions_expire(4000, 0));
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_IDLE);
+  agent_sessions_configure_done(true, 5000, 5);
+  apply(0, AGENT_EVENT_DONE, 0, 5000, 5);
+  TEST_ASSERT(unread_of(0) == 1);
+  agent_sessions_configure_done(false, 6000, 0);
+  TEST_ASSERT(unread_of(0) == 0);
+  TEST_ASSERT(agent_sessions_next_deadline(0) == 0);
+  agent_sessions_reset();
+}
+
+static void test_unread(void) {
+  agent_sessions_reset();
+  apply(1, AGENT_EVENT_DONE, 42, 1000, 5);
+  TEST_ASSERT(unread_of(1) == 1);
+  TEST_ASSERT(agent_sessions_next_deadline(1) == 0);
+  TEST_ASSERT(!agent_sessions_expire(INT64_MAX, 1));
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_DONE);
+  char line[128];
+  TEST_ASSERT(agent_sessions_format(line, sizeof(line), 3000) > 0);
+  TEST_ASSERT(strstr(line, " unread\n"));
+  agent_sessions_note_click(1, 2000);
+  TEST_ASSERT(unread_of(1) == 0);
+  TEST_ASSERT(agent_sessions_next_deadline(1) == 7000);
+  TEST_ASSERT(agent_sessions_format(line, sizeof(line), 2000) > 0);
+  TEST_ASSERT(!strstr(line, " unread"));
+  TEST_ASSERT(agent_sessions_expire(7000, 1));
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_IDLE);
+
+  apply(1, AGENT_EVENT_DONE, 42, 8000, 5);
+  apply(1, AGENT_EVENT_WORKING, 42, 8100, 5);
+  TEST_ASSERT(unread_of(1) == 0);
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_WORKING);
+  apply(1, AGENT_EVENT_DONE, 42, 8200, 5);
+  apply(1, AGENT_EVENT_END, 42, 8300, 5);
+  TEST_ASSERT(agent_sessions_count() == 0);
+
+  uint64_t focused[] = {2, 3};
+  agent_sessions_observe_focus(true, focused, 2);
+  apply(2, AGENT_EVENT_DONE, 2, 9000, 4);
+  apply(4, AGENT_EVENT_DONE, 4, 9000, 4);
+  TEST_ASSERT(unread_of(2) == 0);
+  TEST_ASSERT(agent_sessions_next_deadline(1) == 13000);
+  TEST_ASSERT(unread_of(4) == 1);
+  TEST_ASSERT(agent_sessions_expire(13000, 1));
+  TEST_ASSERT(unread_of(4) == 1);
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_DONE);
+  agent_sessions_note_focused(4, 14000, 4);
+  TEST_ASSERT(unread_of(4) == 0);
+  TEST_ASSERT(agent_sessions_next_deadline(1) == 18000);
+
+  agent_sessions_reset();
+  agent_sessions_set_done_sticky(false);
+  apply(1, AGENT_EVENT_DONE, 1, 1000, 5);
+  TEST_ASSERT(unread_of(1) == 0);
+  TEST_ASSERT(agent_sessions_next_deadline(1) == 6000);
+
+  agent_sessions_reset();
+  for (uint64_t i = 1; i <= 6; i++) {
+    apply(i, AGENT_EVENT_START, (pid_t)i, (int64_t)i * 100, 5);
+  }
+  apply(1, AGENT_EVENT_DONE, 1, 50, 5);
+  agent_session_view_t all[8], selected[5];
+  TEST_ASSERT(agent_sessions_snapshot(all, 8) == 6);
+  TEST_ASSERT(agent_sessions_select(all, 6, selected, 5) == 5);
+  bool kept = false;
+  for (int i = 0; i < 5; i++) {
+    kept |= selected[i].key == 1 && selected[i].unread;
+  }
+  TEST_ASSERT(kept);
+  for (uint64_t i = 2; i <= 6; i++) {
+    apply(i, AGENT_EVENT_WORKING, (pid_t)i, 1000 + (int64_t)i, 5);
+  }
+  TEST_ASSERT(agent_sessions_snapshot(all, 8) == 6);
+  TEST_ASSERT(agent_sessions_select(all, 6, selected, 5) == 5);
+  for (int i = 0; i < 5; i++) {
+    TEST_ASSERT(selected[i].key != 1);
+  }
+}
+
 int main(void) {
+  test_done_reload();
   test_events();
   test_priority_and_lifecycle();
   test_expiration();
   test_eviction_and_pids();
   test_format();
+  test_names_and_selection();
+  test_unread();
   return 0;
 }

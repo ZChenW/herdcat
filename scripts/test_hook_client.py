@@ -19,17 +19,19 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
         server.listen(1)
 
         def invoke(payload, expected=None, shell=False):
+            expected = expected if isinstance(expected, list) else [expected] if expected else []
             requests = []
             errors = []
 
             def receive():
                 try:
                     server.settimeout(3)
-                    connection, _ = server.accept()
-                    with connection:
-                        connection.settimeout(3)
-                        requests.append(connection.recv(64).decode())
-                        connection.sendall(b'0 ok')
+                    for _ in expected:
+                        connection, _ = server.accept()
+                        with connection:
+                            connection.settimeout(3)
+                            requests.append(connection.recv(64).decode())
+                            connection.sendall(b'0 ok')
                 except Exception as error:
                     errors.append(str(error))
 
@@ -45,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
             if worker:
                 worker.join(timeout=4)
                 assert not worker.is_alive() and not errors, errors
-                assert requests == [expected], requests
+                assert requests == expected, requests
             else:
                 server.settimeout(0)
                 try:
@@ -62,6 +64,11 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
         expected = f'ev claude working e430d22bdbbe8583 {os.getpid()}'
         invoke(json.dumps(event).encode(), expected)
         invoke(json.dumps(event).encode(), expected, shell=True)
+        for hook, state in [('SessionStart', 'start'), ('UserPromptSubmit', 'working')]:
+            payload = dict(event, hook_event_name=hook, cwd='/tmp/项目 with spaces')
+            invoke(json.dumps(payload).encode(), [
+                f'ev claude {state} e430d22bdbbe8583 {os.getpid()}',
+                'name e430d22bdbbe8583 项目 with spaces'])
         event['tool_input'] = {'content': 'x' * (4 * 1024 * 1024)}
         invoke(json.dumps(event).encode(), expected)
         for payload in (b'', b'{', b'{}', b'{"hook_event_name":"Unknown"}',

@@ -24,10 +24,14 @@
 #include "cursor-shape-v1-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
 #include "graphics/animation.h"
+#include "graphics/sign_draw.h"
+#include "graphics/text.h"
 #include "platform/drag.h"
+#include "platform/focus.h"
 #include "platform/fullscreen.h"
 #include "platform/input.h"
 #include "platform/outputs.h"
+#include "platform/overlay_signs.h"
 #include "platform/scale.h"
 #include "platform/shm_buffer.h"
 #include "viewporter-client-protocol.h"
@@ -81,7 +85,7 @@ typedef struct {
   int width, height, physical_width, physical_height;
   int cat_x, margin_y, output_height;
   bool has_position, accepts_pointer;
-  bool configured, redraw, resize, closed;
+  bool configured, redraw, resize, closed, damage_all;
 } overlay_t;
 static overlay_t overlays[MAX_OUTPUTS];
 static overlay_t *active;
@@ -91,6 +95,7 @@ static bool dragging, drag_moved;
 static double pointer_x, pointer_y, origin_x, origin_y;
 static int origin_cat_x, origin_margin;
 static struct wl_callback *drag_frame;
+static struct wl_callback *sign_frames[MAX_OUTPUTS];
 static void finish_drag(void);
 
 static int cat_width(const overlay_t *overlay) {
@@ -108,19 +113,30 @@ static void clamp_position(overlay_t *overlay) {
              cat_width(overlay), overlay->output_height, overlay->height);
 }
 // Called with this overlay active; input and pixels share one commit.
+static bool overlay_hidden(const overlay_t *overlay) {
+  return hidden || (overlay->config.layer != LAYER_OVERLAY &&
+                    !overlay->config.disable_fullscreen_hide &&
+                    atomic_load(&fullscreen_detected));
+}
 static void update_input_region(overlay_t *overlay, bool invisible) {
   struct wl_region *region = wl_compositor_create_region(compositor);
   overlay->accepts_pointer =
       overlay->configured && overlay->config.cat_draggable && !invisible;
   if (!overlay->accepts_pointer && pointer_overlay == overlay) {
     finish_drag();
+    overlay_signs_leave();
     pointer_overlay = NULL;
   }
   if (overlay->accepts_pointer) {
-    drag_rect_t rect =
-        drag_cat_rect(overlay->cat_x, &overlay->config, cat_width(overlay),
-                      overlay->config.cat_height, overlay->height);
-    wl_region_add(region, rect.x, rect.y, rect.width, rect.height);
+    overlay_signs_rect_t rects[OVERLAY_SIGNS_REGION_LIMIT];
+    int count = overlay_signs_regions(
+        (size_t)(overlay - overlays), &overlay->config, overlay->cat_x,
+        cat_width(overlay), overlay->height, rects, OVERLAY_SIGNS_REGION_LIMIT);
+    for (int i = 0; i < count; i++) {
+      if (rects[i].w > 0 && rects[i].h > 0) {
+        wl_region_add(region, rects[i].x, rects[i].y, rects[i].w, rects[i].h);
+      }
+    }
   }
   wl_surface_set_input_region(overlay->surface, region);
   wl_region_destroy(region);
@@ -195,6 +211,7 @@ static void pointer_enter(void *data, struct wl_pointer *object,
   (void)data;
   (void)object;
   finish_drag();
+  overlay_signs_leave();
   pointer_overlay = NULL;
   pointer_serial = serial;
   pointer_x = wl_fixed_to_double(x);
@@ -203,7 +220,9 @@ static void pointer_enter(void *data, struct wl_pointer *object,
     if (overlays[i].surface == target && overlays[i].accepts_pointer &&
         !hidden) {
       pointer_overlay = &overlays[i];
-      cursor_shape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
+      bool on_sign = overlay_signs_pointer(i, pointer_x, pointer_y);
+      cursor_shape(on_sign ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER
+                           : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
       break;
     }
   }
@@ -215,6 +234,7 @@ static void pointer_leave(void *data, struct wl_pointer *object,
   (void)serial;
   (void)target;
   finish_drag();
+  overlay_signs_leave();
   pointer_overlay = NULL;
 }
 static void pointer_motion(void *data, struct wl_pointer *object, uint32_t time,
@@ -225,6 +245,12 @@ static void pointer_motion(void *data, struct wl_pointer *object, uint32_t time,
   pointer_x = wl_fixed_to_double(x);
   pointer_y = wl_fixed_to_double(y);
   overlay_t *overlay = pointer_overlay;
+  if (overlay && !dragging) {
+    size_t index = (size_t)(overlay - overlays);
+    bool on_sign = overlay_signs_pointer(index, pointer_x, pointer_y);
+    cursor_shape(on_sign ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER
+                         : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
+  }
   if (!dragging || !overlay) {
     return;
   }
@@ -260,9 +286,31 @@ static void pointer_button(void *data, struct wl_pointer *object,
     return;
   }
   if (state == WL_POINTER_BUTTON_STATE_RELEASED) {
+    bool moved = drag_moved;
+    size_t index = 0;
+    pid_t pid = 0;
+    uint64_t key = 0;
+    bool click = overlay_signs_release(moved, &index, &pid, &key);
     finish_drag();
+    if (click && index < MAX_OUTPUTS) {
+      if (focus_session_window(pid) < 0) {
+        overlay_signs_fail(index, key, overlay_signs_now());
+      } else {
+        overlay_signs_arm_focus(index, key);
+      }
+      overlays[index].redraw = true;
+    }
+    if (pointer_overlay) {
+      size_t hover = (size_t)(pointer_overlay - overlays);
+      bool on_sign = overlay_signs_pointer(hover, pointer_x, pointer_y);
+      cursor_shape(on_sign ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER
+                           : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
+    }
   } else if (pointer_overlay && pointer_overlay->accepts_pointer && !hidden) {
     finish_drag();
+    bool on_sign = overlay_signs_press((size_t)(pointer_overlay - overlays));
+    cursor_shape(on_sign ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER
+                         : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
     dragging = true;
     origin_x = pointer_x;
     origin_y = pointer_y;
@@ -320,6 +368,7 @@ static void setup_cursor(void) {
 }
 static void release_pointer(void) {
   finish_drag();
+  overlay_signs_leave();
   pointer_overlay = NULL;
   if (cursor_device) {
     wp_cursor_shape_device_v1_destroy(cursor_device);
@@ -386,6 +435,120 @@ static int clamp_offset(int64_t value) {
   }
   return (int)value;
 }
+static void sign_frame_done(void *data, struct wl_callback *callback,
+                            uint32_t time) {
+  (void)time;
+  overlay_t *overlay = data;
+  size_t index = (size_t)(overlay - overlays);
+  wl_callback_destroy(callback);
+  if (index < MAX_OUTPUTS && sign_frames[index] == callback) {
+    sign_frames[index] = NULL;
+  }
+  overlay->redraw = true;
+}
+static const struct wl_callback_listener SIGN_FRAME_LISTENER = {
+    .done = sign_frame_done};
+static void arm_sign_frame(overlay_t *overlay) {
+  size_t index = (size_t)(overlay - overlays);
+  if (index >= MAX_OUTPUTS || sign_frames[index]) {
+    return;
+  }
+  struct wl_callback *callback = wl_surface_frame(overlay->surface);
+  if (!callback) {
+    return;
+  }
+  sign_frames[index] = callback;
+  wl_callback_add_listener(callback, &SIGN_FRAME_LISTENER, overlay);
+}
+static void fill_bar(overlay_t *overlay, uint8_t *pixels) {
+  const config_t *config = &overlay->config;
+  int bar = config->overlay_height;
+  if (bar <= 0 || overlay->height <= 0 || overlay->physical_width <= 0 ||
+      overlay->physical_height <= 0 || config->overlay_opacity <= 0) {
+    return;
+  }
+  if (bar > overlay->height) {
+    bar = overlay->height;
+  }
+  int y = config->overlay_position == POSITION_TOP ? 0 : overlay->height - bar;
+  int py = scale_offset_120(y, overlay->scale);
+  int ph = scale_size_120(bar, overlay->scale);
+  if (py < 0) {
+    ph += py;
+    py = 0;
+  }
+  if (ph <= 0 || py >= overlay->physical_height) {
+    return;
+  }
+  if (py > overlay->physical_height - ph) {
+    ph = overlay->physical_height - py;
+  }
+  uint32_t color = (uint32_t)config->overlay_opacity << 24;
+  uint32_t *dest = (uint32_t *)pixels;
+  int stride = overlay->physical_width;
+  for (int row = py; row < py + ph; row++) {
+    uint32_t *line = dest + (size_t)row * (size_t)stride;
+    for (int col = 0; col < stride; col++) {
+      line[col] = color;
+    }
+  }
+}
+static void damage_box(overlay_t *overlay, int x, int y, int w, int h) {
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (y < 0) {
+    h += y;
+    y = 0;
+  }
+  if (w <= 0 || h <= 0 || x >= overlay->width || y >= overlay->height) {
+    return;
+  }
+  if (x > overlay->width - w) {
+    w = overlay->width - x;
+  }
+  if (y > overlay->height - h) {
+    h = overlay->height - y;
+  }
+  int px = scale_offset_120(x, overlay->scale);
+  int py = scale_offset_120(y, overlay->scale);
+  int pw = scale_size_120(w, overlay->scale);
+  int ph = scale_size_120(h, overlay->scale);
+  if (px < 0) {
+    pw += px;
+    px = 0;
+  }
+  if (py < 0) {
+    ph += py;
+    py = 0;
+  }
+  if (pw <= 0 || ph <= 0 || px >= overlay->physical_width ||
+      py >= overlay->physical_height) {
+    return;
+  }
+  if (px > overlay->physical_width - pw) {
+    pw = overlay->physical_width - px;
+  }
+  if (py > overlay->physical_height - ph) {
+    ph = overlay->physical_height - py;
+  }
+  wl_surface_damage_buffer(overlay->surface, px, py, pw, ph);
+}
+static void damage_surface(overlay_t *overlay, bool invisible) {
+  size_t index = (size_t)(overlay - overlays);
+  overlay_signs_step_t last = overlay_signs_last(index);
+  bool full = invisible || overlay->damage_all || last.damage_full ||
+              last.damage_w <= 0 || last.damage_h <= 0;
+  overlay->damage_all = false;
+  if (full) {
+    wl_surface_damage_buffer(overlay->surface, 0, 0, overlay->physical_width,
+                             overlay->physical_height);
+    return;
+  }
+  damage_box(overlay, last.damage_x, last.damage_y, last.damage_w,
+             last.damage_h);
+}
 void draw_bar(void) {
   overlay_t *overlay = active;
   if (!overlay || !overlay->configured || overlay->resize) {
@@ -403,31 +566,39 @@ void draw_bar(void) {
     return;
   }
   config_t *config = &overlay->config;
-  bool invisible = (hidden || (config->layer != LAYER_OVERLAY &&
-                               !config->disable_fullscreen_hide &&
-                               atomic_load(&fullscreen_detected))) != 0;
+  bool invisible = overlay_hidden(overlay);
+  size_t index = (size_t)(overlay - overlays);
+  const sign_frame_t *signs = overlay_signs_frame(index);
   memset(buffer->pixels, 0, buffer->size);
   if (!invisible) {
-    uint32_t *pixels = (uint32_t *)buffer->pixels;
-    for (size_t i = 0; i < buffer->size / 4; i++) {
-      pixels[i] = (uint32_t)config->overlay_opacity << 24;
+    fill_bar(overlay, buffer->pixels);
+    if (signs) {
+      sign_draw(buffer->pixels, overlay->physical_width,
+                overlay->physical_height, (int)overlay->scale, signs,
+                SIGN_DRAW_UNDER);
     }
     cached_frame_t *frame = &anim_cached_frames[anim_index];
     int64_t x = scale_offset_120(overlay->cat_x, overlay->scale);
-    int64_t logical_y = ((int64_t)overlay->height - config->cat_height) / 2 +
-                        config->cat_y_offset;
-    int64_t y = scale_offset_120(clamp_offset(logical_y), overlay->scale);
+    int logical_y = overlay_signs_cat_y(config, overlay->height);
+    int64_t y = scale_offset_120(logical_y, overlay->scale);
     if (frame->data) {
       blit_cached_frame(buffer->pixels, overlay->physical_width,
                         overlay->physical_height, frame->data, frame->width,
                         frame->height, clamp_offset(x), clamp_offset(y));
     }
+    if (signs) {
+      sign_draw(buffer->pixels, overlay->physical_width,
+                overlay->physical_height, (int)overlay->scale, signs,
+                SIGN_DRAW_OVER);
+    }
   }
   update_input_region(overlay, invisible);
   buffer->busy = true;
   wl_surface_attach(overlay->surface, buffer->object, 0, 0);
-  wl_surface_damage_buffer(overlay->surface, 0, 0, overlay->physical_width,
-                           overlay->physical_height);
+  damage_surface(overlay, invisible);
+  if (!invisible && overlay_signs_last(index).frame) {
+    arm_sign_frame(overlay);
+  }
   wl_surface_commit(overlay->surface);
   overlay->redraw = false;
 }
@@ -462,8 +633,14 @@ void wayland_set_hidden(bool value) {
   wayland_request_redraw();
 }
 static void teardown(overlay_t *overlay) {
+  size_t index = (size_t)(overlay - overlays);
+  if (index < MAX_OUTPUTS && sign_frames[index]) {
+    wl_callback_destroy(sign_frames[index]);
+    sign_frames[index] = NULL;
+  }
   if (pointer_overlay == overlay) {
     finish_drag();
+    overlay_signs_leave();
     pointer_overlay = NULL;
   }
   if (overlay->layer) {
@@ -498,7 +675,7 @@ static void configure(void *data, struct zwlr_layer_surface_v1 *layer,
     return;
   }
   int w = width ? (int)width : overlay->config.screen_width;
-  int h = height ? (int)height : overlay->config.overlay_height;
+  int h = height ? (int)height : overlay_signs_height(&overlay->config);
   if (overlay->width != w || overlay->height != h) {
     overlay->width = w;
     overlay->height = h;
@@ -550,8 +727,7 @@ static void properties(overlay_t *overlay) {
                 : ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
   zwlr_layer_surface_v1_set_anchor(overlay->layer, anchor);
   set_margin(overlay);
-  zwlr_layer_surface_v1_set_size(overlay->layer, 0,
-                                 overlay->config.overlay_height);
+  zwlr_layer_surface_v1_set_size(overlay->layer, 0, (uint32_t)overlay->height);
   zwlr_layer_surface_v1_set_exclusive_zone(overlay->layer, -1);
   zwlr_layer_surface_v1_set_keyboard_interactivity(overlay->layer, 0);
 }
@@ -566,7 +742,7 @@ static bool create(overlay_t *overlay, output_ref_t *ref) {
                        : 120;
   overlay->output_height = ref->screen_height;
   overlay->width = ref->screen_width;
-  overlay->height = overlay->config.overlay_height;
+  overlay->height = overlay_signs_height(&overlay->config);
   int position =
       drag_position_load(overlay->name, &overlay->cat_x, &overlay->margin_y);
   overlay->has_position = position == 0;
@@ -646,8 +822,9 @@ static void reconcile(void) {
       create(overlay, ref);
       continue;
     }
+    int total = overlay_signs_height(&effective);
     bool size_changed =
-        (effective.overlay_height != overlay->config.overlay_height ||
+        (total != overlay->height ||
          effective.screen_width != overlay->config.screen_width) != 0;
     overlay->config = effective;
     if (!overlay->fractional) {
@@ -661,12 +838,13 @@ static void reconcile(void) {
     }
     if (size_changed) {
       overlay->width = effective.screen_width;
-      overlay->height = effective.overlay_height;
+      overlay->height = total;
       overlay->resize = true;
     }
     overlay->output_height = ref->screen_height;
     clamp_position(overlay);
     properties(overlay);
+    overlay->damage_all = true;
     overlay->redraw = true;
     wl_surface_commit(overlay->surface);
   }
@@ -700,6 +878,7 @@ static bool resize_buffers(overlay_t *overlay) {
     }
   }
   overlay->resize = false;
+  overlay->damage_all = true;
   return true;
 }
 static void global(void *data, struct wl_registry *object, uint32_t id,
@@ -825,6 +1004,9 @@ int wayland_list_monitors(bool doctor) {
 }
 bongocat_error_t wayland_init(config_t *config) {
   global_config = config;
+  if (text_init(config->sign_font) != 0) {
+    bongocat_log_warning("Sign text unavailable; boards will omit labels");
+  }
   if (discover() < 0 || !compositor || !shm || !layer_shell) {
     bongocat_log_error(
         "Wayland requires wl_compositor v4, wl_shm and layer-shell");
@@ -867,6 +1049,7 @@ bongocat_error_t wayland_run(const volatile sig_atomic_t *running) {
     input_process_events();
     unsigned paws =
         !flush_blocked && pending_paws ? atomic_exchange(pending_paws, 0) : 0;
+    int64_t sign_now = overlay_signs_now();
     int timeout = -1;
     for (size_t i = 0; !flush_blocked && i < MAX_OUTPUTS; i++) {
       overlay_t *overlay = &overlays[i];
@@ -891,6 +1074,17 @@ bongocat_error_t wayland_run(const volatile sig_atomic_t *running) {
       int next = animation_tick(paws);
       if (next >= 0 && (timeout < 0 || next < timeout)) {
         timeout = next;
+      }
+      bool concealed = overlay_hidden(overlay) || !overlay->configured;
+      overlay_signs_step_t sign_step = overlay_signs_step(
+          i, &overlay->config, overlay->cat_x, cat_width(overlay),
+          overlay->height, concealed, sign_now);
+      if (sign_step.redraw) {
+        overlay->redraw = true;
+      }
+      if (sign_step.timeout_ms > 0 &&
+          (timeout < 0 || sign_step.timeout_ms < timeout)) {
+        timeout = sign_step.timeout_ms;
       }
       if (overlay->redraw) {
         draw_bar();
@@ -987,6 +1181,9 @@ void wayland_cleanup(void) {
   if (display) {
     wl_display_disconnect(display);
   }
+  overlay_signs_cleanup();
+  sign_draw_cleanup();
+  text_cleanup();
   display = NULL;
   registry = NULL;
   compositor = NULL;

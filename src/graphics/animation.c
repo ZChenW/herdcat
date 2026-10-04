@@ -46,6 +46,7 @@ static NSVGrasterizer *anim_rasterizer;
 static config_t *current_config;
 // Global timing remains valid even when the active output is removed.
 static agent_state_t agent_state = AGENT_STATE_IDLE;
+static bool agent_frames = true;
 static bool paused;
 static unsigned reset_generation;
 static uint32_t random_state = 1;
@@ -168,7 +169,7 @@ static void anim_select_frame(animation_state_t *state,
   } else if (left_live || right_live) {
     new_frame =
         frame_from_paw_state(left_live, right_live, current_config->idle_frame);
-  } else if (agent_state != AGENT_STATE_IDLE) {
+  } else if (agent_frames && agent_state != AGENT_STATE_IDLE) {
     new_frame = agent_state_frame(agent_state);
   } else if (current_config->idle_sleep_timeout_sec > 0 &&
              state->last_key_pressed_timestamp > 0 &&
@@ -272,6 +273,11 @@ void animation_overlay_destroy(void *opaque) {
   free(ctx);
 }
 
+static void (*on_key)(void);
+
+void animation_set_key_hook(void (*hook)(void)) {
+  on_key = hook;
+}
 int animation_tick(unsigned paws) {
   int64_t now = anim_get_current_time_us();
   animation_overlay_t *ctx = active_animation;
@@ -299,6 +305,8 @@ int animation_tick(unsigned paws) {
     anim_update_state(&ctx->state);
   }
   pending_paws = saved;
+  if (paws && !paused && on_key)
+    on_key();
   ctx->index = anim_index;
   int64_t deadline = 0;
   if (ctx->last_drawn != anim_index) {
@@ -351,6 +359,12 @@ void animation_set_agent_state(agent_state_t state) {
     return;
   }
   agent_state = state;
+  wayland_request_redraw();
+}
+void animation_use_agent_frames(bool enabled) {
+  if (agent_frames == enabled)
+    return;
+  agent_frames = enabled;
   wayland_request_redraw();
 }
 
@@ -585,6 +599,7 @@ bongocat_error_t animation_init(config_t *config) {
 
   current_config = config;
   agent_state = AGENT_STATE_IDLE;
+  agent_frames = true;
   bongocat_log_info("Initializing animation system");
 
   // Parse embedded SVG assets
@@ -616,6 +631,8 @@ bongocat_error_t animation_start(void) {
 
 void animation_cleanup(void) {
   agent_state = AGENT_STATE_IDLE;
+  agent_frames = true;
+  on_key = NULL;
   // Cleanup cached frames
   animation_invalidate_cache();
 

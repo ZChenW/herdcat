@@ -20,6 +20,8 @@ pkgs.mkShellNoCC {
   ];
   buildInputs = with pkgs; [
     wayland
+    freetype
+    fontconfig
     wayland-protocols
   ];
   shellHook = ''

@@ -78,7 +78,7 @@ enable_hand_mapping=1
 # When triggered, displays a dedicated sleeping animation frame
 idle_sleep_timeout=0
 
-# Seconds the "done" agent state stays visible before returning to idle
+# Seconds a seen completion stays visible (or every done with sign_done=timeout)
 # (0 = stay until another event for that session; valid range 0..3600)
 agent_done_timeout=5
 
@@ -132,3 +132,14 @@ enable_debug=0
 # mirror_x=1
 # disable_fullscreen_hide=1
 # [global]
+
+# Session signs (global settings; reload with -w or --reload).
+sign_style=fan           # fan | post | off (off uses whole-cat agent artwork)
+sign_max=5               # 1..5 displayed sessions
+sign_idle=hover          # hover | always | never
+sign_font=               # Fontconfig family; empty selects system sans-serif
+sign_font_size=13        # 10..20; metadata and desk text scale proportionally
+sign_animations=full     # full | reduced (transitions only) | off
+sign_language=auto       # auto (LC_MESSAGES, then LANG) | en | zh
+sign_done=sticky         # sticky (unread stays up) | timeout
+sign_typing_desk=1        # 0 disables the focused-session typing desk

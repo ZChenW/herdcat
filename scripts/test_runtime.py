@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
                WAYLAND_DISPLAY="wayland-test")
     config = root / "cat.conf"
     config.write_text("monitor=TEST-1,TEST-2\noverlay_opacity=0\nfps=1\n"
-                      "agent_done_timeout=1\ntest_animation_interval=1\n[monitor:TEST-2]\ncat_height=60\n"
+                      "sign_done=timeout\nagent_done_timeout=1\ntest_animation_interval=1\n[monitor:TEST-2]\ncat_height=60\n"
                       "[global]\ncat_height=40\n")
     compositor_log = (root / "compositor.log").open("w+")
     app_log = (root / "app.log").open("w+")
@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
         with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
             control.settimeout(2)
             control.connect(str(root / "bongocat.sock"))
-            control.sendall(request.encode())
+            control.sendall(request.encode() if isinstance(request, str) else request)
             response = control.recv(512).decode()
         assert response.startswith("0 ") == success, (request, response)
         return response
@@ -81,6 +81,13 @@ with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
         wire("ev claude waiting aaaaaaaaaaaaaaaa 0")
         wire("ev codex working bbbbbbbbbbbbbbbb 0")
         wire("ev codex working bbbbbbbbbbbbbbbb 0")
+        wire("name aaaaaaaaaaaaaaaa 项目 with spaces")
+        assert "项目 with spaces" in command("sessions")
+        wire("name eeeeeeeeeeeeeeee unknown")
+        for request in ("name aaaaaaaaaaaaaaaa ", "name aaaaaaaaaaaaaaa name",
+                        "name aaaaaaaaaaaaaaaag name", "name aaaaaaaaaaaaaaaa " + "x" * 42,
+                        b"name aaaaaaaaaaaaaaaa bad\xff", "name aaaaaaaaaaaaaaaa bad\nname"):
+            wire(request, success=False)
         assert "agent=waiting sessions=2" in command("status")
         wire("ev claude done aaaaaaaaaaaaaaaa 0")
         assert "agent=done" in command("status")

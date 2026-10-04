@@ -5,8 +5,8 @@ pkgdesc='Wayland Bongo Cat with session-aware agent status and persistent draggi
 arch=('x86_64' 'aarch64')
 url='https://github.com/ZChenW/wayland-bongocat'
 license=('MIT')
-depends=('glibc' 'wayland')
-makedepends=('git' 'gcc' 'make')
+depends=('glibc' 'wayland' 'freetype2' 'fontconfig')
+makedepends=('git' 'gcc' 'make' 'pkgconf')
 provides=('bongocat')
 conflicts=('bongocat')
 source=('wayland-bongocat::git+https://github.com/ZChenW/wayland-bongocat.git#branch=feature/agent-state')

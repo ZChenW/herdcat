@@ -1,4 +1,4 @@
-.TH BONGOCAT 1 "July 2026" "v2.0.2" "User Commands"
+.TH BONGOCAT 1 "July 2026" "v2.0.2-agent" "User Commands"
 .SH NAME
 bongocat \- Bongo Cat Wayland Overlay
 .SH SYNOPSIS
@@ -85,10 +85,10 @@ Show the configured idle frame and discard input, or resume with pending paw act
 Reload configuration or query the running application through a same-UID authenticated Unix socket. Failures return nonzero. Controls never rewrite configuration files; visibility and pause state reset on restart.
 .TP
 .BI --state " NAME"
-Set the manual session to idle, working, waiting or done. Idle removes the manual session. Other sessions resolve by priority: waiting > done > working > idle. Each done session expires after agent_done_timeout seconds. Scheduled sleep and held paws take priority over agent artwork; agent artwork takes priority over idle sleep. Pause suppresses the artwork while deadlines continue. --status includes agent=NAME and sessions=N.
+Set the manual session to idle, working, waiting or done. Idle removes the manual session. Other sessions resolve by priority: waiting > done > working > idle. Seen done sessions expire after agent_done_timeout seconds; sign_done=sticky preserves unread completions. Scheduled sleep and held paws take priority over agent artwork; agent artwork takes priority over idle sleep. Pause suppresses the artwork while deadlines continue. --status includes agent=NAME and sessions=N.
 .TP
 .B --sessions
-List up to 32 tracked sessions: agent, session key prefix, state, age in seconds and process ID. The response is limited to 480 bytes and may be truncated. Process exit removes all sessions associated with that process. A full table evicts the oldest idle session first, otherwise the oldest session.
+List up to 32 tracked sessions: agent, session key prefix, state, age in seconds, process ID, name and an unread marker. The response is limited to 480 bytes and may be truncated. Process exit removes all sessions associated with that process. A full table evicts the oldest idle session first, otherwise the oldest session.
 .TP
 .BI --hook " AGENT"
 Read a lifecycle JSON event from stdin for an agent named with 1 to 8 lowercase ASCII letters (such as claude or codex). Streams input using fixed storage and a two-second timeout. Stdout remains empty; malformed JSON, unknown events and an absent overlay quietly return success. Invalid arguments return nonzero. BONGOCAT_HOOK_DEBUG=1 prints the outgoing event to stderr.
@@ -110,3 +110,56 @@ agent_stale_timeout sets the inactivity limit for working sessions (default 600,
 cat_draggable is a boolean (default 1). Hold the left button on the cat to drag; motion under four logical pixels leaves its position unchanged. The cat's bounding rectangle intercepts clicks while the remaining bar is click-through. Set cat_draggable=0 for complete click-through. Hidden and fullscreen-hidden cats intercept no clicks. Pause does not disable dragging.
 .PP
 Each output saves its own logical x and vertical margin on release to ${XDG_STATE_HOME:-$HOME/.local/state}/bongocat/position (directory mode 0700, file mode 0600). Writes are atomic and symbolic links are rejected. Saved positions override cat_align and cat_x_offset, survive restart and reload, and are clamped when output dimensions change. overlay_position chooses the margin's anchor edge; cat_y_offset still applies within the bar. Use --reset-position to restore configured positions. Cross-output dragging is not supported. Cursor grab/grabbing shapes are optional; --doctor reports cursor-shape support.
+
+.SH SESSION SIGNS
+All sign options are global and apply on reload. The cat keeps its typing and
+sleep frames when signs are enabled. Click a sign to focus its terminal on niri;
+drag from a sign to move the cat. Labels use the last directory component from
+the hook's cwd, falling back to the agent and a short session key.
+.TP
+.B sign_style=fan|post|off
+Default fan: raised plates with individual hover labels. Post: a pole with
+boards that expand together on hover. Off restores whole-cat state artwork,
+original surface height and cat-only input region.
+.TP
+.B sign_max=1..5
+Maximum displayed signs (default 5); active sessions take precedence, while
+selected sessions retain creation order.
+.TP
+.B sign_idle=hover|always|never
+Show idle signs on hover (default), always, or never, even on hover.
+.TP
+.B sign_font
+Fontconfig family, up to 127 bytes; empty uses system sans-serif and fallback.
+.TP
+.B sign_font_size=10..20
+Name size in design pixels (default 13). Metadata and desk text scale
+proportionally; all sizes also scale with cat_height and output scale.
+.TP
+.B sign_animations=full|reduced|off
+Full (default) includes loops; reduced keeps transitions only; off switches
+instantly. Reduced and off keep the desk caret lit. Visible working-duration
+labels still update once a minute.
+.TP
+.B sign_language=auto|en|zh
+Default auto selects simplified Chinese for a zh locale, otherwise English.
+Uses nonempty LC_MESSAGES before LANG; an unset locale selects English.
+.TP
+.B sign_done=sticky|timeout
+Default sticky preserves unread completion, with a dot and Unread label.
+Focusing the window or clicking starts agent_done_timeout; a new submission
+clears unread and starts working. Timeout applies the timer to every completion.
+Switching to timeout also starts timers for existing unread completions.
+This policy also applies with sign_style=off.
+.TP
+.B sign_typing_desk=0|1
+Default 1. Typing in the focused agent terminal retracts its sign and puts a
+name board under the paws. It leaves after 2.5 seconds without input, on focus
+loss, submission or hiding. It receives no pointer input. No keystroke content
+is read or recorded for this feature.
+.PP
+Focus tracking and terminal jumps require niri. Without its event stream,
+sticky completions are unread until clicked or submitted again, and the desk
+is disabled. Text requires FreeType and Fontconfig; ligatures, right-to-left
+shaping and combining marks are unsupported. Shared terminal processes and tmux
+cannot reliably identify a specific window or pane.

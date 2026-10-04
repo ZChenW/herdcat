@@ -8,18 +8,34 @@
 #include <sys/pidfd.h>
 #include <unistd.h>
 
+#define EXTRA_WATCHES 4
+
 typedef struct {
   pid_t pid;
   int fd;
 } process_watch_t;
+typedef struct {
+  int fd;
+  uint32_t token;
+} extra_watch_t;
 
 static int epoll_fd = -1;
 static process_watch_t watches[AGENT_SESSIONS_MAX];
+static extra_watch_t extras[EXTRA_WATCHES];
+static void (*extra_ready)(uint32_t token);
+
+static void clear_extras(void) {
+  for (int i = 0; i < EXTRA_WATCHES; i++) {
+    extras[i].fd = -1;
+    extras[i].token = 0;
+  }
+}
 
 int agent_watch_init(void) {
   if (epoll_fd >= 0) {
     return 0;
   }
+  clear_extras();
   epoll_fd = epoll_create1(EPOLL_CLOEXEC);
   return epoll_fd >= 0 ? 0 : -1;
 }
@@ -31,6 +47,8 @@ void agent_watch_cleanup(void) {
       watches[i] = (process_watch_t){0};
     }
   }
+  clear_extras();
+  extra_ready = NULL;
   if (epoll_fd >= 0) {
     close(epoll_fd);
     epoll_fd = -1;
@@ -63,7 +81,8 @@ int agent_watch_add(pid_t pid) {
   if (fd < 0) {
     return -1;
   }
-  struct epoll_event event = {.events = EPOLLIN, .data.u32 = (uint32_t)pid};
+  // The upper half distinguishes extra fds; initialize the entire union.
+  struct epoll_event event = {.events = EPOLLIN, .data.u64 = (uint64_t)pid};
   if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event) < 0) {
     int saved = errno;
     close(fd);
@@ -88,17 +107,69 @@ void agent_watch_remove(pid_t pid) {
   }
 }
 
+int agent_watch_listen(int fd, uint32_t token, uint32_t events) {
+  if (epoll_fd < 0 || fd < 0) {
+    errno = EINVAL;
+    return -1;
+  }
+  int slot = -1;
+  for (int i = 0; i < EXTRA_WATCHES; i++) {
+    if (extras[i].fd == fd) {
+      return 0;
+    }
+    if (extras[i].fd < 0 && slot < 0) {
+      slot = i;
+    }
+  }
+  if (slot < 0) {
+    errno = ENOSPC;
+    return -1;
+  }
+  struct epoll_event event = {.events = events,
+                              .data.u64 = (1ULL << 32) | token};
+  if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event) < 0) {
+    return -1;
+  }
+  extras[slot] = (extra_watch_t){.fd = fd, .token = token};
+  return 0;
+}
+
+void agent_watch_unlisten(int fd) {
+  if (epoll_fd < 0 || fd < 0) {
+    return;
+  }
+  for (int i = 0; i < EXTRA_WATCHES; i++) {
+    if (extras[i].fd == fd) {
+      epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+      extras[i].fd = -1;
+      extras[i].token = 0;
+      return;
+    }
+  }
+}
+
+void agent_watch_on_ready(void (*ready)(uint32_t token)) {
+  extra_ready = ready;
+}
+
 void agent_watch_process(void (*exited)(pid_t pid)) {
   if (epoll_fd < 0) {
     return;
   }
-  struct epoll_event ready[AGENT_SESSIONS_MAX];
+  struct epoll_event ready[AGENT_SESSIONS_MAX + EXTRA_WATCHES];
   int count;
   do {
-    count = epoll_wait(epoll_fd, ready, AGENT_SESSIONS_MAX, 0);
+    count = epoll_wait(epoll_fd, ready, AGENT_SESSIONS_MAX + EXTRA_WATCHES, 0);
   } while (count < 0 && errno == EINTR);
   for (int i = 0; i < count; i++) {
-    pid_t pid = (pid_t)ready[i].data.u32;
+    uint64_t tag = ready[i].data.u64;
+    if (tag >> 32) {
+      if (extra_ready) {
+        extra_ready((uint32_t)tag);
+      }
+      continue;
+    }
+    pid_t pid = (pid_t)tag;
     agent_watch_remove(pid);
     if (exited) {
       exited(pid);

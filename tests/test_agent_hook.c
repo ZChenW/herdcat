@@ -199,7 +199,45 @@ static void test_stat_and_agent(void) {
   TEST_ASSERT(agent_hook_parse_stat("42 (bash) S 1", comm, 2, &parent) == -1);
 }
 
+static void test_cwd(void) {
+  const char *inputs[] = {"{\"cwd\":\"/tmp/项目 with spaces/\"}",
+                          "{\"cwd\":\"/tmp/\\u9879\\u76ee with spaces\"}",
+                          "{\"cwd\":\"/tmp/pro\\nject\\t\"}",
+                          "{\"cwd\":\"/tmp/猫猫猫猫猫猫猫猫猫猫猫猫猫猫\"}",
+                          "{\"cwd\":\"/tmp/\\ud83d\\ude00\"}",
+                          "{\"cwd\":\"relative\"}",
+                          "{\"cwd\":\"/\"}",
+                          "{\"x\":{\"cwd\":\"/tmp/wrong\"}}",
+                          "{\"cwd\":false}"};
+  const char *expected[] = {"项目 with spaces",
+                            "项目 with spaces",
+                            "project",
+                            "猫猫猫猫猫猫猫猫猫猫猫猫猫",
+                            "😀",
+                            NULL,
+                            NULL,
+                            NULL,
+                            NULL};
+  for (size_t i = 0; i < sizeof(inputs) / sizeof(inputs[0]); i++) {
+    for (size_t chunk = 1; chunk <= 256; chunk *= 2) {
+      agent_hook_scanner_t scanner = scan(inputs[i], chunk, true);
+      char name[41];
+      TEST_ASSERT(agent_hook_name(&scanner, name) == (expected[i] != NULL));
+      if (expected[i])
+        TEST_ASSERT(strcmp(name, expected[i]) == 0);
+    }
+  }
+  char json[300];
+  memset(json, 'x', sizeof(json));
+  memcpy(json, "{\"cwd\":\"/", 9);
+  memcpy(json + 290, "\"}", 3);
+  agent_hook_scanner_t scanner = scan(json, 1, true);
+  char name[41];
+  TEST_ASSERT(!agent_hook_name(&scanner, name));
+}
+
 int main(void) {
+  test_cwd();
   test_mapping();
   test_invalid_json();
   test_hash_and_large_payload();

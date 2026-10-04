@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise pointer events, regions and persisted positions on two outputs."""
+import argparse
 import os
 from pathlib import Path
 import subprocess
@@ -8,6 +9,12 @@ import time
 
 binary = str(Path('build/bongocat').resolve())
 fixture = str(Path('build/compositor/server').resolve())
+parser = argparse.ArgumentParser()
+parser.add_argument('--sign-style', choices=('fan', 'post', 'off'), default='fan')
+style = parser.parse_args().sign_style
+# A 40px cat in a 50px bar has enough desk space already.
+clearance = {'fan': 38, 'post': 60, 'off': 0}[style]
+max_margin = 600 - (50 + clearance)
 
 
 def wait_for(condition):
@@ -27,6 +34,7 @@ with tempfile.TemporaryDirectory(prefix='bongocat-drag-runtime-') as directory:
     base = ('monitor=TEST-1,TEST-2\noverlay_opacity=0\noverlay_position=bottom\n'
             'disable_fullscreen_hide=1\ncat_x_offset=0\ncat_y_offset=0\n'
             '[monitor:TEST-2]\noverlay_position=top\n[global]\n')
+    base += f'sign_style={style}\n'
     config.write_text(base)
     position = root / 'bongocat/position'
     server_log = root / 'server.log'
@@ -106,7 +114,9 @@ with tempfile.TemporaryDirectory(prefix='bongocat-drag-runtime-') as directory:
         send('capabilities')
         time.sleep(.1)
         send('drag TEST-1 10000 -10000')
-        wait_for(lambda: records()['TEST-1'] == (728, 550))
+        wait_for(lambda: records()['TEST-1'] == (728, max_margin))
+        send('out TEST-1')
+        time.sleep(.7)  # Close the hover pad before reading the cat rectangle.
         send('step')  # Fractional scale and smaller TEST-1.
         wait_for(lambda: regions()['TEST-1'][0] == 568)
         send('step')  # Remove TEST-2.
@@ -123,7 +133,7 @@ with tempfile.TemporaryDirectory(prefix='bongocat-drag-runtime-') as directory:
         assert app.wait(timeout=3) == 0
         assert 'ERROR: AddressSanitizer' not in app_log.read_text()
         assert 'runtime error:' not in app_log.read_text()
-        print('Drag regions, both anchors, per-output persistence, reset, '
+        print(style + ': drag regions, both anchors, per-output persistence, reset, '
               'clamping, scale, reconnect and pointer loss passed.')
     except Exception:
         print(server_log.read_text()[-7000:])

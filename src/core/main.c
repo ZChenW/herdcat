@@ -1,14 +1,20 @@
 #define _GNU_SOURCE
 #include "config/config.h"
+#include "config/sign_options.h"
 #include "core/agent_hook.h"
 #include "core/agent_sessions.h"
 #include "core/agent_state.h"
 #include "core/bongocat.h"
 #include "core/control.h"
 #include "graphics/animation.h"
+#include "graphics/sign_draw.h"
+#include "graphics/text.h"
 #include "platform/agent_watch.h"
+#include "platform/focus.h"
+#include "platform/focus_watch.h"
 #include "platform/hyprland.h"
 #include "platform/input.h"
+#include "platform/overlay_signs.h"
 #include "platform/wayland.h"
 #include "utils/error.h"
 
@@ -96,6 +102,10 @@ static bongocat_error_t force_monitor(config_t *settings) {
   settings->num_output_names = 0;
   return BONGOCAT_SUCCESS;
 }
+static void sign_policy(void) {
+  agent_sessions_configure_done(config.sign_done == SIGN_DONE_STICKY,
+                                monotonic_ms(), config.agent_done_timeout);
+}
 static int reload(void) {
   config_t next = {0};
   bongocat_error_t result = load_config_strict(&next, config_path);
@@ -116,6 +126,12 @@ static int reload(void) {
                      config.num_names)) != 0;
   config_t old = config;
   config = next;
+  sign_policy();
+  if (strcmp(old.sign_font, config.sign_font)) {
+    sign_draw_cleanup();
+    if (text_init(config.sign_font) != 0)
+      bongocat_log_warning("Sign text unavailable; boards will omit labels");
+  }
   wayland_update_config(&config);
   if (input_changed) {
     result = input_restart_monitoring(config.keyboard_devices,
@@ -139,6 +155,7 @@ static void agent_refresh(void) {
   if (state != animation_get_agent_state()) {
     animation_set_agent_state(state);
   }
+  animation_use_agent_frames(config.sign_style == SIGN_STYLE_OFF);
 }
 
 static bool has_pid(const pid_t *pids, int count, pid_t pid) {
@@ -158,6 +175,8 @@ static int agent_apply(uint64_t key, const char *agent, agent_event_t event,
                            config.agent_done_timeout, NULL) < 0) {
     return 1;
   }
+  if (event == AGENT_EVENT_WORKING)
+    overlay_signs_note_working(key);
   int after_count = agent_sessions_pids(after, AGENT_SESSIONS_MAX);
   for (int i = 0; i < before_count; i++) {
     if (!has_pid(after, after_count, before[i])) {
@@ -193,6 +212,28 @@ static int agent_command(const char *request) {
     return 1;
   }
   return agent_apply(key, agent, event, (pid_t)pid);
+}
+
+static int focus_command(const char *key) {
+  size_t length = strlen(key);
+  if ((length != 8 && length != 16) ||
+      strspn(key, "0123456789abcdefABCDEF") != length)
+    return 1;
+  uint64_t requested = strtoull(key, NULL, 16);
+  agent_session_view_t sessions[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(sessions, AGENT_SESSIONS_MAX);
+  pid_t pid = 0;
+  bool found = false;
+  for (int i = 0; i < count; i++) {
+    uint64_t candidate = length == 8 ? sessions[i].key >> 32 : sessions[i].key;
+    if (candidate != requested)
+      continue;
+    if (found)
+      return 1;
+    found = true;
+    pid = sessions[i].pid;
+  }
+  return !found || focus_session_window(pid) < 0;
 }
 
 static int command(const char *request, char *response, size_t capacity) {
@@ -231,6 +272,18 @@ static int command(const char *request, char *response, size_t capacity) {
     }
   } else if (strncmp(request, "ev ", 3) == 0) {
     result = agent_command(request);
+  } else if (strncmp(request, "name ", 5) == 0) {
+    char key[17];
+    int end = 0;
+    if (strlen(request) > 63 ||
+        sscanf(request + 5, "%16[0-9a-fA-F]%n", key, &end) != 1 || end != 16 ||
+        request[21] != ' ' || !strtoull(key, NULL, 16))
+      result = 1;
+    else
+      result =
+          agent_sessions_set_name(strtoull(key, NULL, 16), request + 22) < 0;
+  } else if (strncmp(request, "focus ", 6) == 0) {
+    result = focus_command(request + 6);
   } else if (strcmp(request, "sessions") == 0) {
     if (agent_sessions_format(response, capacity, monotonic_ms()) == 0) {
       snprintf(response, capacity, "No agent sessions");
@@ -252,14 +305,35 @@ static int command(const char *request, char *response, size_t capacity) {
   snprintf(response, capacity, "%s", result ? "request failed" : "ok");
   return result;
 }
+static void note_window_focus(void) {
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  uint64_t keys[AGENT_SESSIONS_MAX];
+  int focused =
+      focus_watch_focused_keys(views, (size_t)count, keys, AGENT_SESSIONS_MAX);
+  bool watching = focus_watch_available();
+  agent_sessions_observe_focus(watching, keys, (size_t)focused);
+  uint64_t newest = 0;
+  if (watching)
+    newest = focus_watch_focused_session(views, (size_t)count);
+  overlay_signs_sync_focus(newest);
+  int64_t now = monotonic_ms();
+  for (int i = 0; i < focused; i++) {
+    agent_sessions_note_focused(keys[i], now, config.agent_done_timeout);
+  }
+}
 static void tick(void) {
   hypr_poll();
+  focus_poll();
+  overlay_signs_note_focus(focus_take_result(), monotonic_ms());
   config_watcher_process(&watcher);
   if (reload_pending) {
     reload_pending = false;
     reload();
   }
   agent_watch_process(agent_sessions_remove_pid);
+  focus_watch_poll();
+  note_window_focus();
   agent_sessions_expire(monotonic_ms(), config.agent_stale_timeout);
   agent_refresh();
   control_process(command);
@@ -275,8 +349,13 @@ static void tick(void) {
   }
 }
 static int runtime_timeout(void) {
-  int candidates[] = {config_watcher_timeout(&watcher), control_timeout(),
-                      hypr_timeout(), -1, -1};
+  int candidates[] = {config_watcher_timeout(&watcher),
+                      control_timeout(),
+                      hypr_timeout(),
+                      -1,
+                      -1,
+                      focus_timeout(),
+                      focus_watch_timeout()};
   if (!input_child_is_alive()) {
     int64_t remaining = input_retry_at - monotonic_ms();
     candidates[3] = remaining > 0 ? (int)remaining : 0;
@@ -298,8 +377,10 @@ static int runtime_timeout(void) {
 }
 static int runtime_fds(int *fds, size_t capacity) {
   size_t count = 0;
-  int basic[] = {signal_fd, input_get_wake_fd(), watcher.inotify_fd,
-                 hypr_poll_fd(), agent_watch_fd()};
+  // Six basics plus the control socket fill the seven external poll slots.
+  // The niri event stream is registered on agent_watch's epoll, not here.
+  int basic[] = {signal_fd,      input_get_wake_fd(), watcher.inotify_fd,
+                 hypr_poll_fd(), agent_watch_fd(),    focus_poll_fd()};
   for (size_t i = 0; i < sizeof(basic) / sizeof(basic[0]) && count < capacity;
        i++) {
     if (basic[i] >= 0) {
@@ -317,6 +398,8 @@ static void help(const char *program) {
       "  -t, --toggle         Start or stop the running application\n"
       "  --hide, --show       Control visibility of every overlay\n"
       "  --pause, --resume    Display idle frame or resume input animation\n"
+      "  --focus KEY          Focus a session terminal (full key or unique "
+      "prefix)\n"
       "  --state NAME         Set manual state: idle, working, waiting, done\n"
       "  --sessions           List tracked agent sessions\n"
       "  --reset-position     Restore configured positions on every output\n"
@@ -348,6 +431,8 @@ static int run_application(bool watch, bongocat_error_t result) {
   if (agent_watch_init() < 0) {
     bongocat_log_warning("Agent process watches unavailable; using timeouts");
   }
+  sign_policy();
+  focus_watch_init();
   if (watch && config_watcher_init(&watcher, config_path, changed) == 0) {
     config_watcher_start(&watcher);
   }
@@ -355,6 +440,7 @@ static int run_application(bool watch, bongocat_error_t result) {
   if (result != BONGOCAT_SUCCESS) {
     goto cleanup;
   }
+  animation_set_key_hook(overlay_signs_note_key);
   result = wayland_init(&config);
   if (result != BONGOCAT_SUCCESS) {
     goto cleanup;
@@ -376,9 +462,11 @@ static int run_application(bool watch, bongocat_error_t result) {
 cleanup:
   config_watcher_cleanup(&watcher);
   hypr_cleanup();
+  focus_cleanup();
   input_cleanup();
   wayland_cleanup();
   animation_cleanup();
+  focus_watch_cleanup();
   agent_watch_cleanup();
   agent_sessions_reset();
   control_cleanup();
@@ -441,7 +529,7 @@ int main(int argc, char **argv) {
         return 1;
       }
       hook_agent = argv[i];
-    } else if (!strcmp(arg, "--state")) {
+    } else if (!strcmp(arg, "--state") || !strcmp(arg, "--focus")) {
       if (request || hook_agent) {
         fprintf(stderr, "Select one control command\n");
         return 1;
@@ -454,7 +542,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Unknown agent state\n");
         return 1;
       }
-      snprintf(state_request, sizeof(state_request), "state %s", argv[i]);
+      snprintf(state_request, sizeof(state_request), "%s %s", arg + 2, argv[i]);
       request = state_request;
     } else if (!strcmp(arg, "--watch-config") || !strcmp(arg, "-w")) {
       watch = true;
@@ -515,6 +603,7 @@ int main(int argc, char **argv) {
            result == BONGOCAT_SUCCESS ? "valid" : "invalid");
     int failure = result != BONGOCAT_SUCCESS;
     if (doctor) {
+      printf("focus=%s\n", focus_available() ? "niri" : "none");
       failure |= input_list_devices();
       failure |= wayland_list_monitors(true);
     }

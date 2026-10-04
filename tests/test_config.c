@@ -400,6 +400,116 @@ static void test_drag_config(void) {
   unlink(path);
 }
 
+static void test_sign_config(void) {
+  char path[] = "/tmp/bongocat-sign-config-XXXXXX";
+  int fd = mkstemp(path);
+  TEST_ASSERT(fd >= 0, "temporary sign config");
+  close(fd);
+  config_t config = {0};
+  write_temp_config(path, "");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+                 "sign defaults load");
+  TEST_ASSERT(config.sign_style == SIGN_STYLE_FAN && config.sign_max == 5 &&
+                  config.sign_idle == SIGN_IDLE_HOVER && !config.sign_font[0] &&
+                  config.sign_font_size == 13 &&
+                  config.sign_animations == SIGN_ANIM_FULL &&
+                  config.sign_language == SIGN_LANGUAGE_AUTO &&
+                  config.sign_done == SIGN_DONE_STICKY &&
+                  config.sign_typing_desk,
+              "all nine sign defaults");
+  config_cleanup_full(&config);
+  const char *valid[] = {
+      "sign_style=fan",       "sign_style=post",
+      "sign_style=off",       "sign_idle=hover",
+      "sign_idle=always",     "sign_idle=never",
+      "sign_animations=full", "sign_animations=reduced",
+      "sign_animations=off",  "sign_language=auto",
+      "sign_language=en",     "sign_language=zh",
+      "sign_done=sticky",     "sign_done=timeout",
+      "sign_typing_desk=0",   "sign_typing_desk=1",
+      "sign_font=",           "sign_font=Noto Sans",
+  };
+  for (size_t i = 0; i < sizeof(valid) / sizeof(valid[0]); i++) {
+    write_temp_config(path, valid[i]);
+    TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+                   "every sign enum and font value loads");
+    config_cleanup_full(&config);
+  }
+  for (int max = 1; max <= 5; max++) {
+    for (int size = 10; size <= 20; size++) {
+      char line[64];
+      snprintf(line, sizeof(line), "sign_max=%d\nsign_font_size=%d\n", max,
+               size);
+      write_temp_config(path, line);
+      TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+                     "all numeric sign values load");
+      TEST_ASSERT(config.sign_max == max && config.sign_font_size == size,
+                  "numeric sign values preserved");
+      config_cleanup_full(&config);
+    }
+  }
+  const char *invalid[] = {
+      "sign_style=unknown",
+      "sign_idle=unknown",
+      "sign_animations=unknown",
+      "sign_language=unknown",
+      "sign_done=unknown",
+      "sign_typing_desk=2",
+      "sign_typing_desk=-1",
+      "sign_max=0",
+      "sign_max=6",
+      "sign_max=1x",
+      "sign_font_size=9",
+      "sign_font_size=21",
+      "sign_font_size=13.5",
+      "[monitor:TEST-1]\nsign_style=post",
+      "sign_font=bad\tfont",
+  };
+  for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+    write_temp_config(path, invalid[i]);
+    TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+                   "invalid sign values rejected");
+    config_cleanup_full(&config);
+  }
+  char long_font[160] = "sign_font=";
+  memset(long_font + 10, 'a', 128);
+  long_font[138] = '\0';
+  write_temp_config(path, long_font);
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+                 "overlong font rejected without truncating");
+  config_cleanup_full(&config);
+  char *lang = getenv("LANG") ? strdup(getenv("LANG")) : NULL;
+  char *messages = getenv("LC_MESSAGES") ? strdup(getenv("LC_MESSAGES")) : NULL;
+  config.sign_language = SIGN_LANGUAGE_AUTO;
+  setenv("LANG", "zh_CN.UTF-8", 1);
+  unsetenv("LC_MESSAGES");
+  TEST_ASSERT(!config_sign_english(&config), "auto uses Chinese LANG");
+  setenv("LC_MESSAGES", "en_US.UTF-8", 1);
+  TEST_ASSERT(config_sign_english(&config), "LC_MESSAGES precedes LANG");
+  setenv("LC_MESSAGES", "zh_TW.UTF-8", 1);
+  TEST_ASSERT(!config_sign_english(&config), "Chinese locale uses zh table");
+  setenv("LC_MESSAGES", "", 1);
+  TEST_ASSERT(!config_sign_english(&config),
+              "empty messages falls back to LANG");
+  unsetenv("LANG");
+  TEST_ASSERT(config_sign_english(&config), "absent locale uses English");
+  config.sign_language = SIGN_LANGUAGE_ZH;
+  TEST_ASSERT(!config_sign_english(&config), "explicit zh overrides locale");
+  config.sign_language = SIGN_LANGUAGE_EN;
+  TEST_ASSERT(config_sign_english(&config), "explicit en overrides locale");
+  if (lang)
+    setenv("LANG", lang, 1);
+  else
+    unsetenv("LANG");
+  if (messages)
+    setenv("LC_MESSAGES", messages, 1);
+  else
+    unsetenv("LC_MESSAGES");
+  free(lang);
+  free(messages);
+  unlink(path);
+}
+
 int main(void) {
   bongocat_error_init(0);  // Suppress debug output
   printf("=== Config Parser Tests ===\n");
@@ -414,6 +524,7 @@ int main(void) {
   test_comments_and_whitespace();
   test_agent_config();
   test_drag_config();
+  test_sign_config();
 
   printf("\nResults: %d passed, %d failed\n", tests_passed, tests_failed);
   return tests_failed > 0 ? 1 : 0;

@@ -559,6 +559,15 @@ static int fixture_command(int fd, uint32_t mask, void *data) {
   assert(bytes > 0);
   if (!strncmp(line, "step", 4)) {
     step(NULL);
+  } else if (sscanf(line, "out %31s", name) == 1) {
+    for (size_t i = 0; i < 2; i++) {
+      struct test_surface *surface = monitors[i].surface;
+      if (!strcmp(name, monitors[i].name) && surface && test_pointer) {
+        wl_pointer_send_leave(test_pointer, wl_display_next_serial(server),
+                              surface->resource);
+        wl_pointer_send_frame(test_pointer);
+      }
+    }
   } else if (!strncmp(line, "capabilities", 12)) {
     wl_seat_send_capabilities(test_seat, WL_SEAT_CAPABILITY_POINTER);
   } else if (sscanf(line, "%31s %31s %d %d", action, name, &dx, &dy) == 4) {

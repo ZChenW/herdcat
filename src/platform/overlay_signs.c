@@ -1,0 +1,484 @@
+#define _POSIX_C_SOURCE 200809L
+#include "platform/overlay_signs.h"
+
+#include "config/sign_options.h"
+#include "core/agent_sessions.h"
+#include "platform/drag.h"
+#include "platform/focus_watch.h"
+
+#include <limits.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+
+#define CLOSE_MS 150
+
+typedef struct {
+  int x, y, w, h;
+  bool valid;
+} box_t;
+typedef struct {
+  signs_t model;
+  sign_style_t style;
+  sign_frame_t frame;
+  overlay_signs_step_t last;
+  box_t prev;
+  bool has_frame, has_prev, presented, was_invisible;
+  bool has_hover;
+  uint64_t hover_key;
+} lane_t;
+
+static lane_t lanes[MAX_OUTPUTS];
+static bool expanded[MAX_OUTPUTS];
+static bool closing[MAX_OUTPUTS];
+static int64_t close_at[MAX_OUTPUTS];
+static bool tracking, holding, pressed, focus_armed;
+static size_t track_index, hold_index, focus_index;
+static double pointer_x, pointer_y;
+static uint64_t pressed_key, focus_key;
+static pid_t pressed_pid;
+static bool desk_on;
+static uint64_t desk_key;
+static char desk_name[48];
+static int64_t desk_key_ms;
+static double published_lift;
+
+static int desk_hang(int cat_height) {
+  if (cat_height <= 0)
+    return 0;
+  return (cat_height * 4 + 109) / 110;
+}
+
+static int clamp_int(int64_t value) {
+  if (value < INT_MIN)
+    return INT_MIN;
+  if (value > INT_MAX)
+    return INT_MAX;
+  return (int)value;
+}
+int overlay_signs_height(const config_t *config) {
+  if (!config || config->overlay_height <= 0)
+    return 0;
+  if (config->sign_style == SIGN_STYLE_OFF)
+    return config->overlay_height;
+  int extra = sign_clearance(config->sign_style, config->cat_height);
+  int spare = config->overlay_height > config->cat_height
+                  ? config->overlay_height - config->cat_height
+                  : 0;
+  int hang = desk_hang(config->cat_height);
+  if (hang > spare)
+    extra += hang - spare;
+  if (extra < 0 || config->overlay_height > INT_MAX - extra)
+    return INT_MAX;
+  return config->overlay_height + extra;
+}
+static int resting_cat_y(const config_t *config, int surface_height) {
+  if (!config || surface_height <= 0)
+    return 0;
+  if (config->sign_style == SIGN_STYLE_OFF) {
+    return drag_cat_rect(0, config, 0, config->cat_height, surface_height).y;
+  }
+  int cat = config->cat_height > 0 ? config->cat_height : 0;
+  int limit = surface_height > cat ? surface_height - cat : 0;
+  int64_t y = (int64_t)surface_height - cat - desk_hang(cat);
+  // A positive offset would push the pole base below the surface.
+  if (config->cat_y_offset < 0)
+    y += config->cat_y_offset;
+  if (y < 0)
+    return 0;
+  if (y > limit)
+    return limit;
+  return (int)y;
+}
+int overlay_signs_cat_y(const config_t *config, int surface_height) {
+  int y = resting_cat_y(config, surface_height) - (int)published_lift;
+  return y > 0 ? y : 0;
+}
+int64_t overlay_signs_now(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+static bool inside(int x, int y, int w, int h, double px, double py) {
+  return w > 0 && h > 0 && px >= x && py >= y && px < x + (double)w &&
+         py < y + (double)h;
+}
+static bool top_hit(const sign_frame_t *frame, double x, double y,
+                    sign_hit_t *hit) {
+  // Fan plates overlap, so the nearest plate centre wins, not the last drawn.
+  bool found = false;
+  double best = 0;
+  for (int i = 0; i < frame->hit_count; i++) {
+    const sign_hit_t *candidate = &frame->hits[i];
+    if (!inside(candidate->x, candidate->y, candidate->w, candidate->h, x, y))
+      continue;
+    double dx = x - (candidate->x + candidate->w / 2.0);
+    double dy = y - (candidate->y + candidate->h / 2.0);
+    double distance = dx * dx + dy * dy;
+    if (!found || distance < best) {
+      found = true;
+      best = distance;
+      *hit = *candidate;
+    }
+  }
+  return found;
+}
+static void track_expanded(size_t index, int cat_x, int cat_y, int cat_w,
+                           int cat_h, int64_t now_ms) {
+  bool here = tracking && track_index == index;
+  bool held = holding && hold_index == index;
+  const sign_frame_t *frame =
+      lanes[index].has_frame ? &lanes[index].frame : NULL;
+  sign_hit_t hit = {0};
+  bool over_hit = here && frame && top_hit(frame, pointer_x, pointer_y, &hit);
+  bool over_cat =
+      here && inside(cat_x, cat_y, cat_w, cat_h, pointer_x, pointer_y);
+  bool over_pad = here && expanded[index] && frame && frame->has_pad &&
+                  inside(frame->pad.x, frame->pad.y, frame->pad.w, frame->pad.h,
+                         pointer_x, pointer_y);
+  if (held || over_cat || over_hit || over_pad) {
+    expanded[index] = true;
+    closing[index] = false;
+  } else if (expanded[index]) {
+    if (!closing[index]) {
+      closing[index] = true;
+      close_at[index] = now_ms + CLOSE_MS;
+    }
+    if (now_ms >= close_at[index]) {
+      expanded[index] = false;
+      closing[index] = false;
+    }
+  } else {
+    closing[index] = false;
+  }
+  // Grab coordinates stay at the press surface, so hover must not follow them.
+  if (!held) {
+    lanes[index].has_hover = over_hit;
+    lanes[index].hover_key = over_hit ? hit.key : 0;
+  }
+}
+static void build_frame(size_t index, const config_t *config, int cat_x,
+                        int cat_y, int64_t now_ms, bool snap,
+                        sign_frame_t *frame) {
+  agent_session_view_t all[AGENT_SESSIONS_MAX];
+  agent_session_view_t shown[SIGN_MAX_VISIBLE];
+  int count = agent_sessions_snapshot(all, AGENT_SESSIONS_MAX);
+  int selected = count > 0 ? agent_sessions_select(all, (size_t)count, shown,
+                                                   (size_t)config->sign_max)
+                           : 0;
+  sign_input_t input = {
+      .sessions = shown,
+      .count = selected > 0 ? (size_t)selected : 0,
+      .style = config->sign_style,
+      .animations = config->sign_animations,
+      .idle = config->sign_idle,
+      .font_size = config->sign_font_size,
+      .english = config_sign_english(config),
+      .open = expanded[index],
+      .has_hover = lanes[index].has_hover,
+      .has_pressed = holding && pressed && hold_index == index,
+      .hover_key = lanes[index].hover_key,
+      .pressed_key = pressed_key,
+      .now_ms = now_ms,
+      .cat_x = cat_x,
+      .cat_y = cat_y,
+      .cat_height = config->cat_height,
+      .typing = desk_on,
+      .desk_snap = snap,
+      .typing_key = desk_key,
+      .typing_until = desk_on ? desk_key_ms + 2500 : 0,
+  };
+  snprintf(input.desk_name, sizeof(input.desk_name), "%s", desk_name);
+  signs_frame(&lanes[index].model, &input, frame);
+}
+static bool same_ink(const sign_frame_t *a, const sign_frame_t *b) {
+  if (a->shape_count != b->shape_count || a->text_count != b->text_count ||
+      a->hit_count != b->hit_count || a->bounds_x != b->bounds_x ||
+      a->bounds_y != b->bounds_y || a->bounds_w != b->bounds_w ||
+      a->bounds_h != b->bounds_h)
+    return false;
+  if (a->shape_count && memcmp(a->shapes, b->shapes,
+                               (size_t)a->shape_count * sizeof(sign_shape_t)))
+    return false;
+  if (a->text_count &&
+      memcmp(a->texts, b->texts, (size_t)a->text_count * sizeof(sign_text_t)))
+    return false;
+  if (a->hit_count &&
+      memcmp(a->hits, b->hits, (size_t)a->hit_count * sizeof(sign_hit_t)))
+    return false;
+  return true;
+}
+static box_t box_make(int x, int y, int w, int h) {
+  return (box_t){.x = x, .y = y, .w = w, .h = h, .valid = w > 0 && h > 0};
+}
+static box_t unite(box_t a, box_t b) {
+  if (!a.valid)
+    return b;
+  if (!b.valid)
+    return a;
+  int64_t left = a.x < b.x ? a.x : b.x;
+  int64_t top = a.y < b.y ? a.y : b.y;
+  int64_t right = (int64_t)a.x + a.w;
+  int64_t other = (int64_t)b.x + b.w;
+  if (other > right)
+    right = other;
+  int64_t bottom = (int64_t)a.y + a.h;
+  other = (int64_t)b.y + b.h;
+  if (other > bottom)
+    bottom = other;
+  box_t box = {.x = clamp_int(left),
+               .y = clamp_int(top),
+               .w = clamp_int(right - left),
+               .h = clamp_int(bottom - top),
+               .valid = true};
+  if (box.w <= 0 || box.h <= 0)
+    box.valid = false;
+  return box;
+}
+static box_t covered(const sign_frame_t *frame, int cat_x, int cat_y, int cat_w,
+                     int cat_h) {
+  box_t ink = {0};
+  if (frame->bounds_w > 0 && frame->bounds_h > 0)
+    ink = box_make(frame->bounds_x, frame->bounds_y, frame->bounds_w,
+                   frame->bounds_h);
+  return unite(ink, box_make(cat_x, cat_y, cat_w, cat_h));
+}
+static int milliseconds_until(int64_t when, int64_t now) {
+  int64_t delta = when - now;
+  if (delta < 1)
+    return 1;
+  if (delta > INT_MAX)
+    return INT_MAX;
+  return (int)delta;
+}
+overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
+                                        int cat_x, int cat_w, int surface_h,
+                                        bool invisible, int64_t now_ms) {
+  overlay_signs_step_t out = {.timeout_ms = -1};
+  if (index >= MAX_OUTPUTS || !config)
+    return out;
+  lane_t *lane = &lanes[index];
+  if (lane->style != config->sign_style) {
+    memset(&lane->model, 0, sizeof(lane->model));
+    lane->style = config->sign_style;
+  }
+  int cat_h = config->cat_height > 0 ? config->cat_height : 0;
+  if (desk_on &&
+      (invisible || !config->sign_typing_desk ||
+       config->sign_style == SIGN_STYLE_OFF || now_ms - desk_key_ms >= 2500))
+    desk_on = false;
+  int rest = resting_cat_y(config, surface_h);
+  int cat_y = rest - (lane->has_frame ? (int)lane->frame.cat_lift : 0);
+  if (cat_y < 0)
+    cat_y = 0;
+  track_expanded(index, cat_x, cat_y, cat_w, cat_h, now_ms);
+  sign_frame_t next;
+  build_frame(index, config, cat_x, rest, now_ms, invisible, &next);
+  bool changed = !lane->has_frame || !same_ink(&lane->frame, &next);
+  lane->frame = next;
+  lane->has_frame = true;
+  published_lift = next.cat_lift;
+  int drawn = rest - (int)next.cat_lift;
+  if (drawn < 0)
+    drawn = 0;
+  if (invisible) {
+    lane->was_invisible = true;
+    lane->last = out;
+    return out;
+  }
+  bool full = !lane->presented || lane->was_invisible;
+  lane->was_invisible = false;
+  lane->presented = true;
+  box_t current = covered(&lane->frame, cat_x, drawn, cat_w, cat_h);
+  box_t damage = lane->has_prev ? unite(lane->prev, current) : current;
+  bool full_rate = lane->frame.animating && lane->frame.next_frame_ms == 0;
+  bool due = lane->frame.animating && lane->frame.next_frame_ms > 0 &&
+             lane->frame.next_frame_ms <= now_ms;
+  out.redraw = changed || full || full_rate || due;
+  out.frame = full_rate || due;
+  out.damage_full = full;
+  if (damage.valid) {
+    out.damage_x = damage.x;
+    out.damage_y = damage.y;
+    out.damage_w = damage.w;
+    out.damage_h = damage.h;
+  }
+  if (out.redraw) {
+    lane->prev = current;
+    lane->has_prev = current.valid;
+  }
+  if (!out.frame && lane->frame.animating && lane->frame.next_frame_ms > now_ms)
+    out.timeout_ms = milliseconds_until(lane->frame.next_frame_ms, now_ms);
+  if (closing[index] && close_at[index] > now_ms) {
+    int wait = milliseconds_until(close_at[index], now_ms);
+    if (out.timeout_ms < 0 || wait < out.timeout_ms)
+      out.timeout_ms = wait;
+  }
+  lane->last = out;
+  return out;
+}
+overlay_signs_step_t overlay_signs_last(size_t index) {
+  if (index >= MAX_OUTPUTS)
+    return (overlay_signs_step_t){.timeout_ms = -1};
+  return lanes[index].last;
+}
+const sign_frame_t *overlay_signs_frame(size_t index) {
+  if (index >= MAX_OUTPUTS || !lanes[index].has_frame)
+    return NULL;
+  published_lift = lanes[index].frame.cat_lift;
+  return &lanes[index].frame;
+}
+int overlay_signs_regions(size_t index, const config_t *config, int cat_x,
+                          int cat_w, int surface_h, overlay_signs_rect_t *out,
+                          int capacity) {
+  if (!config || !out || capacity <= 0 || index >= MAX_OUTPUTS)
+    return 0;
+  if (config->sign_style == SIGN_STYLE_OFF) {
+    drag_rect_t cat =
+        drag_cat_rect(cat_x, config, cat_w, config->cat_height, surface_h);
+    if (cat.width <= 0 || cat.height <= 0)
+      return 0;
+    out[0] = (overlay_signs_rect_t){cat.x, cat.y, cat.width, cat.height};
+    return 1;
+  }
+  int count = 0;
+  int cat_h = config->cat_height > 0 ? config->cat_height : 0;
+  if (lanes[index].has_frame)
+    published_lift = lanes[index].frame.cat_lift;
+  int cat_y = overlay_signs_cat_y(config, surface_h);
+  if (count < capacity && cat_w > 0 && cat_h > 0)
+    out[count++] = (overlay_signs_rect_t){cat_x, cat_y, cat_w, cat_h};
+  const sign_frame_t *frame = overlay_signs_frame(index);
+  if (!frame)
+    return count;
+  for (int i = 0; i < frame->hit_count && count < capacity; i++) {
+    if (frame->hits[i].w <= 0 || frame->hits[i].h <= 0)
+      continue;
+    out[count++] = (overlay_signs_rect_t){frame->hits[i].x, frame->hits[i].y,
+                                          frame->hits[i].w, frame->hits[i].h};
+  }
+  if (expanded[index] && frame->has_pad && frame->pad.w > 0 &&
+      frame->pad.h > 0 && count < capacity) {
+    out[count++] = (overlay_signs_rect_t){frame->pad.x, frame->pad.y,
+                                          frame->pad.w, frame->pad.h};
+  }
+  return count;
+}
+bool overlay_signs_pointer(size_t index, double x, double y) {
+  if (index >= MAX_OUTPUTS)
+    return false;
+  tracking = true;
+  track_index = index;
+  pointer_x = x;
+  pointer_y = y;
+  sign_hit_t hit;
+  return lanes[index].has_frame && top_hit(&lanes[index].frame, x, y, &hit);
+}
+void overlay_signs_leave(void) {
+  tracking = false;
+  holding = false;
+  pressed = false;
+}
+bool overlay_signs_press(size_t index) {
+  if (index >= MAX_OUTPUTS)
+    return false;
+  holding = true;
+  hold_index = index;
+  pressed = false;
+  expanded[index] = true;
+  closing[index] = false;
+  sign_hit_t hit;
+  if (tracking && track_index == index && lanes[index].has_frame &&
+      top_hit(&lanes[index].frame, pointer_x, pointer_y, &hit)) {
+    pressed = true;
+    pressed_key = hit.key;
+    pressed_pid = hit.pid;
+    lanes[index].has_hover = true;
+    lanes[index].hover_key = hit.key;
+    return true;
+  }
+  lanes[index].has_hover = false;
+  return false;
+}
+bool overlay_signs_release(bool dragged, size_t *index, pid_t *pid,
+                           uint64_t *key) {
+  bool click = !dragged && pressed;
+  if (click) {
+    if (index)
+      *index = hold_index;
+    if (pid)
+      *pid = pressed_pid;
+    if (key)
+      *key = pressed_key;
+    agent_sessions_note_click(pressed_key, overlay_signs_now());
+  }
+  pressed = false;
+  holding = false;
+  return click;
+}
+void overlay_signs_note_key(void) {
+  if (!focus_watch_available())
+    return;
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  uint64_t key = focus_watch_focused_session(views, (size_t)count);
+  overlay_signs_type_at(key, overlay_signs_now());
+}
+void overlay_signs_type_at(uint64_t key, int64_t now_ms) {
+  if (!key || now_ms < 0)
+    return;
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  const char *name = NULL;
+  for (int i = 0; i < count; i++) {
+    if (views[i].key == key)
+      name = views[i].name;
+  }
+  if (!name)
+    return;
+  if (!desk_on || desk_key != key)
+    snprintf(desk_name, sizeof(desk_name), "%s", name);
+  desk_on = true;
+  desk_key = key;
+  desk_key_ms = now_ms;
+}
+void overlay_signs_note_working(uint64_t key) {
+  if (desk_on && desk_key == key)
+    desk_on = false;
+}
+void overlay_signs_sync_focus(uint64_t key) {
+  if (desk_on && desk_key != key)
+    desk_on = false;
+}
+void overlay_signs_fail(size_t index, uint64_t key, int64_t now_ms) {
+  if (index >= MAX_OUTPUTS)
+    return;
+  signs_focus_failed(&lanes[index].model, key, now_ms);
+}
+void overlay_signs_arm_focus(size_t index, uint64_t key) {
+  if (index >= MAX_OUTPUTS)
+    return;
+  focus_armed = true;
+  focus_index = index;
+  focus_key = key;
+}
+void overlay_signs_note_focus(focus_result_t result, int64_t now_ms) {
+  if (!focus_armed || result == FOCUS_PENDING)
+    return;
+  if (result == FOCUS_NOT_FOUND || result == FOCUS_UNAVAILABLE)
+    signs_focus_failed(&lanes[focus_index].model, focus_key, now_ms);
+  focus_armed = false;
+}
+void overlay_signs_cleanup(void) {
+  memset(lanes, 0, sizeof(lanes));
+  memset(expanded, 0, sizeof(expanded));
+  memset(closing, 0, sizeof(closing));
+  memset(close_at, 0, sizeof(close_at));
+  tracking = holding = pressed = focus_armed = desk_on = false;
+  desk_key = 0;
+  desk_key_ms = 0;
+  desk_name[0] = '\0';
+  published_lift = 0;
+  for (size_t i = 0; i < MAX_OUTPUTS; i++)
+    lanes[i].last.timeout_ms = -1;
+}

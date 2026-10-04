@@ -2,6 +2,7 @@
 #include "core/agent_hook.h"
 
 #include "core/control.h"
+#include "utils/utf8.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -34,7 +35,8 @@ enum {
   FIELD_EVENT,
   FIELD_SESSION,
   FIELD_NOTIFICATION,
-  FIELD_STOP
+  FIELD_STOP,
+  FIELD_CWD
 };
 enum {
   NUMBER_SIGN,
@@ -63,14 +65,18 @@ void agent_hook_scan_init(agent_hook_scanner_t *s) {
 
 static void finish_string(agent_hook_scanner_t *s) {
   s->text[s->text_length] = '\0';
-  bool valid = !s->overflow && !s->escaped;
+  bool valid =
+      !s->overflow && (!s->escaped || (!s->key && s->field == FIELD_CWD));
   if (s->key) {
     if (s->depth == 1) {
-      static const char *const FIELDS[] = {"", "hook_event_name", "session_id",
+      static const char *const FIELDS[] = {"",
+                                           "hook_event_name",
+                                           "session_id",
                                            "notification_type",
-                                           "stop_hook_active"};
+                                           "stop_hook_active",
+                                           "cwd"};
       s->field = FIELD_NONE;
-      for (unsigned i = FIELD_EVENT; valid && i <= FIELD_STOP; i++) {
+      for (unsigned i = FIELD_EVENT; valid && i <= FIELD_CWD; i++) {
         if (strcmp(s->text, FIELDS[i]) == 0) {
           s->field = i;
           s->valid_fields &= ~(1U << i);
@@ -93,6 +99,10 @@ static void finish_string(agent_hook_scanner_t *s) {
     case FIELD_SESSION:
       target = s->session_id;
       capacity = sizeof(s->session_id);
+      break;
+    case FIELD_CWD:
+      target = s->cwd;
+      capacity = sizeof(s->cwd);
       break;
     case FIELD_NOTIFICATION:
       target = s->notification;
@@ -388,6 +398,106 @@ uint64_t agent_hook_key(const char *agent, const agent_hook_scanner_t *s) {
   return hash ? hash : 1;
 }
 
+// Decode JSON escapes only for cwd. Other captured fields keep their strict
+// rules.
+static bool decode_cwd(const char *raw, char decoded[256]) {
+  size_t used = 0;
+  while (*raw) {
+    uint32_t cp;
+    if (*raw != '\\') {
+      size_t n = utf8_decode(raw, &cp);
+      if (!n || used + n >= 256)
+        return false;
+      memcpy(decoded + used, raw, n);
+      used += n;
+      raw += n;
+      continue;
+    }
+    raw++;
+    if (*raw == 'u') {
+      raw++;
+      cp = 0;
+      for (int i = 0; i < 4; i++) {
+        if (!hex((unsigned char)*raw))
+          return false;
+        unsigned c = (unsigned char)*raw++;
+        cp = (cp << 4) + (c <= '9' ? c - '0' : (c | 32) - 'a' + 10);
+      }
+      if (cp >= 0xd800 && cp <= 0xdbff) {
+        if (raw[0] != '\\' || raw[1] != 'u')
+          return false;
+        raw += 2;
+        uint32_t low = 0;
+        for (int i = 0; i < 4; i++) {
+          if (!hex((unsigned char)*raw))
+            return false;
+          unsigned c = (unsigned char)*raw++;
+          low = (low << 4) + (c <= '9' ? c - '0' : (c | 32) - 'a' + 10);
+        }
+        if (low < 0xdc00 || low > 0xdfff)
+          return false;
+        cp = 0x10000 + ((cp - 0xd800) << 10) + (low - 0xdc00);
+      } else if (cp >= 0xdc00 && cp <= 0xdfff)
+        return false;
+    } else {
+      char c = *raw++;
+      static const char escapes[] = "bfnrt";
+      const char *esc = strchr(escapes, c);
+      cp = esc ? (uint32_t)(unsigned char)"\b\f\n\r\t"[esc - escapes]
+               : (unsigned char)c;
+    }
+    if (cp == 0)
+      return false;
+    unsigned n = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+    if (used + n >= 256)
+      return false;
+    if (n == 1)
+      decoded[used] = (char)cp;
+    else {
+      decoded[used] = (char)((n == 2   ? 0xc0
+                              : n == 3 ? 0xe0
+                                       : 0xf0) |
+                             (cp >> (6 * (n - 1))));
+      for (unsigned i = 1; i < n; i++)
+        decoded[used + i] = (char)(0x80 | ((cp >> (6 * (n - i - 1))) & 63));
+    }
+    used += n;
+  }
+  decoded[used] = '\0';
+  return true;
+}
+bool agent_hook_name(const agent_hook_scanner_t *s, char name[41]) {
+  name[0] = '\0';
+  if (!(s->valid_fields & (1U << FIELD_CWD)))
+    return false;
+  char cwd[256];
+  if (!decode_cwd(s->cwd, cwd) || cwd[0] != '/')
+    return false;
+  size_t length = strlen(cwd);
+  while (length && cwd[length - 1] == '/')
+    cwd[--length] = '\0';
+  const char *base = strrchr(cwd, '/');
+  if (!base || !base[1])
+    return false;
+  base++;
+  size_t used = 0;
+  while (*base) {
+    uint32_t cp;
+    size_t n = utf8_decode(base, &cp);
+    if (!n)
+      return false;
+    if (!utf8_control(cp)) {
+      if (used + n > 40)
+        break;
+      memcpy(name + used, base, n);
+      used += n;
+    }
+    base += n;
+  }
+  name[used] = '\0';
+  return used > 0;
+}
+
 int agent_hook_parse_stat(const char *line, char *comm, size_t capacity,
                           pid_t *parent) {
   if (!line || !comm || !capacity || !parent) {
@@ -494,6 +604,17 @@ int agent_hook_run(const char *agent) {
   if (!freopen("/dev/null", "w", stdout)) {
     return 0;
   }
-  control_request(request);
+  int sent = control_request(request);
+  if (!sent && (!strcmp(scanner.event, "SessionStart") ||
+                !strcmp(scanner.event, "UserPromptSubmit"))) {
+    char name[41];
+    if (agent_hook_name(&scanner, name)) {
+      snprintf(request, sizeof(request), "name %016" PRIx64 " %s",
+               agent_hook_key(agent, &scanner), name);
+      if (debug && !strcmp(debug, "1"))
+        fprintf(stderr, "%s\n", request);
+      control_request(request);
+    }
+  }
   return 0;
 }

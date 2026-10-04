@@ -10,6 +10,10 @@ and cat artwork in `assets/`. Packaging is under `nix/`; helper utilities are
 under `scripts/`. See `ARCHITECTURE.md` before changing process, threading, or
 Wayland lifecycle code.
 
+Runtime libraries are Wayland client, FreeType and Fontconfig. The build uses
+pkg-config to discover text libraries. `make test-runtime` additionally needs
+Wayland server development files for its isolated compositor fixture.
+
 ## Build, Test, and Development Commands
 
 - `make debug` builds `build/bongocat` with debug symbols, ASan, and UBSan.

@@ -236,6 +236,71 @@ when enabled. Pause still allows dragging. Set `cat_draggable=0` globally or
 in a monitor section for complete click-through. Dragging between outputs is
 not supported; each output has its own cat and saved position.
 
+## Session signs
+
+Each session gets a sign named after its working directory. Claude uses a
+rounded rectangle and Codex a circle. Click a plate to jump to its terminal on
+niri, including across workspaces; dragging a plate moves the whole cat.
+Missing window targets shake briefly. The cat keeps its typing and sleep frames.
+
+**Fan** (default) raises plates behind the cat. Hover a plate for its name;
+waiting plates rise higher, sway and show their names automatically.
+
+![Fan signs, synthetic renderer capture](docs/screenshots/session-signs/fan.png)
+
+**Post** stacks boards on a paper-white outlined pole. Hover the cat to expand
+all selected names together. Idle signs appear on hover by default; signs close
+150 ms after leaving. Positions follow creation order, with active and recently
+updated sessions preferred when the display limit is exceeded.
+
+![Post signs, synthetic renderer capture](docs/screenshots/session-signs/post.png)
+
+These captures use the production renderer and synthetic sessions on a plain
+background; they contain no desktop content. The four archived
+[design sources](docs/design/session-signs/) define appearance. Their external
+blob images and support.js are not included; post tilt is intentionally omitted.
+
+Unread completions stay green with a dot until you visit their window, click
+the sign, submit again or end the session. Visiting/clicking starts the normal
+completion timer. A completion in the focused window is already seen. Without
+niri focus tracking, completions remain unread until clicked or submitted again.
+
+Typing in an agent's focused terminal moves its sign under the paws as a name
+board. It leaves after 2.5 seconds without typing, focus loss, submission or
+hiding. Its slot stays reserved and the board passes pointer clicks through.
+This requires niri's event stream and uses activity only, never key contents.
+
+| Global option | Values (default first) |
+| --- | --- |
+| `sign_style` | `fan`, `post`, `off` |
+| `sign_max` | `5`; range 1–5 |
+| `sign_idle` | `hover`, `always`, `never` |
+| `sign_font` | empty = system sans-serif; Fontconfig family, up to 127 bytes |
+| `sign_font_size` | `13`; range 10–20, metadata/desk text proportional |
+| `sign_animations` | `full`, `reduced` (transitions only), `off` (instant) |
+| `sign_language` | `auto`, `en`, `zh` |
+| `sign_done` | `sticky`, `timeout` |
+| `sign_typing_desk` | `1`, `0` |
+
+All options reload through `-w` or `--reload`. `auto` uses nonempty `LC_MESSAGES`,
+then `LANG`: zh locales select simplified Chinese, others English. Use `zh` to
+keep the earlier fixed Chinese text. Sizes scale with cat height and output
+scale. Larger text leaves less room for names. `never` hides idle signs even
+on hover. `timeout` also acknowledges existing unread completions on reload;
+returning to `sticky` applies to subsequent completions. `off` restores the
+original surface height, cat-only input region and whole-cat agent artwork;
+`sign_done` still applies. The temporary `BONGOCAT_SIGN_STYLE` override is gone.
+
+FreeType and Fontconfig are required. Only niri supports terminal jumping and
+focus tracking. tmux and terminals sharing one process cannot reliably identify
+a specific pane/window. Text supports Latin and CJK with fallback, but lacks
+ligatures, right-to-left shaping and combining marks. At most five of the 32
+tracked sessions are displayed. Approval still stays yellow until the tool
+finishes; Claude Escape has no hook and retains the existing timeout limitation.
+No sign-related periodic wakes remain when there are no sessions, hover or
+keys. Reduced/off disable loops, including the desk caret blink; visible working
+duration labels still update once a minute.
+
 ## Agent status
 
 This fork keeps the keyboard paw animation and tracks up to 32 agent sessions.
@@ -244,8 +309,9 @@ artwork and tested runtime behavior.
 
 The shared indicator displays the highest priority state:
 **waiting > done > working > idle**. A working session cannot overwrite another
-session's waiting state. Each done session expires independently after
-`agent_done_timeout` seconds (default 5); the display then falls back to any
+session's waiting state. Each seen done session expires independently after
+`agent_done_timeout` seconds (default 5); unread completions remain sticky by
+default. After a timed completion, the display then falls back to any
 remaining work. Setting the timeout to 0 keeps that session done until its next
 event or removal.
 
@@ -267,7 +333,7 @@ refresh the timestamp without redrawing. When all 32 slots are occupied, the
 oldest idle session is evicted first, otherwise the oldest session is evicted.
 Restarting the overlay clears the session table.
 
-The frame priority is scheduled sleep, held paws, agent artwork, idle sleep,
+With `sign_style=off`, frame priority is scheduled sleep, held paws, agent artwork, idle sleep,
 then `idle_frame`. Only original frames 0–4 can be configured as idle. Pause
 shows the idle frame while session deadlines and process watches keep running;
 resume shows the current resolved state. The indicator is shared across outputs.
@@ -373,7 +439,7 @@ make          # Release build
 make debug    # Debug build
 ```
 
-**Requirements:** wayland-client, gcc/clang, make
+**Requirements:** wayland-client, FreeType, Fontconfig, pkg-config, gcc/clang, make
 
 ## License
 
