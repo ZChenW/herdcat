@@ -1,0 +1,339 @@
+#define _GNU_SOURCE
+#include "platform/transcript_watch.h"
+
+#include "core/agent_adapters.h"
+#include "core/agent_sessions.h"
+#include "core/agent_transcript.h"
+#include "platform/agent_watch.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
+#include <sys/inotify.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#define TRANSCRIPT_TOKEN 0x7472616eU
+#define BACKLOG_TOKEN    0x74726162U
+#define READ_BUDGET      (256 * 1024)
+
+typedef struct {
+  uint64_t key, order;
+  char agent[9], path[AGENT_TRANSCRIPT_PATH_MAX + 1];
+  int fd, wd;
+  int64_t submitted_ms;
+  off_t offset;
+  size_t used;
+  bool active, pending, skipping, failed;
+  char line[AGENT_TRANSCRIPT_LINE_MAX + 1];
+} transcript_t;
+static transcript_t slots[AGENT_SESSIONS_MAX];
+static int notify_fd = -1, backlog_fd = -1;
+static bool enabled;
+static unsigned cursor;
+
+int transcript_watch_open(const char *path) {
+  const char *home = getenv("HOME");
+  if (!path || !home || home[0] != '/' || path[0] != '/')
+    return -1;
+  size_t n = strlen(path), hn = strlen(home);
+  while (hn > 1 && home[hn - 1] == '/')
+    hn--;
+  if (hn <= 1 || n > AGENT_TRANSCRIPT_PATH_MAX || n < hn + 7 ||
+      strncmp(path, home, hn) || path[hn] != '/' ||
+      strcmp(path + n - 6, ".jsonl"))
+    return -1;
+  char copy[AGENT_TRANSCRIPT_PATH_MAX + 1];
+  memcpy(copy, path, n + 1);
+  // Walk from / to reject symlinked ancestors as well as the final component.
+  int parent = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  if (parent < 0)
+    return -1;
+  char *save = NULL, *part = strtok_r(copy + 1, "/", &save);
+  while (part) {
+    char *next = strtok_r(NULL, "/", &save);
+    if (!strcmp(part, "..")) {
+      close(parent);
+      return -1;
+    }
+    int flags = O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK;
+    if (next)
+      flags |= O_DIRECTORY;
+    int fd = openat(parent, part, flags);
+    close(parent);
+    if (fd < 0)
+      return -1;
+    parent = fd;
+    part = next;
+  }
+  struct stat st;
+  if (fstat(parent, &st) < 0 || !S_ISREG(st.st_mode) || st.st_uid != getuid()) {
+    close(parent);
+    return -1;
+  }
+  return parent;
+}
+
+static void disarm(transcript_t *slot) {
+  if (!slot->active)
+    return;
+  slot->active = slot->pending = false;
+  bool shared = false;
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
+    shared |= slots[i].active && slots[i].wd == slot->wd;
+  if (!shared && notify_fd >= 0)
+    inotify_rm_watch(notify_fd, slot->wd);
+  close(slot->fd);
+  slot->fd = slot->wd = -1;
+  slot->used = 0;
+}
+static void close_notifiers(void) {
+  if (notify_fd >= 0) {
+    agent_watch_unlisten(notify_fd);
+    close(notify_fd);
+    notify_fd = -1;
+  }
+  if (backlog_fd >= 0) {
+    agent_watch_unlisten(backlog_fd);
+    close(backlog_fd);
+    backlog_fd = -1;
+  }
+}
+static bool open_notifiers(void) {
+  if (notify_fd >= 0)
+    return true;
+  notify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+  backlog_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  if (notify_fd < 0 || backlog_fd < 0 ||
+      agent_watch_listen(notify_fd, TRANSCRIPT_TOKEN, EPOLLIN) < 0 ||
+      agent_watch_listen(backlog_fd, BACKLOG_TOKEN, EPOLLIN) < 0) {
+    close_notifiers();
+    return false;
+  }
+  return true;
+}
+static void arm(transcript_t *slot) {
+  if (slot->active || slot->failed || !slot->path[0])
+    return;
+  slot->failed = true;
+  int fd = transcript_watch_open(slot->path);
+  if (fd < 0)
+    return;
+  if (!open_notifiers()) {
+    close(fd);
+    return;
+  }
+  char proc[64];
+  snprintf(proc, sizeof(proc), "/proc/self/fd/%d", fd);
+  int wd = inotify_add_watch(notify_fd, proc,
+                             IN_MODIFY | IN_DELETE_SELF | IN_MOVE_SELF);
+  off_t offset = lseek(fd, 0, SEEK_END);
+  if (wd < 0 || offset < 0) {
+    if (wd >= 0)
+      inotify_rm_watch(notify_fd, wd);
+    close(fd);
+    return;
+  }
+  char last = '\n';
+  if (offset > 0 && pread(fd, &last, 1, offset - 1) != 1)
+    last = 'x';
+  slot->offset = offset;
+  slot->skipping = last != '\n';
+  slot->used = 0;
+  slot->fd = fd;
+  slot->wd = wd;
+  slot->active = true;
+  slot->failed = false;
+}
+int transcript_watch_count(void) {
+  int count = 0;
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
+    count += slots[i].active;
+  return count;
+}
+void transcript_watch_sync(bool on, int64_t now_ms) {
+  (void)now_ms;
+  enabled = on;
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+    transcript_t *slot = &slots[i];
+    if (!slot->key)
+      continue;
+    const agent_session_view_t *view = NULL;
+    for (int j = 0; j < count; j++)
+      if (views[j].key == slot->key && views[j].order == slot->order)
+        view = &views[j];
+    if (!view) {
+      disarm(slot);
+      memset(slot, 0, sizeof(*slot));
+    } else if (!on || (view->state != AGENT_STATE_WORKING &&
+                       view->state != AGENT_STATE_WAITING)) {
+      disarm(slot);
+      slot->failed = false;
+    } else
+      arm(slot);
+  }
+  if (!transcript_watch_count())
+    close_notifiers();
+}
+void transcript_watch_path(uint64_t key, const char *path, int64_t now_ms) {
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  const agent_session_view_t *view = NULL;
+  for (int i = 0; i < count; i++)
+    if (views[i].key == key)
+      view = &views[i];
+  if (!key || !view || !path || strlen(path) > AGENT_TRANSCRIPT_PATH_MAX)
+    return;
+  const agent_adapter_t *adapter = agent_adapter_find(view->agent);
+  if (strcmp(adapter->name, view->agent))
+    return;
+  if (adapter->interrupt_source != AGENT_SIGNAL_TRANSCRIPT &&
+      adapter->error_source != AGENT_SIGNAL_TRANSCRIPT)
+    return;
+  agent_sessions_set_transcript(key, path);
+  transcript_t *slot = NULL;
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
+    if (slots[i].key == key)
+      slot = &slots[i];
+  if (!slot)
+    for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
+      if (!slots[i].key) {
+        slot = &slots[i];
+        break;
+      }
+  if (!slot)
+    return;
+  // Every path handoff marks a new submission and resets the read baseline.
+  disarm(slot);
+  memset(slot, 0, sizeof(*slot));
+  slot->key = key;
+  slot->order = view->order;
+  slot->submitted_ms = now_ms;
+  memcpy(slot->agent, view->agent, sizeof(slot->agent));
+  memcpy(slot->path, path, strlen(path) + 1);
+  transcript_watch_sync(enabled, now_ms);
+}
+static bool feed(transcript_t *slot, const char *data, size_t length,
+                 int64_t now) {
+  for (size_t i = 0; i < length; i++) {
+    if (data[i] == '\n') {
+      bool hit =
+          !slot->skipping &&
+          (strcmp(slot->agent, "claude") || now - slot->submitted_ms >= 1000) &&
+          agent_transcript_interrupted(slot->agent, slot->line, slot->used);
+      slot->used = 0;
+      slot->skipping = false;
+      if (hit) {
+        agent_sessions_interrupt(slot->key, now);
+        return true;
+      }
+    } else if (!slot->skipping) {
+      if (slot->used < AGENT_TRANSCRIPT_LINE_MAX)
+        slot->line[slot->used++] = data[i];
+      else {
+        slot->used = 0;
+        slot->skipping = true;
+      }
+    }
+  }
+  return false;
+}
+void transcript_watch_ready(uint32_t token, int64_t now_ms) {
+  if ((token != TRANSCRIPT_TOKEN && token != BACKLOG_TOKEN) || notify_fd < 0)
+    return;
+  if (token == BACKLOG_TOKEN) {
+    uint64_t value;
+    ssize_t ignored = read(backlog_fd, &value, sizeof(value));
+    (void)ignored;
+  } else {
+    // Bounded drain: unread inotify events remain readable in epoll.
+    union {
+      struct inotify_event align;
+      char bytes[8192];
+    } events;
+    ssize_t n = read(notify_fd, events.bytes, sizeof(events.bytes));
+    for (size_t offset = 0;
+         n > 0 && offset + sizeof(struct inotify_event) <= (size_t)n;) {
+      const struct inotify_event *event = (const void *)(events.bytes + offset);
+      for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+        transcript_t *slot = &slots[i];
+        if (!slot->active ||
+            (event->wd != slot->wd && !(event->mask & IN_Q_OVERFLOW)))
+          continue;
+        if (event->mask & (IN_IGNORED | IN_DELETE_SELF | IN_MOVE_SELF)) {
+          disarm(slot);
+          slot->failed = true;
+        } else
+          slot->pending = true;
+      }
+      offset += sizeof(*event) + event->len;
+    }
+  }
+  size_t budget = READ_BUDGET;
+  for (int visited = 0; visited < AGENT_SESSIONS_MAX && budget; visited++) {
+    transcript_t *slot = &slots[cursor++ % AGENT_SESSIONS_MAX];
+    if (!slot->active || !slot->pending)
+      continue;
+    struct stat st;
+    if (fstat(slot->fd, &st) < 0 || st.st_size < slot->offset) {
+      disarm(
+          slot);  // Truncation/rotation: fail closed until next path handoff.
+      slot->failed = true;
+      continue;
+    }
+    while (budget && slot->active && slot->pending) {
+      char data[8192];
+      size_t want = budget < sizeof(data) ? budget : sizeof(data);
+      ssize_t n = pread(slot->fd, data, want, slot->offset);
+      if (n < 0 && errno == EINTR)
+        continue;
+      if (n <= 0) {
+        slot->pending = false;
+        if (n < 0) {
+          disarm(slot);
+          slot->failed = true;
+        }
+        break;
+      }
+      budget -= (size_t)n;
+      slot->offset += n;
+      if (feed(slot, data, (size_t)n, now_ms))
+        disarm(slot);
+    }
+  }
+  bool pending = false;
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
+    pending |= slots[i].active && slots[i].pending;
+  if (pending && backlog_fd >= 0) {
+    uint64_t one = 1;
+    ssize_t ignored = write(backlog_fd, &one, sizeof(one));
+    (void)ignored;
+  }
+  if (!transcript_watch_count())
+    close_notifiers();
+}
+void transcript_watch_cleanup(void) {
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
+    disarm(&slots[i]);
+  memset(slots, 0, sizeof(slots));
+  close_notifiers();
+  enabled = false;
+  cursor = 0;
+}
+
+int transcript_watch_command(const char *request, int64_t now_ms) {
+  char key[17];
+  int end = 0;
+  if (strlen(request) > AGENT_TRANSCRIPT_PATH_MAX + 22 ||
+      sscanf(request, "path %16[0-9a-fA-F]%n", key, &end) != 1 || end != 21 ||
+      request[21] != ' ' || request[22] != '/' || !strtoull(key, NULL, 16))
+    return 1;
+  transcript_watch_path(strtoull(key, NULL, 16), request + 22, now_ms);
+  return 0;
+}

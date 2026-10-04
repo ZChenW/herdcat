@@ -198,3 +198,39 @@ that session's sign slot. Focus loss, working submission, disabling the option
 or hiding dismisses it. The board never joins the pointer input region. Only
 presence of paw activity is used, never key contents. The confirmed desk top is
 68 design pixels; drag margin calculation remains absolute from button press.
+
+## Transcript interruption detection
+
+`core/agent_adapters.c` declares interrupt/error sources (hook, transcript or
+none). Claude uses transcript interruptions; Codex uses Interrupt hooks plus
+transcript abort/error fallback. `core/agent_hook.c` forwards only metadata-event
+paths in `path <key16hex> <absolute-path>` requests, after JSON unescaping with a
+1024-byte decoded limit. The authenticated control receive buffer is 1280 bytes;
+its existing length guard rejects packets of 1280 bytes or more.
+
+`platform/transcript_watch.c` owns fixed session slots, recording descriptors,
+one nonblocking inotify and a continuation eventfd. Both event fds join
+agent_watch's existing epoll alongside focus_watch, with main dispatching tokens;
+the six basic fds and seven-slot external budget stay unchanged. Submissions
+reset offsets to EOF. Only working/waiting sessions retain watches, and ending,
+evicting, disabling or completing sessions releases them. Re-enabling starts at
+EOF. No timer, worker thread or periodic wake is added. Each wake reads at most
+256 KiB total, with round-robin continuations through eventfd only while unread
+bytes remain. The last disarm closes both notification fds.
+
+Path opening walks each component from / using openat/O_NOFOLLOW, rejects ..,
+confines the path to HOME, and checks regular-file type and UID through fstat.
+Inotify attaches to the opened inode via /proc/self/fd. Replacement/truncation or
+read errors fail closed until a new path handoff, leaving timeout fallback.
+
+`core/agent_transcript.c` validates each bounded complete JSON line, then examines
+structural slices without a DOM or allocation. Claude requires top-level user,
+message.role=user and a single text block with the interruption prefix. A
+one-second post-submission guard reduces literal-prompt false positives. Codex
+requires event_msg with turn_aborted or task_complete plus an error object;
+normal completion is ignored. The idempotent session interrupt operation only
+changes working/waiting to idle, preserving unread done and configured timers.
+Neither paths nor transcript contents/error messages are printed by the monitor;
+contents are never persisted or transmitted. These private formats may change:
+unsupported input silently falls back to existing stale deadlines. No new
+runtime dependency is required.

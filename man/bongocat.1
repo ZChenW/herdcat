@@ -96,6 +96,9 @@ Read a lifecycle JSON event from stdin for an agent named with 1 to 8 lowercase 
 SessionStart registers the session; UserPromptSubmit, PreToolUse, PostToolUse and PostToolUseFailure set working; PermissionRequest sets waiting; Stop sets done unless stop_hook_active is true; StopFailure and Interrupt set idle; SessionEnd removes the session. Notification maps permission_prompt, elicitation_dialog and agent_needs_input to waiting, and idle_prompt clears working only. SubagentStop is ignored. Missing or invalid session IDs share a fallback session per agent.
 .PP
 Approval does not emit a separate hook: waiting continues until PostToolUse after tool completion. Claude may not emit a hook on Escape, leaving working to expire; watched waiting remains until another event or exit. Codex Interrupt clears the session. Merge examples/hooks into existing agent configuration and renew Codex hook trust through /hooks after changes.
+.TP
+.BI --event " NAME"
+Override the event name in stdin. Valid only after --hook AGENT. Field aliases, conditional event mappings and stdout policy are selected by the agent adapter; unknown agent names retain the Claude mapping.
 .SH MONITOR SECTIONS AND RELOAD
 Use [monitor:NAME] for appearance overrides and [global] to return to global settings. Global settings apply before monitor overrides regardless of section order. Overrides support cat_height, overlay_height, overlay_opacity, cat_x_offset, cat_y_offset, layer, overlay_position, cat_align, cat_draggable, mirror_x, mirror_y, enable_antialiasing and disable_fullscreen_hide. Input and timing remain global.
 .PP
@@ -163,3 +166,18 @@ sticky completions are unread until clicked or submitted again, and the desk
 is disabled. Text requires FreeType and Fontconfig; ligatures, right-to-left
 shaping and combining marks are unsupported. Shared terminal processes and tmux
 cannot reliably identify a specific window or pane.
+
+.SS Interruption detection
+agent_interrupt_detect=1 (default) enables event-driven Claude Code interruption
+and Codex abort/error detection from paths supplied by their hooks. This global
+boolean is reloadable. Setting 0 removes recording watches immediately.
+Only newly appended complete JSONL lines (at most 4096 bytes) are inspected in
+memory; contents and error messages are never logged, saved or transmitted.
+Paths must be absolute, no longer than 1024 decoded bytes, under the user's home,
+regular, same-UID, without symlinks or .. components, and end in .jsonl.
+Working/waiting returns to idle on interruption; done/unread is preserved.
+Normal Codex task_complete is ignored. Claude matches read within one second of
+submission are ignored; literal marker prompts read later can be misclassified.
+Private format changes, missing paths and truncation/rotation silently fall back
+to agent_stale_timeout. Rotation requires a new hook path handoff. There is no
+periodic polling and no recording watch when no eligible session is active.

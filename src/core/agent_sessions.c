@@ -15,12 +15,26 @@ typedef struct {
   char agent[AGENT_NAME_MAX + 1];
   agent_state_t state;
   pid_t pid;
+  bool kitty;
+  pid_t kitty_pid;
+  uint64_t kitty_window;
+  char kitty_listen[128];
   int64_t updated_ms;
   int64_t done_until_ms;
   bool unread;
+  char transcript[AGENT_TRANSCRIPT_PATH_MAX + 1];
 } agent_session_t;
 
 static uint64_t next_order;
+static uint64_t generation;
+
+static void touch_sessions(void) {
+  generation++;
+}
+
+uint64_t agent_sessions_generation(void) {
+  return generation;
+}
 static agent_session_t sessions[AGENT_SESSIONS_MAX];
 static bool done_sticky = true;
 static bool focus_on;
@@ -28,7 +42,7 @@ static uint64_t focused_keys[AGENT_SESSIONS_MAX];
 static size_t focused_count;
 static int applied_done_timeout;
 static const char *const EVENT_NAMES[AGENT_EVENT_COUNT] = {
-    "idle", "working", "waiting", "done", "start", "rest", "end"};
+    "idle", "working", "waiting", "done", "start", "rest", "end", "interrupt"};
 
 int agent_event_parse(const char *name, agent_event_t *out) {
   if (!name || !out) {
@@ -50,6 +64,7 @@ void agent_sessions_reset(void) {
   focus_on = false;
   focused_count = 0;
   applied_done_timeout = 0;
+  touch_sessions();
 }
 
 void agent_sessions_set_done_sticky(bool sticky) {
@@ -126,6 +141,7 @@ void agent_sessions_note_focused(uint64_t key, int64_t now_ms,
   }
   s->unread = false;
   s->done_until_ms = done_timeout_s > 0 ? deadline(now_ms, done_timeout_s) : 0;
+  touch_sessions();
 }
 
 void agent_sessions_note_click(uint64_t key, int64_t now_ms) {
@@ -140,13 +156,36 @@ void agent_sessions_configure_done(bool sticky, int64_t now_ms,
   applied_done_timeout = done_timeout_s;
   if (sticky)
     return;
+  bool changed = false;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     agent_session_t *s = &sessions[i];
     if (s->used && s->unread && s->state == AGENT_STATE_DONE) {
       s->unread = false;
       s->done_until_ms =
           done_timeout_s > 0 ? deadline(now_ms, done_timeout_s) : 0;
+      changed = true;
     }
+  }
+  if (changed)
+    touch_sessions();
+}
+
+// One agent process keeps the session that just registered it. pid 0 is
+// excluded: those sessions are not tied to a process. Same-key subagents
+// never reach here as a second row.
+static void drop_same_process(const agent_session_t *keep) {
+  if (!keep || keep->pid <= 0) {
+    return;
+  }
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+    agent_session_t *other = &sessions[i];
+    if (!other->used || other == keep || other->pid != keep->pid) {
+      continue;
+    }
+    if (strcmp(other->agent, keep->agent) != 0) {
+      continue;
+    }
+    memset(other, 0, sizeof(*other));
   }
 }
 
@@ -179,9 +218,14 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   if (event == AGENT_EVENT_END) {
     if (s) {
       memset(s, 0, sizeof(*s));
+      touch_sessions();
     }
     return 0;
   }
+  if (event == AGENT_EVENT_INTERRUPT &&
+      (!s ||
+       (s->state != AGENT_STATE_WORKING && s->state != AGENT_STATE_WAITING)))
+    return 0;
   if (!s) {
     if (event == AGENT_EVENT_IDLE || event == AGENT_EVENT_REST) {
       return 0;
@@ -199,13 +243,20 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
       *is_new = true;
     }
   }
+  bool created = is_new && *is_new;
+  pid_t previous_pid = s->pid;
   s->updated_ms = now_ms;
   if (pid > 0 && pid != s->pid) {
     s->pid = pid;
     s->watched = false;
+    s->kitty = false;
+    s->kitty_pid = 0;
+    s->kitty_window = 0;
+    s->kitty_listen[0] = '\0';
   }
   agent_state_t previous = s->state;
   switch (event) {
+  case AGENT_EVENT_INTERRUPT:
   case AGENT_EVENT_IDLE:
     s->state = AGENT_STATE_IDLE;
     break;
@@ -237,6 +288,10 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
     s->done_until_ms = 0;
     s->unread = false;
   }
+  if (created || s->pid != previous_pid) {
+    drop_same_process(s);
+  }
+  touch_sessions();
   return 0;
 }
 
@@ -246,6 +301,12 @@ static int64_t session_deadline(const agent_session_t *s, int stale_timeout_s) {
   }
   if (s->state == AGENT_STATE_DONE) {
     return s->done_until_ms;
+  }
+  // A session with no pid cannot be tied to a window or a process exit.
+  // Drop it after it has been idle with no events for the stale timeout.
+  // Unread done stays above and does not time out.
+  if (stale_timeout_s > 0 && s->pid <= 0 && s->state == AGENT_STATE_IDLE) {
+    return deadline(s->updated_ms, stale_timeout_s);
   }
   if (stale_timeout_s > 0 &&
       (s->state == AGENT_STATE_WORKING ||
@@ -260,13 +321,25 @@ bool agent_sessions_expire(int64_t now_ms, int stale_timeout_s) {
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     int64_t until = session_deadline(&sessions[i], stale_timeout_s);
     if (until > 0 && now_ms >= until) {
-      sessions[i].state = AGENT_STATE_IDLE;
-      sessions[i].state_since_ms = now_ms;
-      sessions[i].done_until_ms = 0;
-      sessions[i].unread = false;
+      if (sessions[i].pid <= 0 && sessions[i].state == AGENT_STATE_IDLE) {
+        memset(&sessions[i], 0, sizeof(sessions[i]));
+      } else {
+        sessions[i].state = AGENT_STATE_IDLE;
+        sessions[i].state_since_ms = now_ms;
+        sessions[i].done_until_ms = 0;
+        sessions[i].unread = false;
+        // The stale working/waiting transition lands on idle at the same
+        // instant the no-pid idle lifetime is already over.
+        if (sessions[i].pid <= 0 && stale_timeout_s > 0 &&
+            now_ms >= deadline(sessions[i].updated_ms, stale_timeout_s)) {
+          memset(&sessions[i], 0, sizeof(sessions[i]));
+        }
+      }
       changed = true;
     }
   }
+  if (changed)
+    touch_sessions();
   return changed;
 }
 
@@ -274,11 +347,15 @@ void agent_sessions_remove_pid(pid_t pid) {
   if (pid <= 0) {
     return;
   }
+  bool removed = false;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     if (sessions[i].used && sessions[i].pid == pid) {
       memset(&sessions[i], 0, sizeof(sessions[i]));
+      removed = true;
     }
   }
+  if (removed)
+    touch_sessions();
 }
 
 void agent_sessions_set_watched(uint64_t key, bool watched) {
@@ -286,6 +363,49 @@ void agent_sessions_set_watched(uint64_t key, bool watched) {
   if (s) {
     s->watched = watched && s->pid > 0;
   }
+}
+
+static bool kitty_listen_ok(const char *listen, size_t capacity) {
+  if (!listen)
+    return false;
+  size_t n = 0;
+  while (listen[n]) {
+    unsigned char c = (unsigned char)listen[n];
+    if (c < 0x20 || c == 0x7f)
+      return false;
+    if (++n >= capacity)
+      return false;
+  }
+  return n >= 5 && !strncmp(listen, "unix:", 5);
+}
+
+void agent_sessions_set_kitty(uint64_t key, pid_t kitty_pid, uint64_t window,
+                              const char *listen) {
+  agent_session_t *s = find_session(key);
+  if (!s || s->pid <= 0 || !kitty_listen_ok(listen, sizeof(s->kitty_listen)))
+    return;
+  snprintf(s->kitty_listen, sizeof(s->kitty_listen), "%s", listen);
+  s->kitty_window = window;
+  s->kitty_pid = kitty_pid > 1 && kitty_pid <= 4194304 ? kitty_pid : 0;
+  s->kitty = true;
+}
+
+bool agent_sessions_kitty(pid_t pid, uint64_t *window, char *listen,
+                          size_t capacity) {
+  if (pid <= 0 || !window || !listen || !capacity)
+    return false;
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+    const agent_session_t *s = &sessions[i];
+    if (!s->used || s->pid != pid || !s->kitty)
+      continue;
+    size_t n = strlen(s->kitty_listen);
+    if (n >= capacity)
+      return false;
+    *window = s->kitty_window;
+    memcpy(listen, s->kitty_listen, n + 1);
+    return true;
+  }
+  return false;
 }
 
 agent_state_t agent_sessions_resolve(void) {
@@ -383,8 +503,99 @@ int agent_sessions_set_name(uint64_t key, const char *name) {
   if (!utf8_label_valid(name, 40))
     return -1;
   agent_session_t *s = find_session(key);
-  if (s)
+  if (s && strcmp(s->name, name)) {
     snprintf(s->name, sizeof(s->name), "%s", name);
+    touch_sessions();
+  }
+  return 0;
+}
+
+static bool transcript_ok(const char *path) {
+  return path && path[0] == '/' && !strchr(path, '\n') && !strchr(path, '\t') &&
+         strlen(path) <= AGENT_TRANSCRIPT_PATH_MAX;
+}
+
+int agent_sessions_set_transcript(uint64_t key, const char *path) {
+  agent_session_t *s = find_session(key);
+  if (!s || !transcript_ok(path))
+    return -1;
+  if (!strcmp(s->transcript, path))
+    return 0;
+  memcpy(s->transcript, path, strlen(path) + 1);
+  touch_sessions();
+  return 0;
+}
+
+int agent_sessions_export(agent_session_record_t *out, size_t capacity) {
+  if (!out || !capacity)
+    return 0;
+  const agent_session_t *sorted[AGENT_SESSIONS_MAX];
+  size_t count = 0;
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+    if (!sessions[i].used)
+      continue;
+    size_t j = count++;
+    while (j && sorted[j - 1]->order > sessions[i].order) {
+      sorted[j] = sorted[j - 1];
+      j--;
+    }
+    sorted[j] = &sessions[i];
+  }
+  if (count > capacity)
+    count = capacity;
+  for (size_t i = 0; i < count; i++) {
+    const agent_session_t *s = sorted[i];
+    agent_session_record_t row = {.key = s->key,
+                                  .state = s->state,
+                                  .pid = s->pid,
+                                  .updated_ms = s->updated_ms,
+                                  .unread = s->unread};
+    memcpy(row.agent, s->agent, sizeof(row.agent));
+    memcpy(row.name, s->name, sizeof(row.name));
+    memcpy(row.transcript, s->transcript, sizeof(row.transcript));
+    out[i] = row;
+  }
+  return (int)count;
+}
+
+int agent_sessions_restore(const agent_session_record_t *record, int64_t now_ms,
+                           int done_timeout_s) {
+  if (!record || !record->key || !valid_agent(record->agent) || now_ms < 0 ||
+      done_timeout_s < 0 || record->updated_ms < 0 || record->pid < 0 ||
+      record->state < AGENT_STATE_IDLE || record->state >= AGENT_STATE_COUNT ||
+      find_session(record->key) || agent_sessions_count() >= AGENT_SESSIONS_MAX)
+    return -1;
+  agent_session_t *s = available_slot();
+  agent_state_t state = record->state;
+  bool unread = record->unread;
+  if (state == AGENT_STATE_WORKING || state == AGENT_STATE_WAITING) {
+    state = AGENT_STATE_IDLE;
+    unread = false;
+  }
+  int64_t updated = record->updated_ms > now_ms ? now_ms : record->updated_ms;
+  *s = (agent_session_t){.used = true,
+                         .key = record->key,
+                         .order = ++next_order,
+                         .created_ms = updated,
+                         .state_since_ms = updated,
+                         .state = state,
+                         .pid = record->pid,
+                         .updated_ms = updated,
+                         .unread = state == AGENT_STATE_DONE && unread};
+  memcpy(s->agent, record->agent, strlen(record->agent) + 1);
+  if (utf8_label_valid(record->name, 40))
+    snprintf(s->name, sizeof(s->name), "%s", record->name);
+  else
+    snprintf(s->name, sizeof(s->name), "%s %04" PRIx16, record->agent,
+             (uint16_t)(record->key >> 48));
+  if (transcript_ok(record->transcript))
+    memcpy(s->transcript, record->transcript, strlen(record->transcript) + 1);
+  if (s->state == AGENT_STATE_DONE && !s->unread && done_timeout_s > 0)
+    s->done_until_ms = deadline(now_ms, done_timeout_s);
+  applied_done_timeout = done_timeout_s;
+  if (s->pid > 0)
+    drop_same_process(s);
+  touch_sessions();
   return 0;
 }
 int agent_sessions_snapshot(agent_session_view_t *out, size_t capacity) {
@@ -403,7 +614,9 @@ int agent_sessions_snapshot(agent_session_view_t *out, size_t capacity) {
                               .created_ms = s->created_ms,
                               .state_since_ms = s->state_since_ms,
                               .updated_ms = s->updated_ms,
-                              .unread = s->unread};
+                              .unread = s->unread,
+                              .kitty_pid = s->kitty ? s->kitty_pid : 0,
+                              .kitty_window = s->kitty ? s->kitty_window : 0};
     memcpy(v.agent, s->agent, sizeof(v.agent));
     memcpy(v.name, s->name, sizeof(v.name));
     size_t j = count++;
@@ -443,4 +656,11 @@ int agent_sessions_select(const agent_session_view_t *input, size_t count,
     if (selected[i])
       out[written++] = input[i];
   return (int)written;
+}
+
+void agent_sessions_interrupt(uint64_t key, int64_t now_ms) {
+  agent_session_t *s = find_session(key);
+  if (s)
+    agent_sessions_apply(key, s->agent, AGENT_EVENT_INTERRUPT, 0, now_ms,
+                         applied_done_timeout, NULL);
 }

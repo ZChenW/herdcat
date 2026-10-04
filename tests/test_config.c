@@ -523,6 +523,29 @@ int main(void) {
   test_enum_parsing();
   test_comments_and_whitespace();
   test_agent_config();
+  char path[] = "/tmp/bongocat-interrupt-config-XXXXXX";
+  int fd = mkstemp(path);
+  TEST_ASSERT(fd >= 0, "interrupt config tempfile");
+  close(fd);
+  for (int v = -1; v <= 2; v++) {
+    char text[64];
+    snprintf(text, sizeof(text), "agent_interrupt_detect=%d\n", v);
+    write_temp_config(path, text);
+    config_t cfg;
+    bool valid = v == 0 || v == 1;
+    TEST_ASSERT_EQ(load_config_strict(&cfg, path),
+                   valid ? BONGOCAT_SUCCESS : BONGOCAT_ERROR_CONFIG,
+                   "interrupt boolean is strict");
+    TEST_ASSERT_EQ(cfg.agent_interrupt_detect, valid ? v : 1,
+                   "interrupt default and boolean");
+    config_cleanup_full(&cfg);
+  }
+  write_temp_config(path, "[monitor:TEST-1]\nagent_interrupt_detect=0\n");
+  config_t cfg;
+  TEST_ASSERT_EQ(load_config_strict(&cfg, path), BONGOCAT_ERROR_CONFIG,
+                 "interrupt detect is global only");
+  config_cleanup_full(&cfg);
+  unlink(path);
   test_drag_config();
   test_sign_config();
 

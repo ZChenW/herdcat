@@ -2,6 +2,7 @@
 #include "platform/focus_watch.h"
 
 #include "platform/agent_watch.h"
+#include "platform/focus_current.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -15,7 +16,7 @@
 
 #define STREAM_TOKEN 1U
 #define STREAM_LINE  65536
-#define WINDOW_MAX   128
+#define WINDOW_MAX   FOCUS_WATCH_WINDOW_MAX
 
 typedef struct {
   const char *p, *end;
@@ -512,7 +513,7 @@ static int send_request(int fd) {
   backoff_ms = 1000;
   return 0;
 }
-static void on_ready(uint32_t token) {
+void focus_watch_ready(uint32_t token) {
   if (token != STREAM_TOKEN || stream_fd < 0) {
     return;
   }
@@ -565,7 +566,7 @@ static int open_stream(void) {
 }
 
 int focus_watch_init(void) {
-  agent_watch_on_ready(on_ready);
+  agent_watch_on_ready(focus_watch_ready);
   if (agent_watch_fd() < 0 || !focus_available()) {
     disabled = true;
     return 0;
@@ -574,6 +575,13 @@ int focus_watch_init(void) {
     schedule_retry();
   }
   return 0;
+}
+size_t focus_watch_windows(focus_window_t *out, size_t capacity) {
+  if (!out || !capacity || !window_count)
+    return 0;
+  size_t count = window_count < capacity ? window_count : capacity;
+  memcpy(out, windows, count * sizeof(*out));
+  return count;
 }
 void focus_watch_cleanup(void) {
   if (stream_fd >= 0) {
@@ -659,13 +667,26 @@ int focus_watch_focused_keys(const agent_session_view_t *sessions, size_t count,
   if (!focus_watch_available() || !have_focus) {
     return 0;
   }
-  return focus_watch_matching(focused_id, windows, window_count, sessions,
-                              count, keys, capacity);
+  focus_pane_t panes[FOCUS_PANE_MAX];
+  size_t panes_count = focus_pane_copy(panes, FOCUS_PANE_MAX);
+  return focus_current_seen(focused_id, windows, window_count, sessions, count,
+                            panes, panes_count, keys, capacity);
 }
 uint64_t focus_watch_focused_session(const agent_session_view_t *sessions,
                                      size_t count) {
-  if (!focus_watch_available() || !have_focus) {
+  if (!focus_watch_available()) {
     return 0;
   }
-  return focus_watch_match(focused_id, windows, window_count, sessions, count);
+  focus_current_observe(have_focus ? focused_id : 0);
+  if (!have_focus) {
+    return 0;
+  }
+  focus_pane_t panes[FOCUS_PANE_MAX];
+  size_t panes_count = focus_pane_copy(panes, FOCUS_PANE_MAX);
+  uint64_t clicked_window = 0;
+  uint64_t clicked_key = 0;
+  focus_current_clicked(&clicked_window, &clicked_key);
+  return focus_current_choose(focused_id, windows, window_count, sessions,
+                              count, panes, panes_count, clicked_window,
+                              clicked_key);
 }

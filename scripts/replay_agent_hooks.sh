@@ -187,6 +187,95 @@ os.execv('/usr/bin/sleep', ['sleep', '30'])
     wait_state('idle', 1, 4)
     hook('SessionEnd', 'replay-stale')
     status('idle', 0)
+    config(600)
+
+    def agent_hook(agent, payload, event=None, json_stdout=False):
+        command = [binary, '--hook', agent]
+        if event:
+            command.extend(['--event', event])
+        result = subprocess.run(command, env=env, input=json.dumps(payload),
+                                text=True, capture_output=True, timeout=3)
+        expected = '{}\n' if json_stdout else ''
+        assert result.returncode == 0 and result.stdout == expected and not result.stderr, (
+            agent, event, result.returncode, result.stdout, result.stderr)
+
+    def one_session(agent, state, name):
+        lines = control('sessions').splitlines()
+        assert len(lines) == 1, lines
+        parts = lines[0].split(maxsplit=5)
+        assert parts[0] == agent and parts[2] == state and parts[5] == name, lines
+        status(state, 1)
+
+    def finish(agent, payload, event=None, json_stdout=False):
+        agent_hook(agent, payload, event, json_stdout)
+        assert control('sessions') == 'No agent sessions'
+        status('idle', 0)
+
+    # beforeShellExecution stays mapped in the adapter, but it is a Cursor
+    # approval gate and is intentionally not part of this installed sequence.
+    sequences = [
+        ('claude', False, None, '/x/replay-claude', 'replay-claude', [
+            ({'hook_event_name': 'UserPromptSubmit'}, 'working'),
+            ({'hook_event_name': 'PermissionRequest'}, 'waiting'),
+            ({'hook_event_name': 'Stop'}, 'done'),
+        ], {'hook_event_name': 'SessionEnd'}),
+        ('codex', False, None, '/x/replay-codex', 'replay-codex', [
+            ({'hook_event_name': 'UserPromptSubmit'}, 'working'),
+            ({'hook_event_name': 'Interrupt'}, 'idle'),
+        ], {'hook_event_name': 'SessionEnd'}),
+        ('grok', True, None, '/x/replay-grok', 'replay-grok', [
+            ({'hook_event_name': 'UserPromptSubmit'}, 'working'),
+            ({'hook_event_name': 'StopCancelled'}, 'idle'),
+            ({'hook_event_name': 'PermissionRequest'}, 'waiting'),
+            ({'hook_event_name': 'Stop'}, 'done'),
+        ], {'hook_event_name': 'SessionEnd'}),
+        ('kimi', False, None, '/x/replay-kimi', 'replay-kimi', [
+            ({'hook_event_name': 'UserPromptSubmit'}, 'working'),
+            ({'hook_event_name': 'PermissionRequest'}, 'waiting'),
+            ({'hook_event_name': 'PermissionResult'}, 'working'),
+            ({'hook_event_name': 'Interrupt'}, 'idle'),
+        ], {'hook_event_name': 'SessionEnd'}),
+        ('cursor', True, True, '/x/replay-cursor', 'replay-cursor', [
+            ({}, 'working', 'beforeSubmitPrompt'),
+            ({}, 'working', 'preToolUse'),
+            ({'status': 'completed'}, 'done', 'stop'),
+        ], ({}, 'sessionEnd')),
+        ('copilot', True, True, '/x/replay-copilot', 'replay-copilot', [
+            ({}, 'working', 'userPromptSubmitted'),
+            ({}, 'working', 'permissionRequest'),
+            ({'notification_type': 'permission_prompt'}, 'waiting', 'notification'),
+            ({'stopReason': 'end_turn'}, 'done', 'agentStop'),
+        ], ({}, 'sessionEnd')),
+        ('pi', False, True, '/x/replay-pi', 'replay-pi', [
+            ({'agent_pid': os.getpid()}, 'working', 'before_agent_start'),
+            ({'agent_pid': os.getpid(), 'stopReason': 'stop'}, 'done', 'agent_end'),
+        ], ({'agent_pid': os.getpid()}, 'session_shutdown')),
+        ('opencode', False, True, '/x/replay-opencode', 'replay-opencode', [
+            ({}, 'working', 'session.execution.started'),
+            ({}, 'waiting', 'permission.asked'),
+            ({}, 'working', 'permission.replied'),
+            ({}, 'done', 'session.execution.succeeded'),
+        ], ({}, 'session.deleted')),
+    ]
+    for agent, json_stdout, explicit, cwd, name, steps, end in sequences:
+        identity = {'session_id': name, 'cwd': cwd}
+        if agent == 'cursor':
+            identity = {'conversation_id': name, 'workspace_roots': [cwd]}
+        elif agent == 'copilot':
+            identity = {'sessionId': name, 'cwd': cwd}
+        elif agent == 'pi':
+            identity = {'session_id': name, 'cwd': cwd}
+        for step in steps:
+            event = step[2] if explicit else None
+            payload = dict(identity)
+            payload.update(step[0])
+            agent_hook(agent, payload, event, json_stdout)
+            one_session(agent, step[1], name)
+        end_event = end[1] if explicit else None
+        end_payload = dict(identity)
+        end_payload.update(end[0] if explicit else end)
+        finish(agent, end_payload, end_event, json_stdout)
+    print('PASS: claude, codex, grok, kimi, cursor, copilot, pi, opencode sessions.')
     replace(original)
     control('reload')
     # Send stop directly, so a disappearing instance cannot toggle a new one on.

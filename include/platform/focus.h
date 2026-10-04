@@ -22,6 +22,13 @@ bool focus_find_window(pid_t pid, const focus_window_t *windows, size_t count,
                        uint64_t *id);
 bool focus_available(void);
 int focus_session_window(pid_t agent_pid);
+// After niri focuses the window. True provides a split id and socket.
+typedef bool (*focus_kitty_fn)(pid_t pid, uint64_t *window, char *listen,
+                               size_t capacity);
+void focus_set_kitty(focus_kitty_fn fn);
+// False means kitten must not be started. match receives id:<decimal>.
+bool focus_kitty_target(const char *window_text, const char *listen,
+                        char *match, size_t capacity);
 void focus_poll(void);
 int focus_poll_fd(void);
 int focus_timeout(void);

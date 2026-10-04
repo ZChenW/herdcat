@@ -196,11 +196,83 @@ static void test_orbit(void) {
   expect(buf, W, 110, 80, 0xffff0000);
   TEST_ASSERT(pixel(buf, W, 55, 25)[3] == 0);
 }
-int main(void) {
+static void test_agent_shapes(const char *snapshot) {
+  static uint8_t buf[360 * 180 * 4];
+  const char *agents[] = {"claude", "codex", "pi", "custom"};
+  const char *labels[] = {"Claude", "Codex", "Pi", "Custom"};
+  for (int style = SIGN_STYLE_POST; style <= SIGN_STYLE_FAN; style++) {
+    for (int i = 0; i < 4; i++) {
+      signs_t model = {0};
+      agent_session_view_t session = {.key = 1, .state = AGENT_STATE_WORKING};
+      strcpy(session.agent, agents[i]);
+      strcpy(session.name, "project");
+      sign_input_t in = {.sessions = &session,
+                         .count = 1,
+                         .style = (sign_style_t)style,
+                         .animations = SIGN_ANIM_OFF,
+                         .open = true,
+                         .english = true,
+                         .cat_height = 110,
+                         .cat_y = 200};
+      sign_frame_t frame;
+      signs_frame(&model, &in, &frame);
+      bool found = false;
+      for (int j = 0; j < frame.shape_count; j++) {
+        sign_shape_t shape = frame.shapes[j];
+        if (shape.w < 29 || shape.stroke != 2)
+          continue;
+        TEST_ASSERT(shape.kind == (i < 2 ? SIGN_RECT : SIGN_CUT));
+        if (i >= 2)
+          TEST_ASSERT(shape.radius == 9);
+        // Native raster capture of the actual model's compact plates at 1x.
+        shape.x = 24 + i * 85;
+        shape.y = style == SIGN_STYLE_FAN ? 26 : 96;
+        shape.w = style == SIGN_STYLE_POST ? 34 : shape.w;
+        shape.orbit = false;
+        shape.rotation = 0;
+        sign_frame_t sample = {
+            .shape_count = 1, .bounds_w = 360, .bounds_h = 180};
+        sample.shapes[0] = shape;
+        sign_draw(buf, 360, 180, 120, &sample, SIGN_DRAW_UNDER);
+        if (i >= 2) {
+          TEST_ASSERT(pixel(buf, 360, (int)shape.x + 3, (int)shape.y + 3)[3] ==
+                      0);
+          expect(buf, 360, (int)shape.x + 17, (int)shape.y + 1, 0xff111827);
+          expect(buf, 360, (int)shape.x + 17, (int)shape.y + 13, 0xffd9ebff);
+        }
+        found = true;
+        break;
+      }
+      TEST_ASSERT(found);
+      in.has_hover = true;
+      in.hover_key = 1;
+      signs_frame(&model, &in, &frame);
+      TEST_ASSERT(frame.text_count &&
+                  (strstr(frame.texts[0].meta, labels[i]) != NULL) ==
+                      (style == SIGN_STYLE_FAN || i >= 2));
+    }
+  }
+  if (snapshot) {
+    FILE *file = fopen(snapshot, "wb");
+    TEST_ASSERT(file);
+    fprintf(file, "P6\n360 180\n255\n");
+    for (size_t i = 0; i < sizeof(buf); i += 4) {
+      unsigned alpha = buf[i + 3];
+      unsigned char rgb[3];
+      for (int j = 0; j < 3; j++)
+        rgb[j] = (unsigned char)(buf[i + 2 - j] + (238 * (255 - alpha)) / 255);
+      TEST_ASSERT(fwrite(rgb, 1, 3, file) == 3);
+    }
+    TEST_ASSERT(fclose(file) == 0);
+  }
+}
+
+int main(int argc, char **argv) {
   TEST_ASSERT(text_init(NULL) == 0);
   test_colors_and_cache();
   test_transition_and_scale();
   test_orbit();
+  test_agent_shapes(argc == 2 ? argv[1] : NULL);
   sign_draw(NULL, 1, 1, 120, NULL, SIGN_DRAW_UNDER);
   sign_draw_cleanup();
   sign_draw_cleanup();

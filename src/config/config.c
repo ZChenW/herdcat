@@ -330,6 +330,8 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
     target = &config->overlay_height;
   } else if (strcmp(key, "idle_frame") == 0) {
     target = &config->idle_frame;
+  } else if (strcmp(key, "agent_interrupt_detect") == 0) {
+    target = &config->agent_interrupt_detect;
   } else if (strcmp(key, "agent_stale_timeout") == 0) {
     target = &config->agent_stale_timeout;
   } else if (strcmp(key, "agent_done_timeout") == 0) {
@@ -375,7 +377,8 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
   }
 
   bool boolean_key =
-      (target == &config->sign_typing_desk ||
+      (target == &config->agent_interrupt_detect ||
+       target == &config->sign_typing_desk ||
        target == &config->cat_draggable || target == &config->mirror_x ||
        target == &config->mirror_y || target == &config->enable_antialiasing ||
        target == &config->enable_hand_mapping ||
@@ -935,6 +938,7 @@ static void config_set_defaults(config_t *config) {
       .overlay_height = 50,
       .idle_frame = 0,
       .agent_done_timeout = DEFAULT_AGENT_DONE_TIMEOUT,
+      .agent_interrupt_detect = 1,
       .agent_stale_timeout = DEFAULT_AGENT_STALE_TIMEOUT,
       .keypress_duration = 100,
       .test_animation_duration = 200,

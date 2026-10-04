@@ -108,6 +108,8 @@ static void watcher_tests(const char *path, const char *other) {
 }
 static int state_requests;
 static int event_requests;
+static char long_request[1281];
+static int long_requests;
 static const char *const EVENT_REQUEST =
     "ev claude working 0123456789abcdef 4194304";
 static int handler(const char *request, char *response, size_t size) {
@@ -118,6 +120,11 @@ static int handler(const char *request, char *response, size_t size) {
   }
   if (strcmp(request, EVENT_REQUEST) == 0) {
     event_requests++;
+    return 0;
+  }
+  if (!strcmp(request, long_request)) {
+    long_requests++;
+    snprintf(response, size, "accepted");
     return 0;
   }
   return strcmp(request, "status") != 0;
@@ -171,6 +178,24 @@ static void instance_tests(const char *directory) {
   TEST_ASSERT(waitpid(child, &status, 0) == child);
   TEST_ASSERT(WIFEXITED(status) && WEXITSTATUS(status) == 0);
   TEST_ASSERT(event_requests == 1);
+  const size_t lengths[] = {63, 64, 1046, 1279, 1280};
+  for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
+    memset(long_request, 'x', lengths[i]);
+    long_request[lengths[i]] = '\0';
+    child = fork();
+    TEST_ASSERT(child >= 0);
+    if (!child) {
+      int result = control_request(long_request);
+      _exit((result == 0) == (lengths[i] < 1280) ? 0 : 1);
+    }
+    delay(30);
+    control_process(handler);
+    delay(30);
+    control_process(handler);
+    TEST_ASSERT(waitpid(child, &status, 0) == child);
+    TEST_ASSERT(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  }
+  TEST_ASSERT(long_requests == 4);
   control_cleanup();
   instance_unlock();
   TEST_ASSERT(instance_lock() == 0);

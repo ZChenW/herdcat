@@ -4,6 +4,7 @@
 #include "config/sign_options.h"
 #include "core/agent_sessions.h"
 #include "platform/drag.h"
+#include "platform/focus_current.h"
 #include "platform/focus_watch.h"
 
 #include <limits.h>
@@ -42,6 +43,7 @@ static uint64_t desk_key;
 static char desk_name[48];
 static int64_t desk_key_ms;
 static double published_lift;
+static void (*on_expand)(void);
 
 static int desk_hang(int cat_height) {
   if (cat_height <= 0)
@@ -125,6 +127,7 @@ static bool top_hit(const sign_frame_t *frame, double x, double y,
 }
 static void track_expanded(size_t index, int cat_x, int cat_y, int cat_w,
                            int cat_h, int64_t now_ms) {
+  bool was_open = expanded[index];
   bool here = tracking && track_index == index;
   bool held = holding && hold_index == index;
   const sign_frame_t *frame =
@@ -151,6 +154,8 @@ static void track_expanded(size_t index, int cat_x, int cat_y, int cat_w,
   } else {
     closing[index] = false;
   }
+  if (!was_open && expanded[index] && on_expand)
+    on_expand();
   // Grab coordinates stay at the press surface, so hover must not follow them.
   if (!held) {
     lanes[index].has_hover = over_hit;
@@ -382,10 +387,13 @@ void overlay_signs_leave(void) {
 bool overlay_signs_press(size_t index) {
   if (index >= MAX_OUTPUTS)
     return false;
+  bool was_open = expanded[index];
   holding = true;
   hold_index = index;
   pressed = false;
   expanded[index] = true;
+  if (!was_open && on_expand)
+    on_expand();
   closing[index] = false;
   sign_hit_t hit;
   if (tracking && track_index == index && lanes[index].has_frame &&
@@ -400,6 +408,16 @@ bool overlay_signs_press(size_t index) {
   lanes[index].has_hover = false;
   return false;
 }
+static void note_split_click(pid_t pid, uint64_t key) {
+  if (pid <= 1 || !key || !focus_watch_available())
+    return;
+  focus_window_t windows[FOCUS_WATCH_WINDOW_MAX];
+  size_t count = focus_watch_windows(windows, FOCUS_WATCH_WINDOW_MAX);
+  uint64_t id = 0;
+  if (!focus_find_window(pid, windows, count, &id) || !id)
+    return;
+  focus_current_click(id, key);
+}
 bool overlay_signs_release(bool dragged, size_t *index, pid_t *pid,
                            uint64_t *key) {
   bool click = !dragged && pressed;
@@ -411,6 +429,7 @@ bool overlay_signs_release(bool dragged, size_t *index, pid_t *pid,
     if (key)
       *key = pressed_key;
     agent_sessions_note_click(pressed_key, overlay_signs_now());
+    note_split_click(pressed_pid, pressed_key);
   }
   pressed = false;
   holding = false;
@@ -469,6 +488,9 @@ void overlay_signs_note_focus(focus_result_t result, int64_t now_ms) {
     signs_focus_failed(&lanes[focus_index].model, focus_key, now_ms);
   focus_armed = false;
 }
+void overlay_signs_on_expand(void (*fn)(void)) {
+  on_expand = fn;
+}
 void overlay_signs_cleanup(void) {
   memset(lanes, 0, sizeof(lanes));
   memset(expanded, 0, sizeof(expanded));
@@ -479,6 +501,7 @@ void overlay_signs_cleanup(void) {
   desk_key_ms = 0;
   desk_name[0] = '\0';
   published_lift = 0;
+  on_expand = NULL;
   for (size_t i = 0; i < MAX_OUTPUTS; i++)
     lanes[i].last.timeout_ms = -1;
 }

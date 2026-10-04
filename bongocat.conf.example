@@ -87,6 +87,10 @@ agent_done_timeout=5
 # Global setting, valid range 0..86400 seconds.
 agent_stale_timeout=600
 
+# Watch newly appended Claude/Codex records for interruptions/errors.
+# Global boolean, immediately reloadable; no contents are logged or saved.
+agent_interrupt_detect=1
+
 # Scheduled sleep (requires enable_scheduled_sleep=1)
 enable_scheduled_sleep=0
 sleep_begin=22:00

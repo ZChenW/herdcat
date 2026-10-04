@@ -293,9 +293,9 @@ static void pointer_button(void *data, struct wl_pointer *object,
     bool click = overlay_signs_release(moved, &index, &pid, &key);
     finish_drag();
     if (click && index < MAX_OUTPUTS) {
-      if (focus_session_window(pid) < 0) {
+      if (pid > 0 && focus_session_window(pid) < 0) {
         overlay_signs_fail(index, key, overlay_signs_now());
-      } else {
+      } else if (pid > 0) {
         overlay_signs_arm_focus(index, key);
       }
       overlays[index].redraw = true;

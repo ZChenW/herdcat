@@ -139,6 +139,21 @@ static int append_rect(char *svg, int used, double x, double y, double w,
     return -1;
   return used + wrote;
 }
+static int append_cut(char *svg, int used, double x, double y, double w,
+                      double h, double cut, uint32_t color) {
+  if (used < 0 || !(color >> 24) || w <= 0 || h <= 0)
+    return used;
+  cut = fmax(0, fmin(cut, fmin(w, h) / 2));
+  int wrote =
+      snprintf(svg + used, SVG_BYTES - (size_t)used,
+               "<path d=\"M%.3f %.3f H%.3f L%.3f %.3f V%.3f L%.3f %.3f H%.3f "
+               "L%.3f %.3f V%.3f Z\" fill=\"#%06x\" fill-opacity=\"%.4f\"/>",
+               x + cut, y, x + w - cut, x + w, y + cut, y + h - cut,
+               x + w - cut, y + h, x + cut, x, y + h - cut, y + cut,
+               color & 0xffffffU, (color >> 24) / 255.0);
+  return wrote < 0 || used + wrote >= SVG_BYTES ? -1 : used + wrote;
+}
+
 static uint64_t shape_key(const sign_shape_t *shape, double x, double y,
                           double w, double h, double radius, double stroke) {
   uint64_t key = 14695981039346656037ULL;
@@ -212,6 +227,16 @@ static int build_svg(char *svg, int bw, int bh, const sign_shape_t *shape,
     if (wrote < 0 || used + wrote >= SVG_BYTES)
       return -1;
     used += wrote;
+  } else if (shape->kind == SIGN_CUT) {
+    double cut = fmin(radius, fmin(w, h) / 2);
+    if (stroke > .05 && (shape->outline >> 24)) {
+      used = append_cut(svg, used, lx, ly, w, h, cut, shape->outline);
+      // Parallel inset of a 45-degree edge, not a second arbitrary polygon.
+      double inner = cut - stroke * (2 - sqrt(2));
+      used = append_cut(svg, used, lx + stroke, ly + stroke, w - 2 * stroke,
+                        h - 2 * stroke, inner, shape->fill);
+    } else
+      used = append_cut(svg, used, lx, ly, w, h, cut, shape->fill);
   } else if (stroke > 0.05 && (shape->outline >> 24)) {
     used = append_rect(svg, used, lx, ly, w, h, radius, shape->outline);
     double inner = radius - stroke;

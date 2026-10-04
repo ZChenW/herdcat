@@ -160,7 +160,7 @@ void control_process(int (*handler)(const char *, char *, size_t)) {
     if (fd < 0) {
       continue;
     }
-    char request[64];
+    char request[1280];
     char response[512];
     ssize_t length =
         recv(fd, request, sizeof(request), MSG_DONTWAIT | MSG_TRUNC);

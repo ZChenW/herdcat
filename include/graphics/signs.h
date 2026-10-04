@@ -15,6 +15,7 @@
 
 typedef enum {
   SIGN_RECT,
+  SIGN_CUT,  // radius is the 45-degree corner cut; stroke is inset.
   SIGN_CHECK
 } sign_shape_kind_t;
 

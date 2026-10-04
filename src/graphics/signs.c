@@ -1,6 +1,7 @@
 #include "graphics/signs.h"
 
 #include "config/sign_options.h"
+#include "core/agent_adapters.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -301,9 +302,12 @@ static void layout_board(sign_slot_t *slot, const sign_input_t *in,
   double x = pole_x + direction * (5 + offset) * scale -
              (direction < 0 ? width * scale : 0);
   double y = cat_bottom - (sample(&slot->bottom, in->now_ms) + 26) * scale;
-  double radius = !strcmp(slot->session.agent, "codex") ? 13 : 8;
-  add_shape(frame, SIGN_RECT, x, y, width * scale, 26 * scale, radius * scale,
-            2 * scale, with_alpha(fill, opacity), with_alpha(INK, opacity));
+  bool other = strcmp(slot->session.agent, "claude") &&
+               strcmp(slot->session.agent, "codex");
+  double radius = other ? 9 : !strcmp(slot->session.agent, "codex") ? 13 : 8;
+  add_shape(frame, other ? SIGN_CUT : SIGN_RECT, x, y, width * scale,
+            26 * scale, radius * scale, 2 * scale, with_alpha(fill, opacity),
+            with_alpha(INK, opacity));
   int first_icon = frame->shape_count;
   double icon_x = direction > 0 ? x + 17 * scale : x + (width - 17) * scale;
   for (int state = 0; state < AGENT_STATE_COUNT; state++)
@@ -337,6 +341,8 @@ static void layout_board(sign_slot_t *slot, const sign_input_t *in,
                           .meta_color = with_alpha(meta, opacity),
                           .reverse = direction < 0};
     snprintf(text->value, sizeof(text->value), "%s", slot->session.name);
+    char fallback[9];
+    const char *who = agent_adapter_display(slot->session.agent, fallback);
     if (slot->session.state == AGENT_STATE_WORKING) {
       int64_t elapsed = in->now_ms - slot->session.state_since_ms;
       if (elapsed < 0)
@@ -344,7 +350,8 @@ static void layout_board(sign_slot_t *slot, const sign_input_t *in,
       int64_t minutes = elapsed / 60000;
       if (minutes > 99999)
         minutes = 99999;
-      snprintf(text->meta, sizeof(text->meta), "%lld %s", (long long)minutes,
+      snprintf(text->meta, sizeof(text->meta), "%s%s%lld %s", other ? who : "",
+               other ? " · " : "", (long long)minutes,
                WORDS[in->english ? 1 : 0].minute);
       wake_at(frame, in->now_ms + 60000 - elapsed % 60000);
     } else {
@@ -353,7 +360,8 @@ static void layout_board(sign_slot_t *slot, const sign_input_t *in,
         label = WORDS[in->english ? 1 : 0].waiting;
       else if (slot->session.state == AGENT_STATE_DONE)
         label = done_label(in, false, slot->session.unread);
-      snprintf(text->meta, sizeof(text->meta), "%s", label);
+      snprintf(text->meta, sizeof(text->meta), "%s%s%s", other ? who : "",
+               other ? " · " : "", label);
     }
   }
   if (visible && frame->hit_count < SIGN_MAX_VISIBLE) {
@@ -486,6 +494,7 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
     frame->transitioning = true;
   }
   bool codex = !strcmp(slot->session.agent, "codex");
+  bool other = !codex && strcmp(slot->session.agent, "claude");
   int stick_at = frame->shape_count;
   double stick_h = (len - 14) * cat_scale;
   if (stick_h > 0.4)
@@ -497,10 +506,10 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
   double center_sy = len - (codex ? 13 : 13.5);
   double top = pivot_y - (center_sy + half_h) * cat_scale;
   double left = pivot_x - half_w * cat_scale;
-  add_shape(frame, SIGN_RECT, left, top, half_w * 2 * cat_scale,
-            half_h * 2 * cat_scale, (codex ? 15 : 9) * plate * cat_scale,
-            2 * plate * cat_scale, with_alpha(fill, opacity),
-            with_alpha(INK, opacity));
+  add_shape(frame, other ? SIGN_CUT : SIGN_RECT, left, top,
+            half_w * 2 * cat_scale, half_h * 2 * cat_scale,
+            (codex ? 15 : 9) * plate * cat_scale, 2 * plate * cat_scale,
+            with_alpha(fill, opacity), with_alpha(INK, opacity));
   if (slot->session.unread && slot->session.state == AGENT_STATE_DONE)
     add_unread(frame, left, top, half_w * 2 * cat_scale, plate * cat_scale,
                opacity);
@@ -517,7 +526,8 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
     double rise = (1 - appear) * 6 * cat_scale;
     double box_bottom = pin_y - 24 * cat_scale + rise;
     sign_text_t *text = &frame->texts[frame->text_count++];
-    const char *who = codex ? "Codex" : "Claude";
+    char fallback[9];
+    const char *who = agent_adapter_display(slot->session.agent, fallback);
     *text = (sign_text_t){.x = pin_x,
                           .baseline_y = box_bottom - 13.2 * cat_scale,
                           .gap = 8 * cat_scale,

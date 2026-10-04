@@ -63,5 +63,7 @@ void overlay_signs_fail(size_t index, uint64_t key, int64_t now_ms);
 void overlay_signs_arm_focus(size_t index, uint64_t key);
 void overlay_signs_note_focus(focus_result_t result, int64_t now_ms);
 void overlay_signs_cleanup(void);
+// Called once when a cat's signs open. NULL does nothing.
+void overlay_signs_on_expand(void (*fn)(void));
 
 #endif

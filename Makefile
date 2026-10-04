@@ -229,36 +229,45 @@ $(BUILDDIR)/test_fullscreen_state: $(TESTDIR)/test_fullscreen_state.c | $(OBJDIR
 $(BUILDDIR)/test_runtime: $(TESTDIR)/test_runtime.c src/core/control.c src/config/config_watcher.c $(CONFIG_TEST_DEPS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_focus: tests/test_focus.c src/platform/focus.c src/platform/focus_json.c src/core/agent_hook.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_focus: tests/test_focus.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_focus_watch: tests/test_focus_watch.c src/platform/focus_watch.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/core/agent_hook.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_focus_watch: tests/test_focus_watch.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(BUILDDIR)/test_text: tests/test_text.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
 
-$(BUILDDIR)/test_signs: tests/test_signs.c src/graphics/signs.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_signs: tests/test_signs.c src/graphics/signs.c src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_sign_draw: tests/test_sign_draw.c src/graphics/sign_draw.c src/graphics/signs.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_sign_draw: tests/test_sign_draw.c src/graphics/sign_draw.c src/graphics/signs.c src/core/agent_adapters.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
 
-$(BUILDDIR)/test_overlay_signs: tests/test_overlay_signs.c src/config/config.c src/platform/overlay_signs.c src/graphics/signs.c src/core/agent_sessions.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/core/agent_hook.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_overlay_signs: tests/test_overlay_signs.c src/config/config.c src/platform/overlay_signs.c src/graphics/signs.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-TEST_BINARIES = $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state
+TEST_BINARIES = $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
 
 $(BUILDDIR)/test_drag: tests/test_drag.c src/platform/drag.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_agent_hook: tests/test_agent_hook.c src/core/agent_hook.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_agent_hook: tests/test_agent_hook.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(BUILDDIR)/test_agent_watch: tests/test_agent_watch.c src/platform/agent_watch.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(BUILDDIR)/test_agent_sessions: tests/test_agent_sessions.c src/core/agent_sessions.c src/core/agent_state.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_session_store: tests/test_session_store.c src/platform/session_store.c src/platform/agent_terminal.c src/core/agent_sessions.c src/core/agent_state.c src/core/agent_transcript.c src/platform/transcript_watch.c src/platform/agent_watch.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_discover: tests/test_agent_discover.c src/platform/agent_discover.c src/platform/agent_terminal.c src/core/agent_sessions.c src/core/agent_state.c src/core/agent_adapters.c src/core/agent_hook.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_terminal: tests/test_agent_terminal.c src/platform/agent_terminal.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(BUILDDIR)/test_agent_state: tests/test_agent_state.c src/core/agent_state.c $(PROJECT_HEADERS) | $(OBJDIR)
@@ -273,6 +282,9 @@ test: $(TEST_BINARIES)
 		echo "--- $$(basename $$t) ---"; \
 		$$t || failures=$$((failures + 1)); \
 	done; \
+	echo "--- test_kitty_watcher.py ---"; \
+	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_kitty_watcher.py || \
+		failures=$$((failures + 1)); \
 	if [ $$failures -gt 0 ]; then \
 		echo "$$failures test suite(s) failed"; \
 		exit 1; \
@@ -305,6 +317,7 @@ $(BUILDDIR)/test_hyprland: tests/test_hyprland.c src/platform/hyprland.c src/uti
 test-runtime: all compositor-test-build $(BUILDDIR)/test_focus
 	python3 scripts/test_runtime.py
 	python3 scripts/test_hook_client.py
+	python3 scripts/test_transcript_runtime.py
 	python3 scripts/test_focus_client.py
 	python3 scripts/test_sign_options.py
 	python3 scripts/test_drag_runtime.py --sign-style fan
@@ -316,3 +329,9 @@ $(BUILDDIR)/test_input: tests/test_input.c src/platform/input.c src/utils/error.
 
 $(BUILDDIR)/test_nanosvg: tests/test_nanosvg.c lib/nanosvg.h lib/nanosvgrast.h tests/test_helpers.h | $(OBJDIR)
 	$(CC) -std=c2x -Ilib -Itests $(filter -fsanitize=%,$(TEST_CFLAGS)) $< -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_adapters: tests/test_agent_adapters.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_transcript: tests/test_transcript.c src/core/agent_transcript.c src/platform/transcript_watch.c src/platform/agent_watch.c src/core/agent_hook.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_state.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)

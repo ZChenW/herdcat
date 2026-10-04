@@ -295,6 +295,41 @@ static void live_options(void) {
       overlay_signs_step(0, &config, 100, 199, 120, false, 2000);
   TEST_ASSERT(!off.frame && overlay_signs_frame(0)->hit_count == 0);
 }
+static int expands;
+static void count_expand(void) {
+  expands++;
+}
+
+static void expand_edge(void) {
+  begin();
+  expands = 0;
+  overlay_signs_on_expand(count_expand);
+  config_t config = config_of(40, 50, 10);
+  int height = overlay_signs_height(&config);
+  int cat_y = overlay_signs_cat_y(&config, height);
+  TEST_ASSERT(!overlay_signs_pointer(0, 102, cat_y + 38));
+  overlay_signs_step(0, &config, 100, 72, height, false, 1000);
+  TEST_ASSERT(expands == 1);
+  overlay_signs_step(0, &config, 100, 72, height, false, 1100);
+  TEST_ASSERT(expands == 1);
+  overlay_signs_leave();
+  overlay_signs_step(0, &config, 100, 72, height, false, 1100);
+  overlay_signs_step(0, &config, 100, 72, height, false, 1250);
+  TEST_ASSERT(expands == 1);
+  TEST_ASSERT(!overlay_signs_pointer(0, 102, cat_y + 38));
+  overlay_signs_step(0, &config, 100, 72, height, false, 1300);
+  TEST_ASSERT(expands == 2);
+  overlay_signs_press(0);
+  TEST_ASSERT(expands == 2);
+  begin();
+  expands = 0;
+  overlay_signs_on_expand(count_expand);
+  TEST_ASSERT(!overlay_signs_press(0));
+  TEST_ASSERT(expands == 1);
+  overlay_signs_press(0);
+  TEST_ASSERT(expands == 1);
+  begin();
+}
 int main(void) {
   geometry();
   quiet_pole();
@@ -306,5 +341,6 @@ int main(void) {
   damage_follows_cat();
   typing_desk();
   live_options();
+  expand_edge();
   return 0;
 }

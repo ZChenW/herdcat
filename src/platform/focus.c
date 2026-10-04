@@ -2,6 +2,7 @@
 #include "platform/focus.h"
 
 #include "core/agent_hook.h"
+#include "platform/agent_terminal.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -112,10 +113,50 @@ static int job_process(command_job_t *job) {
   return (int)success ? 1 : -1;
 }
 
+enum {
+  JOB_WINDOWS = 0,
+  JOB_NIRI,
+  JOB_KITTY
+};
+
 static command_job_t job = {.fd = -1};
 static pid_t target_pid;
-static bool focusing;
+static int job_kind;
 static focus_result_t result;
+static focus_kitty_fn kitty_lookup;
+
+void focus_set_kitty(focus_kitty_fn fn) {
+  kitty_lookup = fn;
+}
+bool focus_kitty_target(const char *window_text, const char *listen,
+                        char *match, size_t capacity) {
+  uint64_t window = 0;
+  char socket[AGENT_TERMINAL_LISTEN_MAX + 1];
+  if (!match || !agent_terminal_accept(window_text, listen, &window, socket,
+                                       sizeof(socket)))
+    return false;
+  int wrote = snprintf(match, capacity, "id:%" PRIu64, window);
+  return wrote > 0 && (size_t)wrote < capacity;
+}
+static bool start_kitty(void) {
+  if (!kitty_lookup)
+    return false;
+  uint64_t window = 0;
+  char listen[AGENT_TERMINAL_LISTEN_MAX + 1];
+  char text[32], match[32];
+  if (!kitty_lookup(target_pid, &window, listen, sizeof(listen)))
+    return false;
+  int wrote = snprintf(text, sizeof(text), "%" PRIu64, window);
+  if (wrote < 0 || (size_t)wrote >= sizeof(text) ||
+      !focus_kitty_target(text, listen, match, sizeof(match)))
+    return false;
+  const char *args[] = {"kitten",       "@",       "--to", listen,
+                        "focus-window", "--match", match,  NULL};
+  if (job_start(&job, args) < 0)
+    return false;
+  job_kind = JOB_KITTY;
+  return true;
+}
 bool focus_available(void) {
   const char *socket = getenv("NIRI_SOCKET");
   struct stat st;
@@ -155,7 +196,7 @@ int focus_session_window(pid_t pid) {
   if (job_start(&job, args) < 0)
     return -1;
   target_pid = pid;
-  focusing = false;
+  job_kind = JOB_WINDOWS;
   result = FOCUS_PENDING;
   return 0;
 }
@@ -165,12 +206,17 @@ void focus_poll(void) {
   int done = job_process(&job);
   if (!done)
     return;
+  if (job_kind == JOB_KITTY) {
+    result = FOCUS_SUCCESS;
+    return;
+  }
   if (done < 0) {
     result = FOCUS_UNAVAILABLE;
     return;
   }
-  if (focusing) {
-    result = FOCUS_SUCCESS;
+  if (job_kind == JOB_NIRI) {
+    if (!start_kitty())
+      result = FOCUS_SUCCESS;
     return;
   }
   focus_window_t windows[256];
@@ -194,7 +240,7 @@ void focus_poll(void) {
     return;
   }
   job.deadline = deadline;
-  focusing = true;
+  job_kind = JOB_NIRI;
 }
 int focus_poll_fd(void) {
   return job.eof ? -1 : job.fd;
@@ -215,4 +261,5 @@ focus_result_t focus_take_result(void) {
 void focus_cleanup(void) {
   job_cleanup(&job);
   result = FOCUS_PENDING;
+  job_kind = JOB_WINDOWS;
 }

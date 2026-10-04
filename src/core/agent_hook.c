@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 enum {
@@ -29,14 +30,6 @@ enum {
   TOKEN_STRING,
   TOKEN_LITERAL,
   TOKEN_NUMBER
-};
-enum {
-  FIELD_NONE,
-  FIELD_EVENT,
-  FIELD_SESSION,
-  FIELD_NOTIFICATION,
-  FIELD_STOP,
-  FIELD_CWD
 };
 enum {
   NUMBER_SIGN,
@@ -60,51 +53,74 @@ static bool hex(unsigned char c) {
 }
 
 void agent_hook_scan_init(agent_hook_scanner_t *s) {
+  agent_hook_scan_adapter(s, agent_adapter_find("claude"));
+}
+
+void agent_hook_scan_adapter(agent_hook_scanner_t *s,
+                             const agent_adapter_t *adapter) {
   memset(s, 0, sizeof(*s));
+  s->adapter = adapter;
+  for (unsigned i = 0; i < HOOK_FIELD_COUNT; i++)
+    s->ranks[i] = UINT_MAX;
 }
 
 static void finish_string(agent_hook_scanner_t *s) {
   s->text[s->text_length] = '\0';
+  if (!s->key && s->depth == 1 && s->field == HOOK_FIELD_PARENT)
+    s->child_session = s->text_length > 0 || s->overflow;
   bool valid =
-      !s->overflow && (!s->escaped || (!s->key && s->field == FIELD_CWD));
+      !s->overflow &&
+      (!s->escaped || (!s->key && (s->field == HOOK_FIELD_CWD ||
+                                   s->field == HOOK_FIELD_TRANSCRIPT)));
   if (s->key) {
     if (s->depth == 1) {
-      static const char *const FIELDS[] = {"",
-                                           "hook_event_name",
-                                           "session_id",
-                                           "notification_type",
-                                           "stop_hook_active",
-                                           "cwd"};
-      s->field = FIELD_NONE;
-      for (unsigned i = FIELD_EVENT; valid && i <= FIELD_CWD; i++) {
-        if (strcmp(s->text, FIELDS[i]) == 0) {
-          s->field = i;
-          s->valid_fields &= ~(1U << i);
-          if (i == FIELD_STOP) {
-            s->stop_present = true;
-          }
-          break;
-        }
+      s->field = HOOK_FIELD_NONE;
+      s->array_field = s->array_taken = false;
+      const agent_hook_alias_t *alias =
+          valid ? agent_adapter_alias(s->adapter, s->text) : NULL;
+      if (alias && alias->rank <= s->ranks[alias->field]) {
+        s->field = alias->field;
+        s->ranks[s->field] = alias->rank;
+        s->array_field = alias->array;
+        s->valid_fields &= ~(1U << s->field);
+        if (s->field == HOOK_FIELD_PARENT)
+          s->child_session = false;
+        if (s->field == HOOK_FIELD_STOP)
+          s->stop_present = true;
       }
     }
     s->stack[s->depth - 1] = OBJECT_COLON;
-  } else if (s->depth == 1 && valid) {
+  } else if (valid && ((!s->array_field && s->depth == 1) ||
+                       (s->array_field && !s->array_taken && s->depth == 2 &&
+                        s->stack[1] == ARRAY_END))) {
+    s->array_taken = true;
     char *target = NULL;
     size_t capacity = 0;
     switch (s->field) {
-    case FIELD_EVENT:
+    case HOOK_FIELD_EVENT:
       target = s->event;
       capacity = sizeof(s->event);
       break;
-    case FIELD_SESSION:
+    case HOOK_FIELD_SESSION:
       target = s->session_id;
       capacity = sizeof(s->session_id);
       break;
-    case FIELD_CWD:
+    case HOOK_FIELD_TRANSCRIPT:
+      target = s->transcript;
+      capacity = sizeof(s->transcript);
+      break;
+    case HOOK_FIELD_CWD:
       target = s->cwd;
       capacity = sizeof(s->cwd);
       break;
-    case FIELD_NOTIFICATION:
+    case HOOK_FIELD_PARENT:
+      s->child_session = s->text_length > 0;
+      break;
+    case HOOK_FIELD_STATUS:
+      target = s->status;
+      capacity = sizeof(s->status);
+      break;
+    case HOOK_FIELD_NOTIFICATION:
       target = s->notification;
       capacity = sizeof(s->notification);
       break;
@@ -116,6 +132,8 @@ static void finish_string(agent_hook_scanner_t *s) {
       s->valid_fields |= 1U << s->field;
     }
   }
+  if (!s->key && s->array_field && s->depth == 2 && s->stack[1] == ARRAY_END)
+    s->array_taken = true;
   s->token = TOKEN_NONE;
 }
 
@@ -185,6 +203,20 @@ static bool number_complete(unsigned state) {
          state == NUMBER_FRACTION || state == NUMBER_EXPONENT_DIGITS;
 }
 
+static void finish_number(agent_hook_scanner_t *s) {
+  if (s->depth != 1 || s->field != HOOK_FIELD_PID || s->overflow)
+    return;
+  s->text[s->text_length] = '\0';
+  if (!s->text_length || strspn(s->text, "0123456789") != s->text_length)
+    return;
+  errno = 0;
+  long value = strtol(s->text, NULL, 10);
+  if (!errno && value > 1 && value <= INT_MAX) {
+    s->pid = (pid_t)value;
+    s->valid_fields |= 1U << HOOK_FIELD_PID;
+  }
+}
+
 static bool number_byte(agent_hook_scanner_t *s, unsigned char c) {
   unsigned state = s->number_state;
   if (digit(c)) {
@@ -208,17 +240,23 @@ static bool number_byte(agent_hook_scanner_t *s, unsigned char c) {
     s->number_state = NUMBER_EXPONENT_SIGN;
   } else {
     s->failed |= !number_complete(state);
+    if (!s->failed)
+      finish_number(s);
     s->token = TOKEN_NONE;
     return false;
   }
+  if (s->text_length < sizeof(s->text) - 1)
+    s->text[s->text_length++] = (char)c;
+  else
+    s->overflow = true;
   return true;
 }
 
 static void finish_literal(agent_hook_scanner_t *s) {
-  if (s->depth == 1 && s->field == FIELD_STOP &&
+  if (s->depth == 1 && s->field == HOOK_FIELD_STOP &&
       (s->literal[0] == 't' || s->literal[0] == 'f')) {
     s->stop_hook_active = s->literal[0] == 't';
-    s->valid_fields |= 1U << FIELD_STOP;
+    s->valid_fields |= 1U << HOOK_FIELD_STOP;
   }
   s->token = TOKEN_NONE;
 }
@@ -241,6 +279,8 @@ static void begin_value(agent_hook_scanner_t *s, unsigned char c) {
       s->failed = true;
       return;
     }
+    if (s->depth == 1 && c != '[')
+      s->array_field = false;
     s->stack[s->depth++] = c == '{' ? OBJECT_FIRST : ARRAY_FIRST;
   } else if (c == 't' || c == 'f' || c == 'n') {
     s->token = TOKEN_LITERAL;
@@ -248,6 +288,9 @@ static void begin_value(agent_hook_scanner_t *s, unsigned char c) {
     s->literal_pos = 1;
   } else if (c == '-' || digit(c)) {
     s->token = TOKEN_NUMBER;
+    s->text_length = 1;
+    s->text[0] = (char)c;
+    s->overflow = false;
     s->number_state = c == '-'   ? NUMBER_SIGN
                       : c == '0' ? NUMBER_ZERO
                                  : NUMBER_INTEGER;
@@ -327,49 +370,21 @@ bool agent_hook_scan_finish(agent_hook_scanner_t *s) {
 }
 
 bool agent_hook_event(const agent_hook_scanner_t *s, agent_event_t *event) {
-  if (!event || s->failed || !s->complete ||
-      !(s->valid_fields & (1U << FIELD_EVENT))) {
+  return agent_hook_event_override(s, NULL, event, NULL);
+}
+
+bool agent_hook_event_override(const agent_hook_scanner_t *s, const char *name,
+                               agent_event_t *event, bool *metadata) {
+  if (!event || s->child_session || s->failed || !s->complete ||
+      (!name && !(s->valid_fields & (1U << HOOK_FIELD_EVENT))))
     return false;
-  }
-  static const struct {
-    const char *name;
-    agent_event_t event;
-  } MAPPING[] = {
-      {"SessionStart",       AGENT_EVENT_START  },
-      {"UserPromptSubmit",   AGENT_EVENT_WORKING},
-      {"PreToolUse",         AGENT_EVENT_WORKING},
-      {"PostToolUse",        AGENT_EVENT_WORKING},
-      {"PostToolUseFailure", AGENT_EVENT_WORKING},
-      {"PermissionRequest",  AGENT_EVENT_WAITING},
-      {"Stop",               AGENT_EVENT_DONE   },
-      {"StopFailure",        AGENT_EVENT_IDLE   },
-      {"Interrupt",          AGENT_EVENT_IDLE   },
-      {"SessionEnd",         AGENT_EVENT_END    }
-  };
-  if (strcmp(s->event, "Stop") == 0 && s->stop_present &&
-      (!(s->valid_fields & (1U << FIELD_STOP)) || s->stop_hook_active)) {
-    return false;
-  }
-  for (size_t i = 0; i < sizeof(MAPPING) / sizeof(MAPPING[0]); i++) {
-    if (strcmp(s->event, MAPPING[i].name) == 0) {
-      *event = MAPPING[i].event;
-      return true;
-    }
-  }
-  if (strcmp(s->event, "Notification") == 0 &&
-      (s->valid_fields & (1U << FIELD_NOTIFICATION))) {
-    if (strcmp(s->notification, "idle_prompt") == 0) {
-      *event = AGENT_EVENT_REST;
-      return true;
-    }
-    if (strcmp(s->notification, "permission_prompt") == 0 ||
-        strcmp(s->notification, "elicitation_dialog") == 0 ||
-        strcmp(s->notification, "agent_needs_input") == 0) {
-      *event = AGENT_EVENT_WAITING;
-      return true;
-    }
-  }
-  return false;
+  return agent_adapter_event(
+      s->adapter, name ? name : s->event,
+      s->valid_fields & (1U << HOOK_FIELD_NOTIFICATION) ? s->notification
+                                                        : NULL,
+      s->valid_fields & (1U << HOOK_FIELD_STATUS) ? s->status : NULL,
+      s->stop_present, s->valid_fields & (1U << HOOK_FIELD_STOP),
+      s->stop_hook_active, event, metadata);
 }
 
 bool agent_hook_valid_agent(const char *agent) {
@@ -386,9 +401,9 @@ bool agent_hook_valid_agent(const char *agent) {
 
 uint64_t agent_hook_key(const char *agent, const agent_hook_scanner_t *s) {
   uint64_t hash = UINT64_C(14695981039346656037);
-  const char *parts[] = {agent, ":",
-                         s->valid_fields & (1U << FIELD_SESSION) ? s->session_id
-                                                                 : "default"};
+  const char *parts[] = {
+      agent, ":",
+      s->valid_fields & (1U << HOOK_FIELD_SESSION) ? s->session_id : "default"};
   for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
     for (const unsigned char *p = (const unsigned char *)parts[i]; *p; p++) {
       hash ^= *p;
@@ -400,13 +415,13 @@ uint64_t agent_hook_key(const char *agent, const agent_hook_scanner_t *s) {
 
 // Decode JSON escapes only for cwd. Other captured fields keep their strict
 // rules.
-static bool decode_cwd(const char *raw, char decoded[256]) {
+static bool decode_path(const char *raw, char *decoded, size_t capacity) {
   size_t used = 0;
   while (*raw) {
     uint32_t cp;
     if (*raw != '\\') {
       size_t n = utf8_decode(raw, &cp);
-      if (!n || used + n >= 256)
+      if (!n || used + n >= capacity)
         return false;
       memcpy(decoded + used, raw, n);
       used += n;
@@ -449,7 +464,7 @@ static bool decode_cwd(const char *raw, char decoded[256]) {
     if (cp == 0)
       return false;
     unsigned n = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
-    if (used + n >= 256)
+    if (used + n >= capacity)
       return false;
     if (n == 1)
       decoded[used] = (char)cp;
@@ -466,20 +481,15 @@ static bool decode_cwd(const char *raw, char decoded[256]) {
   decoded[used] = '\0';
   return true;
 }
-bool agent_hook_name(const agent_hook_scanner_t *s, char name[41]) {
-  name[0] = '\0';
-  if (!(s->valid_fields & (1U << FIELD_CWD)))
+bool agent_hook_transcript(const agent_hook_scanner_t *s,
+                           char path[AGENT_TRANSCRIPT_PATH_MAX + 1]) {
+  return (s->valid_fields & (1U << HOOK_FIELD_TRANSCRIPT)) &&
+         decode_path(s->transcript, path, AGENT_TRANSCRIPT_PATH_MAX + 1) &&
+         path[0] == '/' && !strchr(path, '\n') && !strchr(path, '\r');
+}
+static bool copy_label(const char *base, char name[41]) {
+  if (!base || !base[0] || !strcmp(base, ".") || !strcmp(base, ".."))
     return false;
-  char cwd[256];
-  if (!decode_cwd(s->cwd, cwd) || cwd[0] != '/')
-    return false;
-  size_t length = strlen(cwd);
-  while (length && cwd[length - 1] == '/')
-    cwd[--length] = '\0';
-  const char *base = strrchr(cwd, '/');
-  if (!base || !base[1])
-    return false;
-  base++;
   size_t used = 0;
   while (*base) {
     uint32_t cp;
@@ -496,6 +506,54 @@ bool agent_hook_name(const agent_hook_scanner_t *s, char name[41]) {
   }
   name[used] = '\0';
   return used > 0;
+}
+
+static bool git_here(const char *dir) {
+  char git[PATH_MAX];
+  int wrote = snprintf(git, sizeof(git), "%s/.git", dir);
+  if (wrote < 0 || (size_t)wrote >= sizeof(git))
+    return false;
+  struct stat st;
+  return lstat(git, &st) == 0;
+}
+
+static const char *final_component(const char *dir) {
+  const char *base = strrchr(dir, '/');
+  return base ? base + 1 : dir;
+}
+
+bool agent_hook_place_name(const char *dir, char name[41]) {
+  name[0] = '\0';
+  if (!dir || dir[0] != '/')
+    return false;
+  char path[PATH_MAX];
+  size_t length = strlen(dir);
+  if (!length || length >= sizeof(path))
+    return false;
+  memcpy(path, dir, length + 1);
+  while (length > 1 && path[length - 1] == '/')
+    path[--length] = '\0';
+  char start[PATH_MAX];
+  memcpy(start, path, length + 1);
+  for (int depth = 0; depth < 16; depth++) {
+    if (git_here(path))
+      return copy_label(final_component(path), name);
+    char *slash = strrchr(path, '/');
+    if (!slash || slash == path)
+      break;
+    *slash = '\0';
+  }
+  return copy_label(final_component(start), name);
+}
+
+bool agent_hook_name(const agent_hook_scanner_t *s, char name[41]) {
+  name[0] = '\0';
+  if (!(s->valid_fields & (1U << HOOK_FIELD_CWD)))
+    return false;
+  char cwd[256];
+  if (!decode_path(s->cwd, cwd, sizeof(cwd)) || cwd[0] != '/')
+    return false;
+  return agent_hook_place_name(cwd, name);
 }
 
 int agent_hook_parse_stat(const char *line, char *comm, size_t capacity,
@@ -522,6 +580,52 @@ int agent_hook_parse_stat(const char *line, char *comm, size_t capacity,
   comm[length] = '\0';
   *parent = (pid_t)value;
   return 0;
+}
+
+int agent_hook_stat_tty(const char *line, unsigned long *tty_nr) {
+  if (!line || !tty_nr)
+    return -1;
+  const char *end = strrchr(line, ')');
+  if (!end || end[1] != ' ')
+    return -1;
+  const char *p = end + 2;
+  while (*p && *p != ' ')
+    p++;
+  for (int field = 0; field < 4; field++) {
+    if (*p++ != ' ' || !digit((unsigned char)*p))
+      return -1;
+    errno = 0;
+    char *tail = NULL;
+    unsigned long value = strtoul(p, &tail, 10);
+    if (errno || !tail || tail == p || (*tail && *tail != ' ' && *tail != '\n'))
+      return -1;
+    if (field == 3) {
+      *tty_nr = value;
+      return 0;
+    }
+    p = tail;
+  }
+  return -1;
+}
+
+int agent_process_tty(pid_t pid) {
+  if (pid <= 0)
+    return -1;
+  char path[64];
+  snprintf(path, sizeof(path), "/proc/%jd/stat", (intmax_t)pid);
+  int fd = open(path, O_RDONLY | O_CLOEXEC);
+  if (fd < 0)
+    return -1;
+  char stat[512];
+  ssize_t length = read(fd, stat, sizeof(stat) - 1);
+  close(fd);
+  if (length <= 0)
+    return -1;
+  stat[length] = '\0';
+  unsigned long tty = 0;
+  if (agent_hook_stat_tty(stat, &tty) < 0)
+    return -1;
+  return tty != 0;
 }
 
 static pid_t agent_parent(void) {
@@ -562,9 +666,20 @@ static void hook_timeout(int signum) {
   _exit(0);
 }
 
-int agent_hook_run(const char *agent) {
+int agent_hook_run(const char *agent, const char *event_name) {
+  return agent_hook_run_adapter(agent, event_name, agent_adapter_find(agent));
+}
+
+int agent_hook_run_adapter(const char *agent, const char *event_name,
+                           const agent_adapter_t *adapter) {
   if (!agent_hook_valid_agent(agent)) {
     return 1;
+  }
+  // Emit the policy response before parsing, including on timeout/failure.
+  if (adapter->json_stdout) {
+    signal(SIGPIPE, SIG_IGN);
+    ssize_t ignored = write(STDOUT_FILENO, "{}\n", 3);
+    (void)ignored;
   }
   if (isatty(STDIN_FILENO)) {
     return 0;
@@ -576,7 +691,7 @@ int agent_hook_run(const char *agent) {
   }
   alarm(2);
   agent_hook_scanner_t scanner;
-  agent_hook_scan_init(&scanner);
+  agent_hook_scan_adapter(&scanner, adapter);
   char buffer[4096];
   ssize_t length;
   while ((length = read(STDIN_FILENO, buffer, sizeof(buffer))) > 0) {
@@ -586,16 +701,31 @@ int agent_hook_run(const char *agent) {
     }
   }
   agent_event_t event;
+  bool metadata = false;
   if (length < 0 || !agent_hook_scan_finish(&scanner) ||
-      !agent_hook_event(&scanner, &event)) {
+      !agent_hook_event_override(&scanner, event_name, &event, &metadata)) {
     return 0;
   }
+  pid_t pid = adapter->no_pid ? 0 : agent_parent();
+  if (adapter->explicit_pid) {
+    // The bridge runs in Pi itself. Never watch an arbitrary supplied PID or
+    // revive work after that parent has exited while a hook was queued.
+    if (!(scanner.valid_fields & (1U << HOOK_FIELD_PID)) ||
+        scanner.pid != pid) {
+      if (event != AGENT_EVENT_END)
+        return 0;
+      pid = 0;
+    }
+  }
+  // A daemon with no controlling terminal must not keep a sign forever.
+  if (pid > 0 && agent_process_tty(pid) == 0)
+    pid = 0;
   char request[64];
-  static const char *const EVENTS[] = {"idle",  "working", "waiting", "done",
-                                       "start", "rest",    "end"};
+  static const char *const EVENTS[] = {"idle", "working",  "waiting",
+                                       "done", "start",    "rest",
+                                       "end",  "interrupt"};
   snprintf(request, sizeof(request), "ev %s %s %016" PRIx64 " %jd", agent,
-           EVENTS[event], agent_hook_key(agent, &scanner),
-           (intmax_t)agent_parent());
+           EVENTS[event], agent_hook_key(agent, &scanner), (intmax_t)pid);
   const char *debug = getenv("BONGOCAT_HOOK_DEBUG");
   if (debug && strcmp(debug, "1") == 0) {
     fprintf(stderr, "%s\n", request);
@@ -605,8 +735,18 @@ int agent_hook_run(const char *agent) {
     return 0;
   }
   int sent = control_request(request);
-  if (!sent && (!strcmp(scanner.event, "SessionStart") ||
-                !strcmp(scanner.event, "UserPromptSubmit"))) {
+  if (!sent && metadata) {
+    if (!strcmp(agent, adapter->name) &&
+        (adapter->interrupt_source == AGENT_SIGNAL_TRANSCRIPT ||
+         adapter->error_source == AGENT_SIGNAL_TRANSCRIPT)) {
+      char path[AGENT_TRANSCRIPT_PATH_MAX + 1];
+      if (agent_hook_transcript(&scanner, path)) {
+        char message[AGENT_TRANSCRIPT_PATH_MAX + 23];
+        snprintf(message, sizeof(message), "path %016" PRIx64 " %s",
+                 agent_hook_key(agent, &scanner), path);
+        control_request(message);
+      }
+    }
     char name[41];
     if (agent_hook_name(&scanner, name)) {
       snprintf(request, sizeof(request), "name %016" PRIx64 " %s",

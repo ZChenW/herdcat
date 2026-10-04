@@ -1,8 +1,19 @@
+#define _GNU_SOURCE
 #include "core/agent_hook.h"
 #include "test_helpers.h"
 
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/prctl.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 static agent_hook_scanner_t scan(const char *json, size_t chunk, bool valid) {
   agent_hook_scanner_t s;
@@ -197,6 +208,81 @@ static void test_stat_and_agent(void) {
                 -1);
   }
   TEST_ASSERT(agent_hook_parse_stat("42 (bash) S 1", comm, 2, &parent) == -1);
+  unsigned long tty = 1;
+  TEST_ASSERT(agent_hook_stat_tty("42 (odd ) ( name) S 9 1 1 7 3", &tty) == 0 &&
+              tty == 7);
+  TEST_ASSERT(agent_hook_stat_tty("42 (codex) S 1 42 42 0 42", &tty) == 0 &&
+              tty == 0);
+  TEST_ASSERT(agent_hook_stat_tty("42 (codex) S 1 42 42 34817 42", &tty) == 0 &&
+              tty == 34817);
+  TEST_ASSERT(agent_hook_stat_tty("42 (codex) S 1 42 42 34817\n", &tty) == 0 &&
+              tty == 34817);
+  TEST_ASSERT(agent_hook_stat_tty("42 (sh) S 1 0 0", &tty) == -1);
+  TEST_ASSERT(agent_hook_stat_tty("42 (sh) S 1", &tty) == -1);
+  TEST_ASSERT(agent_hook_stat_tty(NULL, &tty) == -1);
+}
+
+static pid_t spawn_paused(bool with_tty, int *master) {
+  char *name = NULL;
+  *master = -1;
+  if (with_tty) {
+    *master = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
+    TEST_ASSERT(*master >= 0 && grantpt(*master) == 0 &&
+                unlockpt(*master) == 0);
+    name = ptsname(*master);
+    TEST_ASSERT(name);
+  }
+  int ready[2];
+  TEST_ASSERT(pipe2(ready, O_CLOEXEC) == 0);
+  int master_fd = *master;
+  pid_t pid = fork();
+  TEST_ASSERT(pid >= 0);
+  if (pid == 0) {
+    close(ready[0]);
+    if (master_fd >= 0)
+      close(master_fd);
+    prctl(PR_SET_PDEATHSIG, SIGKILL);
+    if (getppid() == 1)
+      _exit(0);
+    if (setsid() < 0)
+      _exit(1);
+    if (with_tty) {
+      int slave = open(name, O_RDWR);
+      if (slave < 0 || ioctl(slave, TIOCSCTTY, 0) < 0)
+        _exit(1);
+    }
+    char ok = 1;
+    if (write(ready[1], &ok, 1) != 1)
+      _exit(1);
+    for (;;)
+      pause();
+  }
+  close(ready[1]);
+  char ok = 0;
+  TEST_ASSERT(read(ready[0], &ok, 1) == 1);
+  close(ready[0]);
+  return pid;
+}
+
+static void stop_child(pid_t pid, int master) {
+  if (pid > 0)
+    kill(pid, SIGKILL);
+  if (master >= 0)
+    close(master);
+  if (pid > 0)
+    while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
+}
+
+static void test_process_tty(void) {
+  int master = -1;
+  pid_t daemon = spawn_paused(false, &master);
+  pid_t live = spawn_paused(true, &master);
+  int live_master = master;
+  TEST_ASSERT(agent_process_tty(daemon) == 0);
+  TEST_ASSERT(agent_process_tty(live) == 1);
+  TEST_ASSERT(agent_process_tty(0) == -1);
+  stop_child(daemon, -1);
+  stop_child(live, live_master);
 }
 
 static void test_cwd(void) {
@@ -236,11 +322,84 @@ static void test_cwd(void) {
   TEST_ASSERT(!agent_hook_name(&scanner, name));
 }
 
+static void remove_tree(const char *path) {
+  struct stat st;
+  if (lstat(path, &st))
+    return;
+  if (!S_ISDIR(st.st_mode) || S_ISLNK(st.st_mode)) {
+    unlink(path);
+    return;
+  }
+  DIR *dir = opendir(path);
+  if (!dir)
+    return;
+  struct dirent *entry;
+  while ((entry = readdir(dir))) {
+    if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+      continue;
+    char child[512];
+    snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+    remove_tree(child);
+  }
+  closedir(dir);
+  rmdir(path);
+}
+
+static void test_repo_name(void) {
+  char root[] = "/tmp/bongocat-name-XXXXXX";
+  TEST_ASSERT(mkdtemp(root));
+  char repo[160], src[180], git[180], name[41];
+  snprintf(repo, sizeof(repo), "%s/repo", root);
+  snprintf(src, sizeof(src), "%s/src", repo);
+  snprintf(git, sizeof(git), "%s/.git", repo);
+  TEST_ASSERT(mkdir(repo, 0700) == 0 && mkdir(git, 0700) == 0 &&
+              mkdir(src, 0700) == 0);
+  TEST_ASSERT(agent_hook_place_name(src, name) && !strcmp(name, "repo"));
+
+  char work[160], pkg[180], marker[180];
+  snprintf(work, sizeof(work), "%s/work", root);
+  snprintf(pkg, sizeof(pkg), "%s/pkg", work);
+  snprintf(marker, sizeof(marker), "%s/.git", work);
+  TEST_ASSERT(mkdir(work, 0700) == 0 && mkdir(pkg, 0700) == 0);
+  FILE *file = fopen(marker, "w");
+  TEST_ASSERT(file);
+  TEST_ASSERT(fputs("gitdir: /nowhere\n", file) > 0);
+  TEST_ASSERT(fclose(file) == 0);
+  TEST_ASSERT(agent_hook_place_name(pkg, name) && !strcmp(name, "work"));
+
+  char parent[160], plain[180];
+  snprintf(parent, sizeof(parent), "%s/plain", root);
+  snprintf(plain, sizeof(plain), "%s/leaf", parent);
+  TEST_ASSERT(mkdir(parent, 0700) == 0 && mkdir(plain, 0700) == 0);
+  TEST_ASSERT(agent_hook_place_name(plain, name) && !strcmp(name, "leaf"));
+
+  char deep[400], topgit[420];
+  snprintf(deep, sizeof(deep), "%s/top", root);
+  TEST_ASSERT(mkdir(deep, 0700) == 0);
+  snprintf(topgit, sizeof(topgit), "%s/.git", deep);
+  TEST_ASSERT(mkdir(topgit, 0700) == 0);
+  for (int i = 0; i < 16; i++) {
+    size_t used = strlen(deep);
+    TEST_ASSERT(used + 4 < sizeof(deep));
+    snprintf(deep + used, sizeof(deep) - used, "/%02d", i);
+    TEST_ASSERT(mkdir(deep, 0700) == 0);
+  }
+  TEST_ASSERT(agent_hook_place_name(deep, name) && !strcmp(name, "15"));
+
+  char json[512];
+  snprintf(json, sizeof(json), "{\"cwd\":\"%s\"}", src);
+  agent_hook_scanner_t scanner = scan(json, 32, true);
+  TEST_ASSERT(agent_hook_name(&scanner, name) && !strcmp(name, "repo"));
+  remove_tree(root);
+}
+
 int main(void) {
   test_cwd();
+  test_repo_name();
   test_mapping();
   test_invalid_json();
   test_hash_and_large_payload();
   test_stat_and_agent();
+  test_process_tty();
   return 0;
 }

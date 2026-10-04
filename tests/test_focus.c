@@ -57,6 +57,44 @@ int main(int argc, char **argv) {
   TEST_ASSERT(focus_find_window(getpid(), windows, 1, &id) && id == 100);
   TEST_ASSERT(!focus_find_window(getpid(), windows, 0, &id));
   TEST_ASSERT(!focus_find_window(2147483647, windows, 1, &id));
+  char match[32];
+  TEST_ASSERT(
+      focus_kitty_target("007", "unix:/tmp/kitty.sock", match, sizeof(match)));
+  TEST_ASSERT(!strcmp(match, "id:7"));
+  TEST_ASSERT(
+      focus_kitty_target("0", "unix:/run/kitty", match, sizeof(match)) &&
+      !strcmp(match, "id:0"));
+  TEST_ASSERT(focus_kitty_target("18446744073709551615", "unix:/run/kitty",
+                                 match, sizeof(match)));
+  TEST_ASSERT(!strcmp(match, "id:18446744073709551615"));
+  const char *rejected[] = {NULL,
+                            "",
+                            "12a",
+                            "+3",
+                            "-1",
+                            " 3",
+                            "18446744073709551616",
+                            "123456789012345678901"};
+  for (size_t i = 0; i < sizeof(rejected) / sizeof(rejected[0]); i++)
+    TEST_ASSERT(!focus_kitty_target(rejected[i], "unix:/run/kitty", match,
+                                    sizeof(match)));
+  TEST_ASSERT(!focus_kitty_target("3", NULL, match, sizeof(match)));
+  TEST_ASSERT(
+      !focus_kitty_target("3", "tcp:127.0.0.1:9", match, sizeof(match)));
+  TEST_ASSERT(
+      !focus_kitty_target("3", "UNIX:/run/kitty", match, sizeof(match)));
+  TEST_ASSERT(
+      !focus_kitty_target("3", "unix:/tmp/bad\n", match, sizeof(match)));
+  TEST_ASSERT(
+      !focus_kitty_target("3", "unix:/tmp/bad\x7f", match, sizeof(match)));
+  char long_socket[160];
+  memset(long_socket, 'a', sizeof(long_socket));
+  memcpy(long_socket, "unix:", 5);
+  long_socket[128] = '\0';
+  TEST_ASSERT(!focus_kitty_target("3", long_socket, match, sizeof(match)));
+  long_socket[127] = '\0';
+  TEST_ASSERT(focus_kitty_target("3", long_socket, match, sizeof(match)));
+  TEST_ASSERT(!focus_kitty_target("3", "unix:/run/kitty", match, 4));
   unsetenv("NIRI_SOCKET");
   TEST_ASSERT(!focus_available() && focus_session_window(getpid()) < 0);
   TEST_ASSERT(focus_timeout() == -1 && focus_poll_fd() == -1);

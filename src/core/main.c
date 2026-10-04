@@ -9,12 +9,17 @@
 #include "graphics/animation.h"
 #include "graphics/sign_draw.h"
 #include "graphics/text.h"
+#include "platform/agent_discover.h"
+#include "platform/agent_terminal.h"
 #include "platform/agent_watch.h"
 #include "platform/focus.h"
+#include "platform/focus_current.h"
 #include "platform/focus_watch.h"
 #include "platform/hyprland.h"
 #include "platform/input.h"
 #include "platform/overlay_signs.h"
+#include "platform/session_store.h"
+#include "platform/transcript_watch.h"
 #include "platform/wayland.h"
 #include "utils/error.h"
 
@@ -103,6 +108,7 @@ static bongocat_error_t force_monitor(config_t *settings) {
   return BONGOCAT_SUCCESS;
 }
 static void sign_policy(void) {
+  transcript_watch_sync(config.agent_interrupt_detect, monotonic_ms());
   agent_sessions_configure_done(config.sign_done == SIGN_DONE_STICKY,
                                 monotonic_ms(), config.agent_done_timeout);
 }
@@ -151,6 +157,7 @@ static void changed(const char *path) {
   reload_pending = true;
 }
 static void agent_refresh(void) {
+  transcript_watch_sync(config.agent_interrupt_detect, monotonic_ms());
   agent_state_t state = agent_sessions_resolve();
   if (state != animation_get_agent_state()) {
     animation_set_agent_state(state);
@@ -167,10 +174,49 @@ static bool has_pid(const pid_t *pids, int count, pid_t pid) {
   return false;
 }
 
+static void discover_expanded(void) {
+  // focus_watch keeps at most 128 windows.
+  focus_window_t windows[128];
+  size_t count = focus_watch_windows(windows, 128);
+  int created = agent_discover_scan(
+      "/proc", windows, count, AGENT_DISCOVER_PROCESS_MAX,
+      AGENT_DISCOVER_CREATE_MAX, monotonic_ms(), config.agent_done_timeout);
+  if (created <= 0)
+    return;
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int sessions = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  for (int i = 0; i < sessions; i++) {
+    pid_t pid = views[i].pid;
+    if (pid <= 0)
+      continue;
+    if (agent_watch_add(pid) == 0) {
+      agent_sessions_set_watched(views[i].key, true);
+      continue;
+    }
+    if (errno == ESRCH)
+      agent_sessions_remove_pid(pid);
+  }
+}
+
+static bool kitty_for_session(pid_t pid, uint64_t *window, char *listen,
+                              size_t capacity) {
+  return agent_sessions_kitty(pid, window, listen, capacity);
+}
+
+static void capture_kitty(uint64_t key, pid_t pid) {
+  uint64_t window = 0;
+  char listen[AGENT_TERMINAL_LISTEN_MAX + 1];
+  pid_t kitty_pid = 0;
+  if (agent_terminal_lookup("/proc", pid, &window, listen, sizeof(listen),
+                            &kitty_pid))
+    agent_sessions_set_kitty(key, kitty_pid, window, listen);
+}
+
 static int agent_apply(uint64_t key, const char *agent, agent_event_t event,
                        pid_t pid) {
   pid_t before[AGENT_SESSIONS_MAX], after[AGENT_SESSIONS_MAX];
   int before_count = agent_sessions_pids(before, AGENT_SESSIONS_MAX);
+  pid_t previous = agent_sessions_pid(key);
   if (agent_sessions_apply(key, agent, event, pid, monotonic_ms(),
                            config.agent_done_timeout, NULL) < 0) {
     return 1;
@@ -183,18 +229,19 @@ static int agent_apply(uint64_t key, const char *agent, agent_event_t event,
       agent_watch_remove(before[i]);
     }
   }
-  pid = agent_sessions_pid(key);
-  if (pid > 0) {
-    agent_sessions_set_watched(key, agent_watch_add(pid) == 0);
-  }
+  pid_t current = agent_sessions_pid(key);
+  if (current > 0 && current != previous)
+    capture_kitty(key, current);
+  if (current > 0)
+    agent_sessions_set_watched(key, agent_watch_add(current) == 0);
   agent_refresh();
   return 0;
 }
 
 static int agent_command(const char *request) {
-  char agent[AGENT_NAME_MAX + 1], event_name[8], key_text[17], pid_text[8];
+  char agent[AGENT_NAME_MAX + 1], event_name[10], key_text[17], pid_text[8];
   int agent_end = 0, event_end = 0, key_end = 0, end = 0;
-  if (sscanf(request, "ev %8[a-z]%n %7[a-z]%n %16[0-9a-fA-F]%n %7[0-9]%n",
+  if (sscanf(request, "ev %8[a-z]%n %9[a-z]%n %16[0-9a-fA-F]%n %7[0-9]%n",
              agent, &agent_end, event_name, &event_end, key_text, &key_end,
              pid_text, &end) != 4 ||
       request[agent_end] != ' ' || request[event_end] != ' ' ||
@@ -236,6 +283,7 @@ static int focus_command(const char *key) {
   return !found || focus_session_window(pid) < 0;
 }
 
+static void note_window_focus(void);
 static int command(const char *request, char *response, size_t capacity) {
   int result = 0;
   if (strcmp(request, "stop") == 0) {
@@ -272,6 +320,8 @@ static int command(const char *request, char *response, size_t capacity) {
     }
   } else if (strncmp(request, "ev ", 3) == 0) {
     result = agent_command(request);
+  } else if (strncmp(request, "path ", 5) == 0) {
+    result = transcript_watch_command(request, monotonic_ms());
   } else if (strncmp(request, "name ", 5) == 0) {
     char key[17];
     int end = 0;
@@ -284,6 +334,14 @@ static int command(const char *request, char *response, size_t capacity) {
           agent_sessions_set_name(strtoull(key, NULL, 16), request + 22) < 0;
   } else if (strncmp(request, "focus ", 6) == 0) {
     result = focus_command(request + 6);
+  } else if (strncmp(request, "pane ", 5) == 0) {
+    pid_t pane_pid = 0;
+    uint64_t pane_split = 0;
+    if (!focus_pane_parse(request, &pane_pid, &pane_split) ||
+        !focus_pane_set(pane_pid, pane_split))
+      result = 1;
+    else
+      note_window_focus();
   } else if (strcmp(request, "sessions") == 0) {
     if (agent_sessions_format(response, capacity, monotonic_ms()) == 0) {
       snprintf(response, capacity, "No agent sessions");
@@ -322,6 +380,10 @@ static void note_window_focus(void) {
     agent_sessions_note_focused(keys[i], now, config.agent_done_timeout);
   }
 }
+static void extra_ready(uint32_t token) {
+  focus_watch_ready(token);
+  transcript_watch_ready(token, monotonic_ms());
+}
 static void tick(void) {
   hypr_poll();
   focus_poll();
@@ -337,6 +399,7 @@ static void tick(void) {
   agent_sessions_expire(monotonic_ms(), config.agent_stale_timeout);
   agent_refresh();
   control_process(command);
+  session_store_flush(agent_sessions_generation(), monotonic_ms(), false);
   if (!input_child_is_alive() && monotonic_ms() >= input_retry_at) {
     input_retry_at = monotonic_ms() + 5000;
     bongocat_error_t result = input_restart_monitoring(
@@ -355,7 +418,8 @@ static int runtime_timeout(void) {
                       -1,
                       -1,
                       focus_timeout(),
-                      focus_watch_timeout()};
+                      focus_watch_timeout(),
+                      session_store_timeout(monotonic_ms())};
   if (!input_child_is_alive()) {
     int64_t remaining = input_retry_at - monotonic_ms();
     candidates[3] = remaining > 0 ? (int)remaining : 0;
@@ -400,9 +464,11 @@ static void help(const char *program) {
       "  --pause, --resume    Display idle frame or resume input animation\n"
       "  --focus KEY          Focus a session terminal (full key or unique "
       "prefix)\n"
+      "  --pane PID ID        Report the focused kitty split\n"
       "  --state NAME         Set manual state: idle, working, waiting, done\n"
       "  --sessions           List tracked agent sessions\n"
       "  --reset-position     Restore configured positions on every output\n"
+      "  --event NAME         Override stdin event (after --hook AGENT)\n"
       "  --hook AGENT         Read one agent lifecycle event from stdin\n"
       "  --reload, --status   Reload config or query running application\n"
       "  --check-config       Strict validation without Wayland or input "
@@ -432,7 +498,11 @@ static int run_application(bool watch, bongocat_error_t result) {
     bongocat_log_warning("Agent process watches unavailable; using timeouts");
   }
   sign_policy();
+  focus_set_kitty(kitty_for_session);
+  session_store_load(monotonic_ms(), config.agent_done_timeout);
   focus_watch_init();
+  overlay_signs_on_expand(discover_expanded);
+  agent_watch_on_ready(extra_ready);
   if (watch && config_watcher_init(&watcher, config_path, changed) == 0) {
     config_watcher_start(&watcher);
   }
@@ -460,6 +530,7 @@ static int run_application(bool watch, bongocat_error_t result) {
   }
   exit_code = result == BONGOCAT_SUCCESS ? 0 : 1;
 cleanup:
+  session_store_flush(agent_sessions_generation(), monotonic_ms(), true);
   config_watcher_cleanup(&watcher);
   hypr_cleanup();
   focus_cleanup();
@@ -467,6 +538,7 @@ cleanup:
   wayland_cleanup();
   animation_cleanup();
   focus_watch_cleanup();
+  transcript_watch_cleanup();
   agent_watch_cleanup();
   agent_sessions_reset();
   control_cleanup();
@@ -491,7 +563,9 @@ int main(int argc, char **argv) {
   const char *explicit_path = NULL;
   const char *request = NULL;
   const char *hook_agent = NULL;
+  const char *hook_event = NULL;
   static char state_request[32];
+  static char pane_request[64];
   bool watch = false;
   bool toggle = false;
   bool check = false;
@@ -529,6 +603,33 @@ int main(int argc, char **argv) {
         return 1;
       }
       hook_agent = argv[i];
+    } else if (!strcmp(arg, "--event")) {
+      if (!hook_agent || hook_event || ++i >= argc || !argv[i][0] ||
+          strlen(argv[i]) >= 64) {
+        fprintf(stderr, "--event requires a name after --hook AGENT\n");
+        return 1;
+      }
+      hook_event = argv[i];
+    } else if (!strcmp(arg, "--pane")) {
+      if (request || hook_agent) {
+        fprintf(stderr, "Select one control command\n");
+        return 1;
+      }
+      if (i + 2 >= argc) {
+        fprintf(stderr, "--pane requires a process and a split\n");
+        return 1;
+      }
+      pid_t pane_pid = 0;
+      uint64_t pane_split = 0;
+      if (!focus_pane_fields(argv[i + 1], argv[i + 2], &pane_pid,
+                             &pane_split)) {
+        fprintf(stderr, "--pane requires a process and a split\n");
+        return 1;
+      }
+      i += 2;
+      snprintf(pane_request, sizeof(pane_request), "pane %ld %llu",
+               (long)pane_pid, (unsigned long long)pane_split);
+      request = pane_request;
     } else if (!strcmp(arg, "--state") || !strcmp(arg, "--focus")) {
       if (request || hook_agent) {
         fprintf(stderr, "Select one control command\n");
@@ -571,7 +672,7 @@ int main(int argc, char **argv) {
     }
   }
   if (hook_agent) {
-    return agent_hook_run(hook_agent);
+    return agent_hook_run(hook_agent, hook_event);
   }
   if (request) {
     return control_request(request) == 0 ? 0 : 1;
