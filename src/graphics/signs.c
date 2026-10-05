@@ -128,6 +128,7 @@ typedef struct {
   const char *working, *waiting, *idle, *minute;
   const char *done, *done_short, *unread, *unread_short;
 } sign_words_t;
+// clang-format off
 static const sign_words_t WORDS[] = {
     {.working = "工作中",
      .waiting = "等你批准",
@@ -146,6 +147,7 @@ static const sign_words_t WORDS[] = {
      .unread = "Done · Unread",
      .unread_short = "Done · Unread"},
 };
+// clang-format on
 static const char *done_label(const sign_input_t *in, bool fan, bool unread) {
   const sign_words_t *words = &WORDS[in->english ? 1 : 0];
   if (fan)

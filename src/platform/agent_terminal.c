@@ -143,7 +143,7 @@ bool agent_terminal_read(int proc_root, pid_t pid, uint64_t *window,
     if (count < 0 && errno == EINTR)
       continue;
     if (count < 0) {
-      memset_explicit(buffer, 0, used);
+      explicit_bzero(buffer, used);
       free(buffer);
       close(fd);
       return false;
@@ -155,7 +155,7 @@ bool agent_terminal_read(int proc_root, pid_t pid, uint64_t *window,
   close(fd);
   bool ok =
       agent_terminal_parse(buffer, used, window, listen, capacity, kitty_pid);
-  memset_explicit(buffer, 0, ENVIRON_MAX);
+  explicit_bzero(buffer, ENVIRON_MAX);
   free(buffer);
   return ok;
 }

@@ -2,10 +2,12 @@
 
 #include <string.h>
 
+// clang-format off
 #define COUNT(items)      (sizeof(items) / sizeof((items)[0]))
 #define RULE(name, event) {name, HOOK_FIELD_NONE, NULL, event, false}
 #define META(name, event) {name, HOOK_FIELD_NONE, NULL, event, true}
 #define WHEN(name, field, value, event) {name, field, value, event, false}
+// clang-format on
 
 static const agent_hook_alias_t CLAUDE_FIELDS[] = {
     {"transcript_path",   HOOK_FIELD_TRANSCRIPT,   0, false},
