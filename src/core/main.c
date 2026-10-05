@@ -356,14 +356,20 @@ static int command(const char *request, char *response, size_t capacity) {
     }
     return 0;
   } else if (strcmp(request, "status") == 0) {
-    snprintf(
+    const char *input = input_status_name(
+        input_child_is_alive(), input_device_count(), input_denied_count());
+    int length = snprintf(
         response, capacity,
-        "running pid=%ld hidden=%s paused=%s input=%s devices=%u config=%s "
-        "agent=%s sessions=%d",
+        "running pid=%ld hidden=%s paused=%s input=%s devices=%u denied=%u "
+        "config=%s agent=%s sessions=%d",
         (long)getpid(), (int)hidden ? "yes" : "no", (int)paused ? "yes" : "no",
-        (int)input_child_is_alive() ? "connected" : "restarting",
-        input_device_count(), config_path,
+        input, input_device_count(), input_denied_count(), config_path,
         agent_state_name(animation_get_agent_state()), agent_sessions_count());
+    if (strcmp(input, "denied") == 0 && length > 0 &&
+        (size_t)length < capacity) {
+      snprintf(response + length, capacity - (size_t)length,
+               "\nNo keyboard readable: %s", input_access_hint());
+    }
     return 0;
   } else {
     { result = 1; }

@@ -5,6 +5,7 @@
 #include "utils/error.h"
 
 #include <stdatomic.h>
+#include <sys/types.h>
 
 // =============================================================================
 // INPUT STATE
@@ -34,6 +35,26 @@ bool input_device_selected(int fd, dev_t identity, char **paths, int num_paths,
                            char **names, int num_names);
 void input_process_events(void);
 uint32_t input_device_count(void);
+// Input nodes the helper's last scan could not open for lack of permission.
+uint32_t input_denied_count(void);
+
+// How the user relates to the `input` group: no such group, not a member,
+// a member whose processes predate joining (log in again), or held now.
+typedef enum {
+  INPUT_GROUP_NONE,
+  INPUT_GROUP_ABSENT,
+  INPUT_GROUP_PENDING,
+  INPUT_GROUP_HELD,
+} input_group_t;
+
+input_group_t input_group_classify(const char *user, gid_t primary, gid_t group,
+                                   char *const *members, const gid_t *held,
+                                   int held_count);
+input_group_t input_group_state(void);
+// One sentence telling the user how to grant keyboard access.
+const char *input_access_hint(void);
+// The input= word of --status: connected, denied, searching or restarting.
+const char *input_status_name(bool alive, uint32_t devices, uint32_t denied);
 int64_t input_timestamp(void);
 
 // Cleanup input monitoring resources

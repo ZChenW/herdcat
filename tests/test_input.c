@@ -57,5 +57,27 @@ int main(void) {
   TEST_ASSERT(!input_device_selected(1, keyboard, paths, 1, NULL, 0));
   names[0] = "Test Keyboard";
   TEST_ASSERT(input_device_selected(1, keyboard, paths, 1, names, 1));
+
+  // Joined /etc/group but the session predates it: log in again.
+  char *members[] = {"other", "cat", NULL};
+  gid_t stale[] = {1001, 998};
+  TEST_ASSERT(input_group_classify("cat", 1001, 992, members, stale, 2) ==
+              INPUT_GROUP_PENDING);
+  gid_t fresh[] = {1001, 998, 992};
+  TEST_ASSERT(input_group_classify("cat", 1001, 992, members, fresh, 3) ==
+              INPUT_GROUP_HELD);
+  TEST_ASSERT(input_group_classify("dog", 1001, 992, members, stale, 2) ==
+              INPUT_GROUP_ABSENT);
+  TEST_ASSERT(input_group_classify("dog", 992, 992, members, stale, 2) ==
+              INPUT_GROUP_PENDING);
+  TEST_ASSERT(input_group_classify(NULL, 1001, 992, NULL, NULL, 0) ==
+              INPUT_GROUP_ABSENT);
+
+  TEST_ASSERT(!strcmp(input_status_name(true, 1, 3), "connected"));
+  TEST_ASSERT(!strcmp(input_status_name(true, 0, 3), "denied"));
+  TEST_ASSERT(!strcmp(input_status_name(true, 0, 0), "searching"));
+  TEST_ASSERT(!strcmp(input_status_name(false, 1, 0), "restarting"));
+  TEST_ASSERT(input_denied_count() == 0);
+  TEST_ASSERT(input_access_hint()[0] != '\0');
   return 0;
 }

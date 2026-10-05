@@ -82,7 +82,7 @@ Remove saved positions on every output and restore configured horizontal alignme
 Show the configured idle frame and discard input, or resume with pending paw activity cleared. Hidden and fullscreen visibility still apply.
 .TP
 .B --reload, --status
-Reload configuration or query the running application through a same-UID authenticated Unix socket. Failures return nonzero. Controls never rewrite configuration files; visibility and pause state reset on restart.
+Reload configuration or query the running application through a same-UID authenticated Unix socket. Failures return nonzero. Controls never rewrite configuration files; visibility and pause state reset on restart. --status reports input=connected once a keyboard is open, input=denied with a denied=N count and a hint when devices refuse access, input=searching while no keyboard exists, or input=restarting.
 .TP
 .BI --state " NAME"
 Set the manual session to idle, working, waiting, done or error. Idle removes the manual session. Other sessions resolve by priority: waiting > error > done > working > idle. Error marks a turn that stopped on a failure and, like done, stays until it has been seen. Seen done sessions expire after agent_done_timeout seconds; sign_done=sticky preserves unread completions. Scheduled sleep and held paws take priority over agent artwork; agent artwork takes priority over idle sleep. Pause suppresses the artwork while deadlines continue. --status includes agent=NAME and sessions=N.

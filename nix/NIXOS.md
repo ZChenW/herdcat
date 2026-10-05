@@ -200,6 +200,10 @@ If you get permission errors accessing input devices:
 1. **Check if you're in the input group:** Run `groups | grep input`
 1. **Add yourself to the `input` group:** Add to your configuration `users.users.<your username>.extraGroups = ["input"];`
 1. **Log out and log back in after you add yourself to the `input` group**
+1. **Check the running instance:** `herdcat --status` shows `input=denied` when
+   it cannot read any keyboard. If `getent group input` lists you but `id` does
+   not, the session predates the change; log in again or restart herdcat from
+   `newgrp input`.
 
 ### Service Issues
 

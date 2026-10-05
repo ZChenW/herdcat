@@ -13,6 +13,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Keyboard permission errors** - `--status` reported `input=connected` with
+  no keyboard open. It now says `input=denied` with a `denied=N` count and
+  explains the fix, and the helper logs a warning. Both spot an account that
+  joined the `input` group after the session started, which needs a new login
+  or `newgrp input`.
 - **Cancelled before the reply** - Pressing Esc in Claude Code before it starts
   to answer left the sign on working until the stale timeout. On niri the
   terminal title going back to its at-rest mark now clears it within two

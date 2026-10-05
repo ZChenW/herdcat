@@ -113,9 +113,22 @@ Style, language and font can also be changed from the right-click card; those ch
 <details>
 <summary>Permission denied on input device</summary>
 
+`herdcat --status` shows `input=denied` and `herdcat --list-devices` says which
+fix applies.
+
 ```bash
 sudo usermod -a -G input $USER
 # Then log out and back in
+```
+
+Joining the group only reaches processes started after a new login. If
+`getent group input` lists you but `id` does not, restart herdcat in a shell
+that has the group:
+
+```bash
+systemctl --user stop herdcat
+newgrp input
+herdcat --watch-config
 ```
 
 </details>

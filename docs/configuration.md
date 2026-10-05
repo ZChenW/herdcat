@@ -100,6 +100,10 @@ controls never rewrite config files. Failed commands return nonzero.
 
 Agent sessions are resolved by priority and share one indicator across outputs.
 `--status` reports `agent=NAME` and `sessions=N`; `--sessions` lists each session.
+Its `input=` field is `connected` once a keyboard is open, `denied` when none is
+and some devices refused access (`denied=N` counts them, and a second line says
+how to grant access), `searching` while no keyboard exists, and `restarting`
+while the input helper restarts.
 See the session model and hook setup below.
 
 When both input paths and names are empty, accessible keyboard-capable evdev

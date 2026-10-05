@@ -9,9 +9,11 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <limits.h>
 #include <linux/input-event-codes.h>
 #include <linux/input.h>
+#include <pwd.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdatomic.h>
@@ -100,12 +102,14 @@ static void wait_child_exit(pid_t pid, int max_attempts) {
 typedef struct {
   uint32_t paws;
   uint32_t devices;
+  uint32_t denied;
   int64_t monotonic_ns;
 } input_message_t;
 static atomic_uint local_pending;
 static int helper_socket = -1;
 static pid_t helper_parent;
 static uint32_t device_count;
+static uint32_t denied_count;
 static int64_t input_timestamp_us;
 
 void input_process_events(void) {
@@ -116,6 +120,8 @@ void input_process_events(void) {
     device_count = message.devices;
     if (message.paws) {
       input_timestamp_us = message.monotonic_ns / 1000;
+    } else {
+      denied_count = message.denied;
     }
     if ((message.paws & ~(PAW_LEFT | PAW_RIGHT)) == 0) {
       atomic_fetch_or(&local_pending, message.paws);
@@ -130,6 +136,92 @@ void input_process_events(void) {
 uint32_t input_device_count(void) {
   return device_count;
 }
+uint32_t input_denied_count(void) {
+  return denied_count;
+}
+
+input_group_t input_group_classify(const char *user, gid_t primary, gid_t group,
+                                   char *const *members, const gid_t *held,
+                                   int held_count) {
+  for (int i = 0; i < held_count; i++) {
+    if (held[i] == group) {
+      return INPUT_GROUP_HELD;
+    }
+  }
+  if (primary == group) {
+    return INPUT_GROUP_PENDING;
+  }
+  for (size_t i = 0; user && members && members[i]; i++) {
+    if (strcmp(members[i], user) == 0) {
+      return INPUT_GROUP_PENDING;
+    }
+  }
+  return INPUT_GROUP_ABSENT;
+}
+
+// Group membership is read when a process logs in and inherited from then on,
+// so joining `input` reaches nothing that was already running.
+input_group_t input_group_state(void) {
+  struct group *group = getgrnam("input");
+  if (!group) {
+    return INPUT_GROUP_NONE;
+  }
+  gid_t input_gid = group->gr_gid;
+  struct passwd *account = getpwuid(getuid());
+  gid_t primary = account ? account->pw_gid : getgid();
+  const char *user = account ? account->pw_name : NULL;
+  int supplementary = getgroups(0, NULL);
+  if (supplementary < 0) {
+    supplementary = 0;
+  }
+  gid_t *held = (gid_t *)calloc((size_t)supplementary + 3, sizeof(*held));
+  if (!held) {
+    return INPUT_GROUP_NONE;
+  }
+  int count = supplementary ? getgroups(supplementary, held) : 0;
+  if (count < 0) {
+    count = 0;
+  }
+  gid_t rgid;
+  gid_t egid;
+  gid_t sgid;
+  if (getresgid(&rgid, &egid, &sgid) == 0) {
+    held[count++] = rgid;
+    held[count++] = egid;
+    held[count++] = sgid;
+  }
+  // NSS lookups may share static buffers; read the members after getpwuid.
+  group = getgrgid(input_gid);
+  input_group_t state = input_group_classify(
+      user, primary, input_gid, group ? group->gr_mem : NULL, held, count);
+  free((void *)held);
+  return state;
+}
+
+const char *input_access_hint(void) {
+  switch (input_group_state()) {
+  case INPUT_GROUP_PENDING:
+    return "your account is in the input group, but this session started "
+           "before it joined; log out and back in, or restart herdcat from "
+           "'newgrp input'.";
+  case INPUT_GROUP_ABSENT:
+    return "add your account to the input group and log in again, or grant a "
+           "device ACL.";
+  default:
+    return "check device ACLs or input group membership.";
+  }
+}
+
+const char *input_status_name(bool alive, uint32_t devices, uint32_t denied) {
+  if (!alive) {
+    return "restarting";
+  }
+  if (devices) {
+    return "connected";
+  }
+  return denied ? "denied" : "searching";
+}
+
 int64_t input_timestamp(void) {
   return input_timestamp_us;
 }
@@ -157,6 +249,7 @@ int input_list_devices(void) {
     return 1;
   }
   unsigned keyboards = 0;
+  unsigned denied = 0;
   struct dirent *entry;
   while ((entry = readdir(dir))) {
     if (strncmp(entry->d_name, "event", 5) != 0) {
@@ -166,6 +259,7 @@ int input_list_devices(void) {
     snprintf(path, sizeof(path), "/dev/input/%s", entry->d_name);
     int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) {
+      denied += errno == EACCES || errno == EPERM;
       printf("%s: inaccessible (%s)\n", path, strerror(errno));
       continue;
     }
@@ -178,9 +272,10 @@ int input_list_devices(void) {
     close(fd);
   }
   closedir(dir);
-  if (!keyboards) {
-    fprintf(stderr, "No accessible keyboards; check device ACLs or input group "
-                    "membership.\n");
+  if (!keyboards && denied) {
+    fprintf(stderr, "No accessible keyboards; %s\n", input_access_hint());
+  } else if (!keyboards) {
+    fprintf(stderr, "No keyboards found in /dev/input.\n");
   }
   return keyboards ? 0 : 1;
 }
@@ -262,9 +357,11 @@ typedef struct active_device {
   dev_t identity;
 } active_device_t;
 
-static void discover_input_devices(active_device_t *active_devices,
-                                   char **static_paths, int num_static,
-                                   char **names, int num_names) {
+// Returns how many unopened nodes refused access.
+static uint32_t discover_input_devices(active_device_t *active_devices,
+                                       char **static_paths, int num_static,
+                                       char **names, int num_names) {
+  uint32_t denied = 0;
   DIR *dir = opendir("/dev/input");
   if (dir) {
     struct dirent *entry;
@@ -297,6 +394,7 @@ static void discover_input_devices(active_device_t *active_devices,
 
       int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
       if (fd < 0) {
+        denied += errno == EACCES || errno == EPERM;
         continue;
       }
 
@@ -343,6 +441,7 @@ static void discover_input_devices(active_device_t *active_devices,
     }
     closedir(dir);
   }
+  return denied;
 }
 
 static void read_ready_devices(active_device_t *active_devices,
@@ -477,6 +576,9 @@ static void capture_input_hotplug(char **static_paths, int num_static,
   static const int fast_retry_interval = 5;
 
   uint32_t reported_count = UINT32_MAX;
+  uint32_t denied = 0;
+  uint32_t reported_denied = UINT32_MAX;
+  bool warned_denied = false;
   while (1) {
     // Check if parent is still alive
     if (getppid() != parent_pid) {
@@ -496,8 +598,8 @@ static void capture_input_hotplug(char **static_paths, int num_static,
         now.tv_sec - last_scan_time.tv_sec >= effective_interval) {
       last_scan_time = now;
       privilege_raise();
-      discover_input_devices(active_devices, static_paths, num_static, names,
-                             num_names);
+      denied = discover_input_devices(active_devices, static_paths, num_static,
+                                      names, num_names);
 
       if (scan_interval == 0) {
         scanning_enabled = false;
@@ -527,11 +629,20 @@ static void capture_input_hotplug(char **static_paths, int num_static,
     for (int d = 0; d < MAX_ACTIVE_DEVICES; d++) {
       count += active_devices[d].fd >= 0;
     }
-    if (count != reported_count) {
-      input_message_t status = {.devices = count};
+    if (count == 0 && denied && !warned_denied) {
+      herdcat_log_warning("Hotplug: no keyboard open, %u input device(s) "
+                          "denied access; %s",
+                          denied, input_access_hint());
+      warned_denied = true;
+    } else if (count) {
+      warned_denied = false;
+    }
+    if (count != reported_count || denied != reported_denied) {
+      input_message_t status = {.devices = count, .denied = denied};
       if (send(helper_socket, &status, sizeof(status),
                MSG_NOSIGNAL | MSG_DONTWAIT) >= 0) {
         reported_count = count;
+        reported_denied = denied;
       } else if (errno != EAGAIN && errno != EINTR) {
         break;
       }
@@ -704,5 +815,6 @@ void input_cleanup(void) {
   wake_fd = -1;
   pending_paws = NULL;
   device_count = 0;
+  denied_count = 0;
   input_timestamp_us = 0;
 }
