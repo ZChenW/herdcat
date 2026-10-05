@@ -2,7 +2,7 @@
 #define CONFIG_H
 
 #include "config/sign_options.h"
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "utils/error.h"
 
 #include <stdbool.h>
@@ -130,23 +130,23 @@ typedef struct {
 typedef void (*config_diagnostic_callback_t)(const config_diagnostic_t *,
                                              void *);
 // Diagnostic strings are borrowed for the duration of the callback.
-BONGOCAT_NODISCARD bongocat_error_t
+HERDCAT_NODISCARD herdcat_error_t
 load_config_report(config_t *config, const char *path, bool strict,
                    config_diagnostic_callback_t callback, void *data);
 
 // Load configuration - returns error code (must be checked)
-BONGOCAT_NODISCARD bongocat_error_t load_config(config_t *config,
-                                                const char *config_file_path);
+HERDCAT_NODISCARD herdcat_error_t load_config(config_t *config,
+                                              const char *config_file_path);
 
-BONGOCAT_NODISCARD bongocat_error_t load_config_strict(config_t *config,
-                                                       const char *path);
+HERDCAT_NODISCARD herdcat_error_t load_config_strict(config_t *config,
+                                                     const char *path);
 void config_for_monitor(const config_t *global, const char *name,
                         config_t *effective);
 
 bool config_sign_english(const config_t *config);
 
 // Get screen width - returns 0 on failure (should be checked)
-BONGOCAT_NODISCARD int get_screen_width(void);
+HERDCAT_NODISCARD int get_screen_width(void);
 
 // Resolve config file path with XDG fallback
 // Returns a static/allocated path, or NULL if none found.

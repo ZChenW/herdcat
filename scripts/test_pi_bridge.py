@@ -7,15 +7,15 @@ import socket
 import subprocess
 import tempfile
 
-binary = Path('build/bongocat').resolve()
+binary = Path('build/herdcat').resolve()
 with tempfile.TemporaryDirectory(prefix='bongo-pi-') as directory:
     root = Path(directory)
-    (root / 'bongocat').symlink_to(binary)
+    (root / 'herdcat').symlink_to(binary)
     env = dict(os.environ, XDG_RUNTIME_DIR=directory,
                PATH=directory + os.pathsep + os.environ['PATH'])
-    env.pop('BONGOCAT_HOOK_DEBUG', None)
+    env.pop('HERDCAT_HOOK_DEBUG', None)
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as server:
-        server.bind(str(root / 'bongocat.sock'))
+        server.bind(str(root / 'herdcat.sock'))
         server.listen(16)
         server.settimeout(4)
         proc = subprocess.Popen(['node', 'tests/integrations/pi_driver.mjs'],
@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory(prefix='bongo-pi-') as directory:
             pass
         else:
             raise AssertionError('Invalid PID or child event reached daemon')
-    # Missing bongocat must never reject an agent callback or write errors.
+    # Missing herdcat must never reject an agent callback or write errors.
     missing_env = dict(env, PATH=directory + '/absent')
     result = subprocess.run(['/usr/bin/node', 'tests/integrations/pi_driver.mjs'],
                             env=missing_env, input='{"name":"agent_start"}\n',

@@ -726,7 +726,7 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
                                        "end",  "interrupt"};
   snprintf(request, sizeof(request), "ev %s %s %016" PRIx64 " %jd", agent,
            EVENTS[event], agent_hook_key(agent, &scanner), (intmax_t)pid);
-  const char *debug = getenv("BONGOCAT_HOOK_DEBUG");
+  const char *debug = getenv("HERDCAT_HOOK_DEBUG");
   if (debug && strcmp(debug, "1") == 0) {
     fprintf(stderr, "%s\n", request);
   }

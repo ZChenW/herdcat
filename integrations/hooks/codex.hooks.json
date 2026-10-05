@@ -1,12 +1,12 @@
 {
-  "description": "bongocat session-aware agent status",
+  "description": "herdcat session-aware agent status",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bongocat --hook codex >/dev/null 2>&1 || true"
+            "command": "herdcat --hook codex >/dev/null 2>&1 || true"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bongocat --hook codex >/dev/null 2>&1 || true"
+            "command": "herdcat --hook codex >/dev/null 2>&1 || true"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bongocat --hook codex >/dev/null 2>&1 || true"
+            "command": "herdcat --hook codex >/dev/null 2>&1 || true"
           }
         ]
       }
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bongocat --hook codex >/dev/null 2>&1 || true"
+            "command": "herdcat --hook codex >/dev/null 2>&1 || true"
           }
         ]
       }
@@ -46,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bongocat --hook codex >/dev/null 2>&1 || true"
+            "command": "herdcat --hook codex >/dev/null 2>&1 || true"
           }
         ]
       }
@@ -56,7 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bongocat --hook codex >/dev/null 2>&1 || true"
+            "command": "herdcat --hook codex >/dev/null 2>&1 || true"
           }
         ]
       }
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bongocat --hook codex >/dev/null 2>&1 || true"
+            "command": "herdcat --hook codex >/dev/null 2>&1 || true"
           }
         ]
       }
@@ -76,7 +76,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bongocat --hook codex >/dev/null 2>&1 || true",
+            "command": "herdcat --hook codex >/dev/null 2>&1 || true",
             "timeout": 1
           }
         ]

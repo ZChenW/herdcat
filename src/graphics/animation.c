@@ -1,7 +1,7 @@
 #define _POSIX_C_SOURCE 199309L
 #include "config/config.h"
 #include "core/agent_state.h"
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "utils/error.h"
 
 #include <stdatomic.h>
@@ -97,7 +97,7 @@ static bool anim_is_sleep_time(const config_t *config) {
 // Extend the given paw's deadline to now + keypress_duration.
 static void anim_press_paw(animation_state_t *state, int paw_frame,
                            int64_t current_time_us, int64_t duration_us) {
-  if (paw_frame == BONGOCAT_FRAME_LEFT_DOWN) {
+  if (paw_frame == HERDCAT_FRAME_LEFT_DOWN) {
     state->left_hold_until = current_time_us + duration_us;
   } else {
     state->right_hold_until = current_time_us + duration_us;
@@ -111,9 +111,8 @@ static void anim_handle_test_animation(animation_state_t *state,
   }
 
   if (current_time_us >= state->next_test_timestamp) {
-    bongocat_log_debug("Test animation trigger");
-    int paw =
-        random_paw() ? BONGOCAT_FRAME_LEFT_DOWN : BONGOCAT_FRAME_RIGHT_DOWN;
+    herdcat_log_debug("Test animation trigger");
+    int paw = random_paw() ? HERDCAT_FRAME_LEFT_DOWN : HERDCAT_FRAME_RIGHT_DOWN;
     anim_press_paw(state, paw, current_time_us,
                    current_config->test_animation_duration * 1000L);
     state->next_test_timestamp =
@@ -145,11 +144,11 @@ static void anim_take_pending_paws(animation_state_t *state,
   }
   int64_t duration_us = current_config->keypress_duration * 1000L;
   if (paws & PAW_LEFT) {
-    anim_press_paw(state, BONGOCAT_FRAME_LEFT_DOWN, current_time_us,
+    anim_press_paw(state, HERDCAT_FRAME_LEFT_DOWN, current_time_us,
                    duration_us);
   }
   if (paws & PAW_RIGHT) {
-    anim_press_paw(state, BONGOCAT_FRAME_RIGHT_DOWN, current_time_us,
+    anim_press_paw(state, HERDCAT_FRAME_RIGHT_DOWN, current_time_us,
                    duration_us);
   }
   state->last_key_pressed_timestamp = current_time_us;
@@ -165,7 +164,7 @@ static void anim_select_frame(animation_state_t *state,
   int new_frame = current_config->idle_frame;
   if (current_config->enable_scheduled_sleep &&
       anim_is_sleep_time(current_config)) {
-    new_frame = BONGOCAT_FRAME_SLEEPING;
+    new_frame = HERDCAT_FRAME_SLEEPING;
   } else if (left_live || right_live) {
     new_frame =
         frame_from_paw_state(left_live, right_live, current_config->idle_frame);
@@ -175,11 +174,11 @@ static void anim_select_frame(animation_state_t *state,
              state->last_key_pressed_timestamp > 0 &&
              current_time_us - state->last_key_pressed_timestamp >=
                  current_config->idle_sleep_timeout_sec * 1000000L) {
-    new_frame = BONGOCAT_FRAME_SLEEPING;
+    new_frame = HERDCAT_FRAME_SLEEPING;
   }
   if (new_frame != anim_index && current_config->enable_debug) {
-    bongocat_log_debug("Frame -> %d (left=%d right=%d)", new_frame,
-                       (int)left_live, (int)right_live);
+    herdcat_log_debug("Frame -> %d (left=%d right=%d)", new_frame,
+                      (int)left_live, (int)right_live);
   }
   anim_index = new_frame;
 }
@@ -286,9 +285,9 @@ void animation_tap(unsigned paw, int duration_ms) {
   int64_t now = anim_get_current_time_us();
   int64_t duration_us = (int64_t)duration_ms * 1000L;
   if (paw & PAW_LEFT)
-    anim_press_paw(&ctx->state, BONGOCAT_FRAME_LEFT_DOWN, now, duration_us);
+    anim_press_paw(&ctx->state, HERDCAT_FRAME_LEFT_DOWN, now, duration_us);
   if (paw & PAW_RIGHT)
-    anim_press_paw(&ctx->state, BONGOCAT_FRAME_RIGHT_DOWN, now, duration_us);
+    anim_press_paw(&ctx->state, HERDCAT_FRAME_RIGHT_DOWN, now, duration_us);
   anim_select_frame(&ctx->state, now);
   ctx->index = anim_index;
   if (ctx->last_drawn == anim_index)
@@ -403,23 +402,23 @@ typedef struct {
 static embedded_svg_t embedded_svgs[NUM_FRAMES];
 
 static void init_embedded_svgs(void) {
-  embedded_svgs[BONGOCAT_FRAME_BOTH_UP] = (embedded_svg_t){
+  embedded_svgs[HERDCAT_FRAME_BOTH_UP] = (embedded_svg_t){
       bongo_both_up_svg, bongo_both_up_svg_size, "bongo-both-up.svg"};
-  embedded_svgs[BONGOCAT_FRAME_LEFT_DOWN] = (embedded_svg_t){
+  embedded_svgs[HERDCAT_FRAME_LEFT_DOWN] = (embedded_svg_t){
       bongo_left_down_svg, bongo_left_down_svg_size, "bongo-left-down.svg"};
-  embedded_svgs[BONGOCAT_FRAME_RIGHT_DOWN] = (embedded_svg_t){
+  embedded_svgs[HERDCAT_FRAME_RIGHT_DOWN] = (embedded_svg_t){
       bongo_right_down_svg, bongo_right_down_svg_size, "bongo-right-down.svg"};
-  embedded_svgs[BONGOCAT_FRAME_BOTH_DOWN] = (embedded_svg_t){
+  embedded_svgs[HERDCAT_FRAME_BOTH_DOWN] = (embedded_svg_t){
       bongo_both_down_svg, bongo_both_down_svg_size, "bongo-both-down.svg"};
-  embedded_svgs[BONGOCAT_FRAME_SLEEPING] = (embedded_svg_t){
+  embedded_svgs[HERDCAT_FRAME_SLEEPING] = (embedded_svg_t){
       bongo_sleeping_svg, bongo_sleeping_svg_size, "bongo-sleeping.svg"};
-  embedded_svgs[BONGOCAT_FRAME_AGENT_WORKING] =
+  embedded_svgs[HERDCAT_FRAME_AGENT_WORKING] =
       (embedded_svg_t){bongo_agent_working_svg, bongo_agent_working_svg_size,
                        "bongo-agent-working.svg"};
-  embedded_svgs[BONGOCAT_FRAME_AGENT_WAITING] =
+  embedded_svgs[HERDCAT_FRAME_AGENT_WAITING] =
       (embedded_svg_t){bongo_agent_waiting_svg, bongo_agent_waiting_svg_size,
                        "bongo-agent-waiting.svg"};
-  embedded_svgs[BONGOCAT_FRAME_AGENT_DONE] = (embedded_svg_t){
+  embedded_svgs[HERDCAT_FRAME_AGENT_DONE] = (embedded_svg_t){
       bongo_agent_done_svg, bongo_agent_done_svg_size, "bongo-agent-done.svg"};
 }
 
@@ -436,18 +435,18 @@ static void anim_cleanup_svgs(void) {
   }
 }
 
-static bongocat_error_t anim_parse_embedded_svgs(void) {
+static herdcat_error_t anim_parse_embedded_svgs(void) {
   for (int i = 0; i < NUM_FRAMES; i++) {
     const embedded_svg_t *svg = &embedded_svgs[i];
 
-    bongocat_log_debug("Parsing embedded SVG: %s", svg->name);
+    herdcat_log_debug("Parsing embedded SVG: %s", svg->name);
 
     // nsvgParse modifies the string in-place, so make a mutable copy
     char *svg_copy = malloc(svg->size + 1);
     if (!svg_copy) {
-      bongocat_log_error("Failed to allocate SVG copy for: %s", svg->name);
+      herdcat_log_error("Failed to allocate SVG copy for: %s", svg->name);
       anim_cleanup_svgs();
-      return BONGOCAT_ERROR_MEMORY;
+      return HERDCAT_ERROR_MEMORY;
     }
     memcpy(svg_copy, svg->data, svg->size);
     svg_copy[svg->size] = '\0';
@@ -456,24 +455,24 @@ static bongocat_error_t anim_parse_embedded_svgs(void) {
     free(svg_copy);
 
     if (!anim_svgs[i]) {
-      bongocat_log_error("Failed to parse embedded SVG: %s", svg->name);
+      herdcat_log_error("Failed to parse embedded SVG: %s", svg->name);
       anim_cleanup_svgs();
-      return BONGOCAT_ERROR_FILE_IO;
+      return HERDCAT_ERROR_FILE_IO;
     }
 
-    bongocat_log_debug("Parsed SVG %s: %.0fx%.0f", svg->name,
-                       (double)anim_svgs[i]->width,
-                       (double)anim_svgs[i]->height);
+    herdcat_log_debug("Parsed SVG %s: %.0fx%.0f", svg->name,
+                      (double)anim_svgs[i]->width,
+                      (double)anim_svgs[i]->height);
   }
 
   anim_rasterizer = nsvgCreateRasterizer();
   if (!anim_rasterizer) {
-    bongocat_log_error("Failed to create SVG rasterizer");
+    herdcat_log_error("Failed to create SVG rasterizer");
     anim_cleanup_svgs();
-    return BONGOCAT_ERROR_MEMORY;
+    return HERDCAT_ERROR_MEMORY;
   }
 
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
 // =============================================================================
@@ -515,7 +514,7 @@ void animation_cache_frames(int target_w, int target_h, int mirror_x,
     size_t buf_size = (size_t)target_w * (size_t)target_h * 4U;
     uint8_t *rgba_buf = calloc(1, buf_size);
     if (!rgba_buf) {
-      bongocat_log_error("Failed to allocate raster buffer for frame %d", i);
+      herdcat_log_error("Failed to allocate raster buffer for frame %d", i);
       continue;
     }
 
@@ -571,8 +570,8 @@ void animation_cache_frames(int target_w, int target_h, int mirror_x,
     anim_cached_frames[i].height = target_h;
   }
 
-  bongocat_log_debug("Cached %d animation frames at %dx%d", NUM_FRAMES,
-                     target_w, target_h);
+  herdcat_log_debug("Cached %d animation frames at %dx%d", NUM_FRAMES, target_w,
+                    target_h);
 }
 
 void blit_cached_frame(uint8_t *dest, int dest_w, int dest_h,
@@ -612,19 +611,19 @@ void blit_cached_frame(uint8_t *dest, int dest_w, int dest_h,
 // PUBLIC API IMPLEMENTATION
 // =============================================================================
 
-bongocat_error_t animation_init(config_t *config) {
-  BONGOCAT_CHECK_NULL(config, BONGOCAT_ERROR_INVALID_PARAM);
+herdcat_error_t animation_init(config_t *config) {
+  HERDCAT_CHECK_NULL(config, HERDCAT_ERROR_INVALID_PARAM);
 
   current_config = config;
   agent_state = AGENT_STATE_IDLE;
   agent_frames = true;
-  bongocat_log_info("Initializing animation system");
+  herdcat_log_info("Initializing animation system");
 
   // Parse embedded SVG assets
   init_embedded_svgs();
 
-  bongocat_error_t result = anim_parse_embedded_svgs();
-  if (result != BONGOCAT_SUCCESS) {
+  herdcat_error_t result = anim_parse_embedded_svgs();
+  if (result != HERDCAT_SUCCESS) {
     return result;
   }
 
@@ -638,13 +637,13 @@ bongocat_error_t animation_init(config_t *config) {
     random_state = 1;
   }
 
-  bongocat_log_info(
+  herdcat_log_info(
       "Animation system initialized successfully with embedded SVG assets");
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
-bongocat_error_t animation_start(void) {
-  return BONGOCAT_SUCCESS;
+herdcat_error_t animation_start(void) {
+  return HERDCAT_SUCCESS;
 }
 
 void animation_cleanup(void) {
@@ -660,5 +659,5 @@ void animation_cleanup(void) {
     animation_initialized = false;
   }
 
-  bongocat_log_debug("Animation cleanup complete");
+  herdcat_log_debug("Animation cleanup complete");
 }

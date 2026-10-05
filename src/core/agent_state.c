@@ -1,6 +1,6 @@
 #include "core/agent_state.h"
 
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 
 #include <string.h>
 
@@ -30,11 +30,11 @@ const char *agent_state_name(agent_state_t state) {
 int agent_state_frame(agent_state_t state) {
   switch (state) {
   case AGENT_STATE_WORKING:
-    return BONGOCAT_FRAME_AGENT_WORKING;
+    return HERDCAT_FRAME_AGENT_WORKING;
   case AGENT_STATE_WAITING:
-    return BONGOCAT_FRAME_AGENT_WAITING;
+    return HERDCAT_FRAME_AGENT_WAITING;
   case AGENT_STATE_DONE:
-    return BONGOCAT_FRAME_AGENT_DONE;
+    return HERDCAT_FRAME_AGENT_DONE;
   default:
     return -1;
   }

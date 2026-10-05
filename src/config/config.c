@@ -2,7 +2,7 @@
 #include "config/config.h"
 
 #include "config/sign_options.h"
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "utils/error.h"
 
 #include <errno.h>
@@ -49,16 +49,16 @@ static void diagnostic(const char *key, const char *message) {
   if (diagnostic_callback) {
     diagnostic_callback(&item, diagnostic_data);
   }
-  bongocat_log_warning("%s:%d: %s: key '%s': %s", item.file, item.line,
-                       (int)strict_parse ? "error" : "warning", key ? key : "",
-                       message);
+  herdcat_log_warning("%s:%d: %s: key '%s': %s", item.file, item.line,
+                      (int)strict_parse ? "error" : "warning", key ? key : "",
+                      message);
 }
 
 static void config_clamp_int(int *value, int min, int max, const char *name) {
   if (*value < min || *value > max) {
     validation_failed = true;
-    bongocat_log_warning("%s %d out of range [%d-%d], clamping", name, *value,
-                         min, max);
+    herdcat_log_warning("%s %d out of range [%d-%d], clamping", name, *value,
+                        min, max);
     *value = (*value < min) ? min : max;
   }
 }
@@ -74,7 +74,7 @@ static void config_validate_timing(config_t *config) {
   if (config->agent_done_timeout < 0 ||
       config->agent_done_timeout > MAX_INTERVAL) {
     validation_failed = true;
-    bongocat_log_warning(
+    herdcat_log_warning(
         "agent_done_timeout %d out of range [0-%d], resetting to %d",
         config->agent_done_timeout, MAX_INTERVAL, DEFAULT_AGENT_DONE_TIMEOUT);
     config->agent_done_timeout = DEFAULT_AGENT_DONE_TIMEOUT;
@@ -82,7 +82,7 @@ static void config_validate_timing(config_t *config) {
   if (config->agent_stale_timeout < 0 ||
       config->agent_stale_timeout > MAX_AGENT_STALE_TIMEOUT) {
     validation_failed = true;
-    bongocat_log_warning(
+    herdcat_log_warning(
         "agent_stale_timeout %d out of range [0-%d], resetting to %d",
         config->agent_stale_timeout, MAX_AGENT_STALE_TIMEOUT,
         DEFAULT_AGENT_STALE_TIMEOUT);
@@ -98,7 +98,7 @@ static void config_validate_timing(config_t *config) {
   if (config->test_animation_interval < 0 ||
       config->test_animation_interval > MAX_INTERVAL) {
     validation_failed = true;
-    bongocat_log_warning(
+    herdcat_log_warning(
         "test_animation_interval %d out of range [0-%d], clamping",
         config->test_animation_interval, MAX_INTERVAL);
     config->test_animation_interval =
@@ -108,7 +108,7 @@ static void config_validate_timing(config_t *config) {
   if (config->hotplug_scan_interval < 0 ||
       config->hotplug_scan_interval > MAX_INTERVAL) {
     validation_failed = true;
-    bongocat_log_warning(
+    herdcat_log_warning(
         "hotplug_scan_interval %d out of range [0-%d], clamping",
         config->hotplug_scan_interval, MAX_INTERVAL);
     config->hotplug_scan_interval =
@@ -118,8 +118,8 @@ static void config_validate_timing(config_t *config) {
   if (config->idle_sleep_timeout_sec < 0 ||
       config->idle_sleep_timeout_sec > MAX_INTERVAL) {
     validation_failed = true;
-    bongocat_log_warning("idle_sleep_timeout %d out of range [0-%d], clamping",
-                         config->idle_sleep_timeout_sec, MAX_INTERVAL);
+    herdcat_log_warning("idle_sleep_timeout %d out of range [0-%d], clamping",
+                        config->idle_sleep_timeout_sec, MAX_INTERVAL);
     config->idle_sleep_timeout_sec =
         config->idle_sleep_timeout_sec < 0 ? 0 : MAX_INTERVAL;
   }
@@ -132,10 +132,10 @@ static void config_validate_appearance(config_t *config) {
   config_clamp_int(&config->overlay_opacity, 0, 255, "overlay_opacity");
 
   // Validate idle frame
-  if (config->idle_frame < 0 || config->idle_frame > BONGOCAT_FRAME_LAST_USER) {
+  if (config->idle_frame < 0 || config->idle_frame > HERDCAT_FRAME_LAST_USER) {
     validation_failed = true;
-    bongocat_log_warning("idle_frame %d out of range [0-%d], resetting to 0",
-                         config->idle_frame, BONGOCAT_FRAME_LAST_USER);
+    herdcat_log_warning("idle_frame %d out of range [0-%d], resetting to 0",
+                        config->idle_frame, HERDCAT_FRAME_LAST_USER);
     config->idle_frame = 0;
   }
 }
@@ -143,15 +143,15 @@ static void config_validate_appearance(config_t *config) {
 static void config_validate_enums(config_t *config) {
   // Validate layer
   if (config->layer < LAYER_BACKGROUND || config->layer > LAYER_OVERLAY) {
-    bongocat_log_warning("Invalid layer %d, resetting to top", config->layer);
+    herdcat_log_warning("Invalid layer %d, resetting to top", config->layer);
     config->layer = LAYER_TOP;
   }
 
   // Validate overlay_position
   if (config->overlay_position != POSITION_TOP &&
       config->overlay_position != POSITION_BOTTOM) {
-    bongocat_log_warning("Invalid overlay_position %d, resetting to top",
-                         config->overlay_position);
+    herdcat_log_warning("Invalid overlay_position %d, resetting to top",
+                        config->overlay_position);
     config->overlay_position = POSITION_TOP;
   }
 }
@@ -159,7 +159,7 @@ static void config_validate_enums(config_t *config) {
 static void config_validate_positioning(config_t *config) {
   // Validate cat positioning doesn't go off-screen
   if (llabs((long long)config->cat_x_offset) > config->screen_width) {
-    bongocat_log_warning(
+    herdcat_log_warning(
         "cat_x_offset %d may position cat off-screen (screen width: %d)",
         config->cat_x_offset, config->screen_width);
   }
@@ -173,17 +173,17 @@ static void config_validate_time(config_t *config) {
         (config->sleep_end.hour * 60) + config->sleep_end.min;
 
     if (begin_minutes == end_minutes) {
-      bongocat_log_warning("Sleep mode is enabled, but time is equal: "
-                           "%02d:%02d, disable sleep mode",
-                           config->sleep_begin.hour, config->sleep_begin.min);
+      herdcat_log_warning("Sleep mode is enabled, but time is equal: "
+                          "%02d:%02d, disable sleep mode",
+                          config->sleep_begin.hour, config->sleep_begin.min);
 
       config->enable_scheduled_sleep = 0;
     }
   }
 }
 
-static bongocat_error_t config_validate(config_t *config) {
-  BONGOCAT_CHECK_NULL(config, BONGOCAT_ERROR_INVALID_PARAM);
+static herdcat_error_t config_validate(config_t *config) {
+  HERDCAT_CHECK_NULL(config, HERDCAT_ERROR_INVALID_PARAM);
 
   // Normalize boolean values
   config->enable_debug = config->enable_debug ? 1 : 0;
@@ -201,45 +201,45 @@ static bongocat_error_t config_validate(config_t *config) {
   config->mirror_y = config->mirror_y ? 1 : 0;
   config->enable_antialiasing = config->enable_antialiasing ? 1 : 0;
   config_validate_time(config);
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
 // =============================================================================
 // DEVICE MANAGEMENT MODULE
 // =============================================================================
 
-static bongocat_error_t config_expand_array(char ***array_ptr, int *count,
-                                            const char *str) {
+static herdcat_error_t config_expand_array(char ***array_ptr, int *count,
+                                           const char *str) {
   char **new_array =
       (char **)realloc((void *)*array_ptr, (*count + 1) * sizeof(char *));
   if (!new_array) {
-    return BONGOCAT_ERROR_MEMORY;
+    return HERDCAT_ERROR_MEMORY;
   }
   *array_ptr = new_array;
 
   size_t len = strlen(str);
   (*array_ptr)[*count] = malloc(len + 1);
   if (!(*array_ptr)[*count]) {
-    return BONGOCAT_ERROR_MEMORY;
+    return HERDCAT_ERROR_MEMORY;
   }
 
   memcpy((*array_ptr)[*count], str, len + 1);  // includes null terminator
   (*count)++;
 
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
-static bongocat_error_t config_add_keyboard_device(config_t *config,
-                                                   const char *device_path) {
-  bongocat_error_t err = config_expand_array(
+static herdcat_error_t config_add_keyboard_device(config_t *config,
+                                                  const char *device_path) {
+  herdcat_error_t err = config_expand_array(
       &config->keyboard_devices, &config->num_keyboard_devices, device_path);
-  if (err != BONGOCAT_SUCCESS) {
-    bongocat_log_error("Failed to add keyboard device: %s",
-                       bongocat_error_string(err));
+  if (err != HERDCAT_SUCCESS) {
+    herdcat_log_error("Failed to add keyboard device: %s",
+                      herdcat_error_string(err));
     return err;
   }
 
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
 static void config_free_string_array(char ***array_ptr, int *count) {
@@ -308,7 +308,7 @@ static bool config_parse_int(const char *str, int *out) {
   return true;
 }
 
-static bongocat_error_t
+static herdcat_error_t
 config_parse_integer_key(config_t *config, const char *key, const char *value) {
   // Identify which field this key maps to (NULL = not an integer key)
   int *target = NULL;
@@ -367,13 +367,13 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
   }
 
   if (!target) {
-    return BONGOCAT_ERROR_INVALID_PARAM;  // Not an integer key
+    return HERDCAT_ERROR_INVALID_PARAM;  // Not an integer key
   }
 
   int int_value;
   if (!config_parse_int(value, &int_value)) {
-    bongocat_log_warning("Invalid integer value '%s' for key '%s'", value, key);
-    return BONGOCAT_ERROR_INVALID_PARAM;
+    herdcat_log_warning("Invalid integer value '%s' for key '%s'", value, key);
+    return HERDCAT_ERROR_INVALID_PARAM;
   }
 
   bool boolean_key =
@@ -386,8 +386,8 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
        target == &config->enable_scheduled_sleep ||
        target == &config->disable_fullscreen_hide) != 0;
   if (boolean_key && int_value != 0 && int_value != 1) {
-    bongocat_log_warning("Invalid boolean value '%s' for key '%s'", value, key);
-    return BONGOCAT_ERROR_INVALID_PARAM;
+    herdcat_log_warning("Invalid boolean value '%s' for key '%s'", value, key);
+    return HERDCAT_ERROR_INVALID_PARAM;
   }
 
   struct {
@@ -412,16 +412,16 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
         (int_value < ranges[i].minimum || int_value > ranges[i].maximum)) {
       diagnostic(key, "value outside allowed range");
       if (strict_parse) {
-        return BONGOCAT_ERROR_CONFIG;
+        return HERDCAT_ERROR_CONFIG;
       }
     }
   }
   *target = int_value;
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
-static bongocat_error_t config_parse_enum_key(config_t *config, const char *key,
-                                              const char *value) {
+static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
+                                             const char *value) {
   const struct {
     const char *key, *value;
     int number;
@@ -454,7 +454,7 @@ static bongocat_error_t config_parse_enum_key(config_t *config, const char *key,
       config->sign_language = (sign_language_t)signs[i].number;
     else
       config->sign_done = (sign_done_t)signs[i].number;
-    return BONGOCAT_SUCCESS;
+    return HERDCAT_SUCCESS;
   }
   if (strcmp(key, "layer") == 0) {
     if (strcmp(value, "background") == 0) {
@@ -467,9 +467,9 @@ static bongocat_error_t config_parse_enum_key(config_t *config, const char *key,
       config->layer = LAYER_OVERLAY;
     } else {
       if (strict_parse) {
-        return BONGOCAT_ERROR_CONFIG;
+        return HERDCAT_ERROR_CONFIG;
       }
-      bongocat_log_warning("Invalid layer '%s', using 'top'", value);
+      herdcat_log_warning("Invalid layer '%s', using 'top'", value);
       config->layer = LAYER_TOP;
     }
   } else if (strcmp(key, "overlay_position") == 0) {
@@ -479,9 +479,9 @@ static bongocat_error_t config_parse_enum_key(config_t *config, const char *key,
       config->overlay_position = POSITION_BOTTOM;
     } else {
       if (strict_parse) {
-        return BONGOCAT_ERROR_CONFIG;
+        return HERDCAT_ERROR_CONFIG;
       }
-      bongocat_log_warning("Invalid overlay_position '%s', using 'top'", value);
+      herdcat_log_warning("Invalid overlay_position '%s', using 'top'", value);
       config->overlay_position = POSITION_TOP;
     }
   } else if (strcmp(key, "cat_align") == 0) {
@@ -493,40 +493,40 @@ static bongocat_error_t config_parse_enum_key(config_t *config, const char *key,
       config->cat_align = ALIGN_RIGHT;
     } else {
       if (strict_parse) {
-        return BONGOCAT_ERROR_CONFIG;
+        return HERDCAT_ERROR_CONFIG;
       }
-      bongocat_log_warning("Invalid cat_align '%s', using 'center'", value);
+      herdcat_log_warning("Invalid cat_align '%s', using 'center'", value);
       config->cat_align = ALIGN_CENTER;
     }
   } else {
-    return BONGOCAT_ERROR_INVALID_PARAM;  // Unknown key
+    return HERDCAT_ERROR_INVALID_PARAM;  // Unknown key
   }
 
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
-static bongocat_error_t config_parse_time_key(config_t *config, const char *key,
-                                              const char *value) {
+static herdcat_error_t config_parse_time_key(config_t *config, const char *key,
+                                             const char *value) {
   // Only try to parse time for time-related keys
   if (strcmp(key, "sleep_begin") != 0 && strcmp(key, "sleep_end") != 0) {
-    return BONGOCAT_ERROR_INVALID_PARAM;  // Not a time key
+    return HERDCAT_ERROR_INVALID_PARAM;  // Not a time key
   }
 
   if (strlen(value) != 5 || (value[0] < '0' || value[0] > '9') ||
       (value[1] < '0' || value[1] > '9') || value[2] != ':' ||
       (value[3] < '0' || value[3] > '9') ||
       (value[4] < '0' || value[4] > '9')) {
-    bongocat_log_warning("Invalid time format '%s', expected HH:MM", value);
-    return BONGOCAT_ERROR_INVALID_PARAM;
+    herdcat_log_warning("Invalid time format '%s', expected HH:MM", value);
+    return HERDCAT_ERROR_INVALID_PARAM;
   }
   int hour = ((value[0] - '0') * 10) + (value[1] - '0');
   int min = ((value[3] - '0') * 10) + (value[4] - '0');
 
   if (hour < 0 || hour > 23 || min < 0 || min > 59) {
-    bongocat_log_warning(
+    herdcat_log_warning(
         "Invalid time values '%s', hour must be 0-23, minute must be 0-59",
         value);
-    return BONGOCAT_ERROR_INVALID_PARAM;
+    return HERDCAT_ERROR_INVALID_PARAM;
   }
 
   if (strcmp(key, "sleep_begin") == 0) {
@@ -537,18 +537,18 @@ static bongocat_error_t config_parse_time_key(config_t *config, const char *key,
     config->sleep_end.min = min;
   }
 
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
-static bongocat_error_t config_parse_monitor_list(config_t *config,
-                                                  const char *value) {
+static herdcat_error_t config_parse_monitor_list(config_t *config,
+                                                 const char *value) {
   config_free_string_array(&config->output_names, &config->num_output_names);
   free(config->output_name);
   config->output_name = NULL;
 
   char *monitor_list = strdup(value);
   if (!monitor_list) {
-    return BONGOCAT_ERROR_MEMORY;
+    return HERDCAT_ERROR_MEMORY;
   }
 
   char *saveptr = NULL;
@@ -556,9 +556,9 @@ static bongocat_error_t config_parse_monitor_list(config_t *config,
   while (token) {
     char *monitor_name = config_trim_whitespace(token);
     if (monitor_name[0] != '\0') {
-      bongocat_error_t err = config_expand_array(
+      herdcat_error_t err = config_expand_array(
           &config->output_names, &config->num_output_names, monitor_name);
-      if (err != BONGOCAT_SUCCESS) {
+      if (err != HERDCAT_SUCCESS) {
         free(monitor_list);
         return err;
       }
@@ -572,59 +572,58 @@ static bongocat_error_t config_parse_monitor_list(config_t *config,
   if (config->num_output_names > 0) {
     config->output_name = strdup(config->output_names[0]);
     if (!config->output_name) {
-      return BONGOCAT_ERROR_MEMORY;
+      return HERDCAT_ERROR_MEMORY;
     }
   } else {
-    bongocat_log_warning(
+    herdcat_log_warning(
         "monitor is empty, falling back to automatic output selection");
   }
 
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
-static bongocat_error_t
+static herdcat_error_t
 config_parse_string_key(config_t *config, const char *key, const char *value) {
   if (strcmp(key, "sign_font") == 0) {
     if (strlen(value) >= sizeof(config->sign_font))
-      return BONGOCAT_ERROR_INVALID_PARAM;
+      return HERDCAT_ERROR_INVALID_PARAM;
     for (const unsigned char *p = (const unsigned char *)value; *p; p++)
       if (*p < 32 || *p == 127)
-        return BONGOCAT_ERROR_INVALID_PARAM;
+        return HERDCAT_ERROR_INVALID_PARAM;
     snprintf(config->sign_font, sizeof(config->sign_font), "%s", value);
-    return BONGOCAT_SUCCESS;
+    return HERDCAT_SUCCESS;
   } else if (strcmp(key, "monitor") == 0) {
     return config_parse_monitor_list(config, value);
   } else if (strcmp(key, "keyboard_name") == 0) {
     return config_expand_array(&config->keyboard_names, &config->num_names,
                                value);
   } else {
-    return BONGOCAT_ERROR_INVALID_PARAM;  // Unknown key
+    return HERDCAT_ERROR_INVALID_PARAM;  // Unknown key
   }
 }
 
-static bongocat_error_t
-config_parse_key_value(config_t *config, const char *key, const char *value) {
+static herdcat_error_t config_parse_key_value(config_t *config, const char *key,
+                                              const char *value) {
   // Try integer keys first
-  bongocat_error_t integer_result =
-      config_parse_integer_key(config, key, value);
-  if (integer_result != BONGOCAT_ERROR_INVALID_PARAM) {
+  herdcat_error_t integer_result = config_parse_integer_key(config, key, value);
+  if (integer_result != HERDCAT_ERROR_INVALID_PARAM) {
     return integer_result;
   }
 
   // Try enum keys
-  bongocat_error_t enum_result = config_parse_enum_key(config, key, value);
-  if (enum_result != BONGOCAT_ERROR_INVALID_PARAM) {
+  herdcat_error_t enum_result = config_parse_enum_key(config, key, value);
+  if (enum_result != HERDCAT_ERROR_INVALID_PARAM) {
     return enum_result;
   }
 
   // Try time keys
-  if (config_parse_time_key(config, key, value) == BONGOCAT_SUCCESS) {
-    return BONGOCAT_SUCCESS;
+  if (config_parse_time_key(config, key, value) == HERDCAT_SUCCESS) {
+    return HERDCAT_SUCCESS;
   }
 
   // Try string keys
-  bongocat_error_t string_result = config_parse_string_key(config, key, value);
-  if (string_result != BONGOCAT_ERROR_INVALID_PARAM) {
+  herdcat_error_t string_result = config_parse_string_key(config, key, value);
+  if (string_result != HERDCAT_ERROR_INVALID_PARAM) {
     return string_result;
   }
 
@@ -633,19 +632,19 @@ config_parse_key_value(config_t *config, const char *key, const char *value) {
       strcmp(key, "keyboard_devices") == 0) {
     // Validate path starts with /dev/input/ and has no traversal
     if (strncmp(value, "/dev/input/", 11) != 0) {
-      bongocat_log_warning(
+      herdcat_log_warning(
           "keyboard_device path must start with /dev/input/: %s", value);
-      return BONGOCAT_ERROR_INVALID_PARAM;
+      return HERDCAT_ERROR_INVALID_PARAM;
     }
     if (strstr(value, "..") != NULL) {
-      bongocat_log_warning("Path traversal detected in device path: %s", value);
-      return BONGOCAT_ERROR_INVALID_PARAM;
+      herdcat_log_warning("Path traversal detected in device path: %s", value);
+      return HERDCAT_ERROR_INVALID_PARAM;
     }
     return config_add_keyboard_device(config, value);
   }
 
   // Unknown key
-  return BONGOCAT_ERROR_INVALID_PARAM;
+  return HERDCAT_ERROR_INVALID_PARAM;
 }
 
 static bool config_is_comment_or_empty(const char *line) {
@@ -692,10 +691,10 @@ static bool config_parse_line(char *line, char **out_key, char **out_value) {
   return (*out_key)[0] != '\0';
 }
 
-static bongocat_error_t config_parse_monitor_setting(config_t *config,
-                                                     const char *monitor,
-                                                     const char *key,
-                                                     const char *value) {
+static herdcat_error_t config_parse_monitor_setting(config_t *config,
+                                                    const char *monitor,
+                                                    const char *key,
+                                                    const char *value) {
   const char *allowed[] = {"cat_draggable",
                            "cat_height",
                            "overlay_height",
@@ -714,20 +713,20 @@ static bongocat_error_t config_parse_monitor_setting(config_t *config,
     appearance |= strcmp(key, allowed[k]) == 0;
   }
   config_t probe = *config;
-  bongocat_error_t parse_result =
+  herdcat_error_t parse_result =
       (int)appearance ? config_parse_key_value(&probe, key, value)
-                      : BONGOCAT_ERROR_INVALID_PARAM;
-  if (parse_result == BONGOCAT_SUCCESS) {
+                      : HERDCAT_ERROR_INVALID_PARAM;
+  if (parse_result == HERDCAT_SUCCESS) {
     bool previous = validation_failed;
     validation_failed = false;
-    bongocat_error_t valid = config_validate(&probe);
+    herdcat_error_t valid = config_validate(&probe);
     bool invalid = validation_failed;
     validation_failed |= previous;
-    if (valid != BONGOCAT_SUCCESS || (strict_parse && invalid)) {
-      parse_result = BONGOCAT_ERROR_CONFIG;
+    if (valid != HERDCAT_SUCCESS || (strict_parse && invalid)) {
+      parse_result = HERDCAT_ERROR_CONFIG;
     }
   }
-  if (parse_result == BONGOCAT_SUCCESS) {
+  if (parse_result == HERDCAT_SUCCESS) {
     monitor_override_t entry = {
         .monitor = strdup(monitor), .key = strdup(key), .value = strdup(value)};
     monitor_override_t *entries = NULL;
@@ -739,7 +738,7 @@ static bongocat_error_t config_parse_monitor_setting(config_t *config,
       free(entry.monitor);
       free(entry.key);
       free(entry.value);
-      parse_result = BONGOCAT_ERROR_MEMORY;
+      parse_result = HERDCAT_ERROR_MEMORY;
     } else {
       config->overrides = entries;
       config->overrides[config->num_overrides++] = entry;
@@ -768,7 +767,7 @@ static bool config_parse_section(char *trimmed, char *section,
 
 static const char *config_startup_path(const char *config_file_path,
                                        char resolved[PATH_MAX]) {
-  const char *file_path = config_file_path ? config_file_path : "bongocat.conf";
+  const char *file_path = config_file_path ? config_file_path : "herdcat.conf";
 
   // If no explicit path, try XDG paths
   bool using_resolved = false;
@@ -778,7 +777,7 @@ static const char *config_startup_path(const char *config_file_path,
     const char *home = getenv("HOME");
 
     if (xdg_config && xdg_config[0] != '\0') {
-      snprintf(resolved, PATH_MAX, "%s/bongocat/bongocat.conf", xdg_config);
+      snprintf(resolved, PATH_MAX, "%s/herdcat/herdcat.conf", xdg_config);
       if (access(resolved, R_OK) == 0) {
         file_path = resolved;
         using_resolved = true;
@@ -786,7 +785,7 @@ static const char *config_startup_path(const char *config_file_path,
     }
 
     if (!using_resolved && home && home[0] != '\0') {
-      snprintf(resolved, PATH_MAX, "%s/.config/bongocat/bongocat.conf", home);
+      snprintf(resolved, PATH_MAX, "%s/.config/herdcat/herdcat.conf", home);
       if (access(resolved, R_OK) == 0) {
         file_path = resolved;
       }
@@ -796,9 +795,9 @@ static const char *config_startup_path(const char *config_file_path,
   return file_path;
 }
 
-static bongocat_error_t config_parse_file(config_t *config,
-                                          const char *config_file_path) {
-  BONGOCAT_CHECK_NULL(config, BONGOCAT_ERROR_INVALID_PARAM);
+static herdcat_error_t config_parse_file(config_t *config,
+                                         const char *config_file_path) {
+  HERDCAT_CHECK_NULL(config, HERDCAT_ERROR_INVALID_PARAM);
 
   char resolved[PATH_MAX];
   const char *file_path = config_startup_path(config_file_path, resolved);
@@ -809,16 +808,16 @@ static bongocat_error_t config_parse_file(config_t *config,
   if (!file) {
     if (strict_parse) {
       diagnostic(NULL, "cannot open configuration");
-      return BONGOCAT_ERROR_FILE_IO;
+      return HERDCAT_ERROR_FILE_IO;
     }
-    bongocat_log_info("Config file '%s' not found, using defaults", file_path);
-    return BONGOCAT_SUCCESS;
+    herdcat_log_info("Config file '%s' not found, using defaults", file_path);
+    return HERDCAT_SUCCESS;
   }
 
   char line[512];
   int line_number = 0;
   char section[128] = "";
-  bongocat_error_t result = BONGOCAT_SUCCESS;
+  herdcat_error_t result = HERDCAT_SUCCESS;
 
   while (fgets(line, sizeof(line), file)) {
     line_number++;
@@ -831,7 +830,7 @@ static bongocat_error_t config_parse_file(config_t *config,
       while ((next = fgetc(file)) != '\n' && next != EOF) {}
       diagnostic(NULL, "line too long");
       if (strict_parse) {
-        result = BONGOCAT_ERROR_CONFIG;
+        result = HERDCAT_ERROR_CONFIG;
       }
       if (next == EOF) {
         break;
@@ -855,7 +854,7 @@ static bongocat_error_t config_parse_file(config_t *config,
       }
       diagnostic(NULL, "invalid section");
       if (strict_parse) {
-        result = BONGOCAT_ERROR_CONFIG;
+        result = HERDCAT_ERROR_CONFIG;
       }
       continue;
     }
@@ -863,20 +862,20 @@ static bongocat_error_t config_parse_file(config_t *config,
     char *key = NULL;
     char *value = NULL;
     if (config_parse_line(line, &key, &value)) {
-      bongocat_error_t parse_result;
+      herdcat_error_t parse_result;
       if (section[0]) {
         parse_result =
             config_parse_monitor_setting(config, section, key, value);
       } else {
         parse_result = config_parse_key_value(config, key, value);
       }
-      if (parse_result == BONGOCAT_ERROR_INVALID_PARAM) {
+      if (parse_result == HERDCAT_ERROR_INVALID_PARAM) {
         diagnostic(key, "unknown key or invalid value");
         if (strict_parse) {
-          result = BONGOCAT_ERROR_CONFIG;
+          result = HERDCAT_ERROR_CONFIG;
         }
-      } else if (parse_result != BONGOCAT_SUCCESS) {
-        diagnostic(key, parse_result == BONGOCAT_ERROR_MEMORY
+      } else if (parse_result != HERDCAT_SUCCESS) {
+        diagnostic(key, parse_result == HERDCAT_ERROR_MEMORY
                             ? "allocation failed"
                             : "invalid value");
         result = parse_result;
@@ -885,18 +884,18 @@ static bongocat_error_t config_parse_file(config_t *config,
     } else if (strlen(line) > 0) {
       diagnostic(NULL, "malformed configuration line");
       if (strict_parse) {
-        result = BONGOCAT_ERROR_CONFIG;
+        result = HERDCAT_ERROR_CONFIG;
       }
     }
   }
 
   if (ferror(file)) {
-    result = BONGOCAT_ERROR_FILE_IO;
+    result = HERDCAT_ERROR_FILE_IO;
   }
   fclose(file);
 
-  if (result == BONGOCAT_SUCCESS) {
-    bongocat_log_info("Loaded configuration from %s", file_path);
+  if (result == HERDCAT_SUCCESS) {
+    herdcat_log_info("Loaded configuration from %s", file_path);
   }
 
   return result;
@@ -963,59 +962,58 @@ static void config_set_defaults(config_t *config) {
 
 static void config_finalize(config_t *config) {
   // Initialize error system with debug setting
-  bongocat_error_init(config->enable_debug);
+  herdcat_error_init(config->enable_debug);
 }
 
 static void config_log_summary(const config_t *config) {
-  bongocat_log_debug("Configuration loaded successfully");
-  bongocat_log_debug("  Screen: %dx%d", config->screen_width,
-                     config->overlay_height);
-  bongocat_log_debug("  Cat: %dx%d at offset (%d,%d)", config->cat_height,
-                     (config->cat_height * CAT_IMAGE_WIDTH) / CAT_IMAGE_HEIGHT,
-                     config->cat_x_offset, config->cat_y_offset);
-  bongocat_log_debug("  FPS: %d, Opacity: %d", config->fps,
-                     config->overlay_opacity);
-  bongocat_log_debug("  Mirror: X=%d, Y=%d", config->mirror_x,
-                     config->mirror_y);
-  bongocat_log_debug("  Anti-aliasing: %s",
-                     config->enable_antialiasing ? "enabled" : "disabled");
-  bongocat_log_debug("  Position: %s", config->overlay_position == POSITION_TOP
-                                           ? "top"
-                                           : "bottom");
-  bongocat_log_debug("  Layer: %s",
-                     config->layer == LAYER_TOP ? "top" : "overlay");
-  bongocat_log_debug("  Monitors: %d configured", config->num_output_names);
+  herdcat_log_debug("Configuration loaded successfully");
+  herdcat_log_debug("  Screen: %dx%d", config->screen_width,
+                    config->overlay_height);
+  herdcat_log_debug("  Cat: %dx%d at offset (%d,%d)", config->cat_height,
+                    (config->cat_height * CAT_IMAGE_WIDTH) / CAT_IMAGE_HEIGHT,
+                    config->cat_x_offset, config->cat_y_offset);
+  herdcat_log_debug("  FPS: %d, Opacity: %d", config->fps,
+                    config->overlay_opacity);
+  herdcat_log_debug("  Mirror: X=%d, Y=%d", config->mirror_x, config->mirror_y);
+  herdcat_log_debug("  Anti-aliasing: %s",
+                    config->enable_antialiasing ? "enabled" : "disabled");
+  herdcat_log_debug("  Position: %s", config->overlay_position == POSITION_TOP
+                                          ? "top"
+                                          : "bottom");
+  herdcat_log_debug("  Layer: %s",
+                    config->layer == LAYER_TOP ? "top" : "overlay");
+  herdcat_log_debug("  Monitors: %d configured", config->num_output_names);
 }
 
 // =============================================================================
 // PUBLIC API IMPLEMENTATION
 // =============================================================================
 
-bongocat_error_t load_config(config_t *config, const char *config_file_path) {
-  BONGOCAT_CHECK_NULL(config, BONGOCAT_ERROR_INVALID_PARAM);
+herdcat_error_t load_config(config_t *config, const char *config_file_path) {
+  HERDCAT_CHECK_NULL(config, HERDCAT_ERROR_INVALID_PARAM);
 
   validation_failed = false;
   // Initialize with defaults
   config_set_defaults(config);
 
   // Parse config file and override defaults
-  bongocat_error_t result = config_parse_file(config, config_file_path);
-  if (result != BONGOCAT_SUCCESS) {
-    bongocat_log_error("Failed to parse configuration file: %s",
-                       bongocat_error_string(result));
+  herdcat_error_t result = config_parse_file(config, config_file_path);
+  if (result != HERDCAT_SUCCESS) {
+    herdcat_log_error("Failed to parse configuration file: %s",
+                      herdcat_error_string(result));
     return result;
   }
 
   // Validate and sanitize configuration
   result = config_validate(config);
-  if (result != BONGOCAT_SUCCESS) {
-    bongocat_log_error("Configuration validation failed: %s",
-                       bongocat_error_string(result));
+  if (result != HERDCAT_SUCCESS) {
+    herdcat_log_error("Configuration validation failed: %s",
+                      herdcat_error_string(result));
     return result;
   }
 
   if (strict_parse && validation_failed) {
-    return BONGOCAT_ERROR_CONFIG;
+    return HERDCAT_ERROR_CONFIG;
   }
 
   // Finalize configuration
@@ -1024,7 +1022,7 @@ bongocat_error_t load_config(config_t *config, const char *config_file_path) {
   // Log configuration summary
   config_log_summary(config);
 
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
 void config_cleanup(void) {
@@ -1067,36 +1065,36 @@ char *config_resolve_path(const char *explicit_path) {
 
   char path[PATH_MAX];
 
-  // 1. $XDG_CONFIG_HOME/bongocat/bongocat.conf
+  // 1. $XDG_CONFIG_HOME/herdcat/herdcat.conf
   const char *xdg_config = getenv("XDG_CONFIG_HOME");
   if (xdg_config && xdg_config[0] != '\0') {
-    snprintf(path, sizeof(path), "%s/bongocat/bongocat.conf", xdg_config);
+    snprintf(path, sizeof(path), "%s/herdcat/herdcat.conf", xdg_config);
     if (access(path, R_OK) == 0) {
       return strdup(path);
     }
   }
 
-  // 2. ~/.config/bongocat/bongocat.conf
+  // 2. ~/.config/herdcat/herdcat.conf
   const char *home = getenv("HOME");
   if (home && home[0] != '\0') {
-    snprintf(path, sizeof(path), "%s/.config/bongocat/bongocat.conf", home);
+    snprintf(path, sizeof(path), "%s/.config/herdcat/herdcat.conf", home);
     if (access(path, R_OK) == 0) {
       return strdup(path);
     }
   }
 
-  // 3. ./bongocat.conf (CWD)
-  if (access("bongocat.conf", R_OK) == 0) {
-    return strdup("bongocat.conf");
+  // 3. ./herdcat.conf (CWD)
+  if (access("herdcat.conf", R_OK) == 0) {
+    return strdup("herdcat.conf");
   }
 
   // No config found — will use defaults
   return NULL;
 }
 
-bongocat_error_t load_config_strict(config_t *config, const char *path) {
+herdcat_error_t load_config_strict(config_t *config, const char *path) {
   strict_parse = true;
-  bongocat_error_t result = load_config(config, path);
+  herdcat_error_t result = load_config(config, path);
   strict_parse = false;
   return result;
 }
@@ -1107,23 +1105,23 @@ void config_for_monitor(const config_t *global, const char *name,
   for (size_t i = 0; i < global->num_overrides; i++) {
     const monitor_override_t *entry = &global->overrides[i];
     if (name && strcmp(entry->monitor, name) == 0) {
-      bongocat_error_t result =
+      herdcat_error_t result =
           config_parse_key_value(effective, entry->key, entry->value);
       (void)result;
     }
   }
-  bongocat_error_t result = config_validate(effective);
+  herdcat_error_t result = config_validate(effective);
   (void)result;
 }
 
-bongocat_error_t load_config_report(config_t *config, const char *path,
-                                    bool strict,
-                                    config_diagnostic_callback_t callback,
-                                    void *data) {
+herdcat_error_t load_config_report(config_t *config, const char *path,
+                                   bool strict,
+                                   config_diagnostic_callback_t callback,
+                                   void *data) {
   diagnostic_callback = callback;
   diagnostic_data = data;
-  bongocat_error_t result = (int)strict ? load_config_strict(config, path)
-                                        : load_config(config, path);
+  herdcat_error_t result = (int)strict ? load_config_strict(config, path)
+                                       : load_config(config, path);
   diagnostic_callback = NULL;
   diagnostic_data = NULL;
   return result;

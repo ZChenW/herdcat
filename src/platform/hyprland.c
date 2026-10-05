@@ -2,7 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "platform/hyprland.h"
 
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "platform/outputs.h"
 #include "platform/wayland.h"
 

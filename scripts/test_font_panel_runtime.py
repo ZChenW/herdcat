@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import time
 
-binary = str(Path('build/bongocat').resolve())
+binary = str(Path('build/herdcat').resolve())
 fixture = str(Path('build/compositor/server').resolve())
 
 
@@ -25,10 +25,10 @@ def name_center(rect):
     return (rect[0] + rect[2] * 77 // 154, rect[1] + rect[3] * 103 // 130)
 
 
-with tempfile.TemporaryDirectory(prefix='bongocat-font-panel-') as directory:
+with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
     root = Path(directory)
     env = dict(os.environ, XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
-               WAYLAND_DISPLAY='wayland-test', BONGOCAT_TEST_DRAG='1',
+               WAYLAND_DISPLAY='wayland-test', HERDCAT_TEST_DRAG='1',
                PYTHONDONTWRITEBYTECODE='1')
     config = root / 'cat.conf'
     config.write_text(
@@ -91,22 +91,22 @@ with tempfile.TemporaryDirectory(prefix='bongocat-font-panel-') as directory:
         card = card_region('TEST-1', cat)
         name = name_center(card)
         click('TEST-1', name, 272)
-        wait_for(lambda: 'overlay TEST-1 bongocat-font-panel' in text())
-        wait_for(lambda: 'commit TEST-1' in text().rsplit('bongocat-font-panel', 1)[-1])
+        wait_for(lambda: 'overlay TEST-1 herdcat-font-panel' in text())
+        wait_for(lambda: 'commit TEST-1' in text().rsplit('herdcat-font-panel', 1)[-1])
         # The card steps aside while the panel is open, so there is no font
         # name to click again. A right click on the cat closes the menu and
         # the panel with it.
         middle = (cat[0] + cat[2] // 2, cat[1] + cat[3] // 2)
         click('TEST-1', middle, 273)
-        wait_for(lambda: 'gone bongocat-font-panel' in text())
+        wait_for(lambda: 'gone herdcat-font-panel' in text())
         time.sleep(.4)
 
         click('TEST-1', middle, 273)
         name = name_center(card_region('TEST-1', cat))
         click('TEST-1', name, 272)
-        wait_for(lambda: text().count('overlay TEST-1 bongocat-font-panel') >= 2)
+        wait_for(lambda: text().count('overlay TEST-1 herdcat-font-panel') >= 2)
         command('hide')
-        wait_for(lambda: text().count('gone bongocat-font-panel') >= 2)
+        wait_for(lambda: text().count('gone herdcat-font-panel') >= 2)
         command('show')
         wait_for(lambda: regions().get('TEST-2', (0, 0, 0, 0))[2])
 
@@ -114,12 +114,12 @@ with tempfile.TemporaryDirectory(prefix='bongocat-font-panel-') as directory:
         click('TEST-2', (cat[0] + cat[2] // 2, cat[1] + cat[3] // 2), 273)
         name = name_center(card_region('TEST-2', cat))
         click('TEST-2', name, 272)
-        wait_for(lambda: 'overlay TEST-2 bongocat-font-panel' in text())
+        wait_for(lambda: 'overlay TEST-2 herdcat-font-panel' in text())
         send('step')
         wait_for(lambda: 'phase 1' in text())
         send('step')
         wait_for(lambda: 'phase 2' in text())
-        wait_for(lambda: text().count('gone bongocat-font-panel') >= 3)
+        wait_for(lambda: text().count('gone herdcat-font-panel') >= 3)
         time.sleep(.4)
         app.terminate()
         assert app.wait(timeout=3) == 0

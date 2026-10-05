@@ -4,27 +4,27 @@
   pkgs,
   ...
 }: let
-  cfg = config.programs.wayland-bongocat;
+  cfg = config.programs.herdcat;
 in {
   imports = [./common.nix];
   config = lib.mkIf cfg.enable (let
-    configFile = config._bongocat.configFile;
+    configFile = config._herdcat.configFile;
   in {
     home.packages = [
       cfg.package
 
       # Helper scripts
-      # For starting `wayland-bongocat` using the config file defined with Nix
-      (pkgs.writeScriptBin "bongocat-exec" ''
+      # For starting `herdcat` using the config file defined with Nix
+      (pkgs.writeScriptBin "herdcat-exec" ''
         #!${pkgs.bash}/bin/bash
-        exec ${cfg.package}/bin/bongocat --config ${configFile}
+        exec ${cfg.package}/bin/herdcat --config ${configFile}
       '')
     ];
 
     # SystemD service
-    systemd.user.services.wayland-bongocat = lib.mkIf cfg.autostart {
+    systemd.user.services.herdcat = lib.mkIf cfg.autostart {
       Unit = {
-        Description = "Wayland Bongo Cat Overlay";
+        Description = "herdcat overlay";
         PartOf = ["graphical-session.target"];
         After = ["graphical-session.target"];
       };
@@ -35,7 +35,7 @@ in {
 
       Service = {
         Type = "exec";
-        ExecStart = "${cfg.package}/bin/bongocat --config ${configFile}";
+        ExecStart = "${cfg.package}/bin/herdcat --config ${configFile}";
         Restart = "on-failure";
         RestartSec = "5s";
       };

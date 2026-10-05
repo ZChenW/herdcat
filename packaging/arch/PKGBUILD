@@ -1,34 +1,34 @@
-pkgname=bongocat-agent-git
-pkgver=2.0.2.r0.g0000000
+pkgname=herdcat-git
+pkgver=0.1.0.r0.g0000000
 pkgrel=1
-pkgdesc='Wayland Bongo Cat with session-aware agent status and persistent dragging'
+pkgdesc='Wayland desktop cat that holds up a sign for every coding agent session'
 arch=('x86_64' 'aarch64')
-url='https://github.com/ZChenW/wayland-bongocat'
+url='https://github.com/ZChenW/herdcat'
 license=('MIT')
 depends=('glibc' 'wayland' 'freetype2' 'fontconfig')
 makedepends=('git' 'gcc' 'make' 'pkgconf')
-provides=('bongocat')
-conflicts=('bongocat')
-source=('wayland-bongocat::git+https://github.com/ZChenW/wayland-bongocat.git#branch=feature/agent-state')
+provides=('herdcat')
+conflicts=('herdcat')
+source=('herdcat::git+https://github.com/ZChenW/herdcat.git')
 sha256sums=('SKIP')
 
 pkgver() {
-  cd "$srcdir/wayland-bongocat"
-  printf '2.0.2.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  cd "$srcdir/herdcat"
+  printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 build() {
-  cd "$srcdir/wayland-bongocat"
+  cd "$srcdir/herdcat"
   make release
 }
 
 check() {
-  cd "$srcdir/wayland-bongocat"
+  cd "$srcdir/herdcat"
   make test
 }
 
 package() {
-  cd "$srcdir/wayland-bongocat"
+  cd "$srcdir/herdcat"
   make BUILD_TYPE=release PREFIX=/usr DESTDIR="$pkgdir" install
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

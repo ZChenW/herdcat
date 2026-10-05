@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_TEXT_H
-#define BONGOCAT_TEXT_H
+#ifndef HERDCAT_TEXT_H
+#define HERDCAT_TEXT_H
 #include <stdbool.h>
 #include <stdint.h>
 

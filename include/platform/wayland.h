@@ -3,7 +3,7 @@
 
 #include "../protocols/zwlr-layer-shell-v1-client-protocol.h"
 #include "config/config.h"
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "utils/error.h"
 
 #include <signal.h>
@@ -34,10 +34,10 @@ extern atomic_bool fullscreen_detected;
 // =============================================================================
 
 // Initialize Wayland connection - must be checked
-BONGOCAT_NODISCARD bongocat_error_t wayland_init(config_t *config);
+HERDCAT_NODISCARD herdcat_error_t wayland_init(config_t *config);
 
 // Run Wayland event loop - must be checked
-BONGOCAT_NODISCARD bongocat_error_t
+HERDCAT_NODISCARD herdcat_error_t
 wayland_run(const volatile sig_atomic_t *running);
 
 // Cleanup Wayland resources
@@ -69,7 +69,7 @@ void wayland_request_redraw(void);
 void wayland_request_current_redraw(void);
 
 // Get the wl_output associated with the current screen info (may be NULL)
-BONGOCAT_NODISCARD struct wl_output *wayland_get_current_screen_output(void);
+HERDCAT_NODISCARD struct wl_output *wayland_get_current_screen_output(void);
 
 // Register a per-loop callback executed on Wayland main thread.
 void wayland_set_tick_callback(void (*callback)(void));
@@ -77,7 +77,7 @@ void wayland_set_tick_callback(void (*callback)(void));
 // HiDPI: convert a logical-pixel dimension to physical (buffer-coordinate)
 // pixels using the active render scale. Defaults to identity (scale 1.0×) if
 // the compositor has not announced a scale yet.
-BONGOCAT_NODISCARD int wayland_phys_dim(int logical);
+HERDCAT_NODISCARD int wayland_phys_dim(int logical);
 
 // A viewport for this surface, or NULL when viewporter is absent.
 struct wp_viewport;

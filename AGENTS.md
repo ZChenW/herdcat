@@ -16,14 +16,14 @@ Wayland server development files for its isolated compositor fixture.
 
 ## Build, Test, and Development Commands
 
-- `make debug` builds `build/bongocat` with debug symbols, ASan, and UBSan.
+- `make debug` builds `build/herdcat` with debug symbols, ASan, and UBSan.
 - `make release` creates the optimized, hardened release binary.
 - `make test` builds and runs all unit-test executables.
 - `make format-check` verifies formatting without changing files.
 - `make format` applies `.clang-format` to project C sources and headers.
 - `make lint` runs `clang-tidy`; `make memcheck` runs the debug binary through
   Valgrind.
-- `./build/bongocat -c bongocat.conf.example -w` runs a local build with config
+- `./build/herdcat -c herdcat.conf.example -w` runs a local build with config
   watching.
 
 Run `make protocols` only after changing protocol XML. Run `make embed-assets`

@@ -28,7 +28,7 @@ SOFTWARE.
 import { spawn } from "node:child_process";
 
 export default {
-  id: "bongocat.sessions",
+  id: "herdcat.sessions",
   async setup(ctx) {
     const directory = ctx.location?.directory;
     if (typeof directory !== "string") return;
@@ -47,7 +47,7 @@ export default {
         pump();
       };
       try {
-        const child = spawn("bongocat", ["--hook", "opencode", "--event", item.event], {
+        const child = spawn("herdcat", ["--hook", "opencode", "--event", item.event], {
           stdio: ["pipe", "ignore", "ignore"],
         });
         child.on("error", finish);

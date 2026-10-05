@@ -1,6 +1,6 @@
 #include "platform/fullscreen.h"
 
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "platform/hyprland.h"
 #include "platform/outputs.h"
 #include "platform/wayland.h"

@@ -1,0 +1,51 @@
+# Append these entries to the existing config; do not replace it.
+
+[[hooks]]
+event = "SessionStart"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
+timeout = 3
+
+[[hooks]]
+event = "UserPromptSubmit"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
+timeout = 3
+
+[[hooks]]
+event = "PreToolUse"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
+timeout = 3
+
+[[hooks]]
+event = "PostToolUse"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
+timeout = 3
+
+[[hooks]]
+event = "PostToolUseFailure"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
+timeout = 3
+
+[[hooks]]
+event = "PermissionRequest"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
+timeout = 3
+
+[[hooks]]
+event = "PermissionResult"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
+timeout = 3
+
+[[hooks]]
+event = "Stop"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
+timeout = 3
+
+[[hooks]]
+event = "Interrupt"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
+timeout = 3
+
+[[hooks]]
+event = "SessionEnd"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
+timeout = 3

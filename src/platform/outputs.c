@@ -1,6 +1,6 @@
 #include "platform/outputs.h"
 
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "platform/scale.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
 

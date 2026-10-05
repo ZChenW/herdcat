@@ -18,7 +18,7 @@ SOURCE = (
     Path(__file__).resolve().parents[1]
     / "integrations"
     / "kitty"
-    / "bongocat_watcher.py"
+    / "herdcat_watcher.py"
 )
 BANNED = (
     "fork",
@@ -35,7 +35,7 @@ BANNED = (
 def load_watcher():
     stdout = io.StringIO()
     stderr = io.StringIO()
-    spec = importlib.util.spec_from_file_location("bongocat_watcher", SOURCE)
+    spec = importlib.util.spec_from_file_location("herdcat_watcher", SOURCE)
     module = importlib.util.module_from_spec(spec)
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         spec.loader.exec_module(module)
@@ -81,7 +81,7 @@ class WatcherTest(unittest.TestCase):
         return elapsed
 
     def listen(self):
-        path = os.path.join(self.directory.name, "bongocat.sock")
+        path = os.path.join(self.directory.name, "herdcat.sock")
         server = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
         server.bind(path)
         server.listen(1)
@@ -144,12 +144,12 @@ class WatcherTest(unittest.TestCase):
         uid = os.getuid()
         self.assertEqual(
             WATCHER.control_socket_path(),
-            os.path.join(self.directory.name, "bongocat.sock"),
+            os.path.join(self.directory.name, "herdcat.sock"),
         )
         os.environ["XDG_RUNTIME_DIR"] = ""
-        self.assertEqual(WATCHER.control_socket_path(), "/tmp/bongocat-%d.sock" % uid)
+        self.assertEqual(WATCHER.control_socket_path(), "/tmp/herdcat-%d.sock" % uid)
         os.environ.pop("XDG_RUNTIME_DIR")
-        self.assertEqual(WATCHER.control_socket_path(), "/tmp/bongocat-%d.sock" % uid)
+        self.assertEqual(WATCHER.control_socket_path(), "/tmp/herdcat-%d.sock" % uid)
         os.environ["XDG_RUNTIME_DIR"] = os.path.join(self.directory.name, "missing")
         self.assertIsNone(WATCHER.control_socket_path())
         os.environ["XDG_RUNTIME_DIR"] = "x" * 120
@@ -159,12 +159,12 @@ class WatcherTest(unittest.TestCase):
         os.chmod(nested, 0o775)
         os.environ["XDG_RUNTIME_DIR"] = nested
         self.assertIsNone(WATCHER.control_socket_path())
-        long_name = "p" * (94 - len(self.directory.name) - 1)
+        long_name = "p" * (95 - len(self.directory.name) - 1)
         long_dir = os.path.join(self.directory.name, long_name)
         os.mkdir(long_dir)
         os.chmod(long_dir, 0o700)
         os.environ["XDG_RUNTIME_DIR"] = long_dir
-        self.assertEqual(len(long_dir), 94)
+        self.assertEqual(len(long_dir), 95)
         self.assertIsNone(WATCHER.control_socket_path())
 
 

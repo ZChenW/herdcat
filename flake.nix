@@ -1,5 +1,5 @@
 {
-  description = "Bongo Cat Wayland Overlay - A fun animated overlay that reacts to keyboard input";
+  description = "herdcat - a Wayland desktop cat that holds up a sign for every coding agent session";
 
   # Dependencies
   inputs = {
@@ -12,10 +12,10 @@
     inputs.flake-utils.lib.eachDefaultSystem (
       system: let
         pkgs = inputs.nixpkgs.legacyPackages.${system};
-        bongocat = pkgs.callPackage ./nix/default.nix {};
+        herdcat = pkgs.callPackage ./nix/default.nix {};
       in {
         formatter = pkgs.alejandra;
-        packages.default = bongocat;
+        packages.default = herdcat;
         devShells.default = import ./nix/shell.nix {
           inherit pkgs;
         };

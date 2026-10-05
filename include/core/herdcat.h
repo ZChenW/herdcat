@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_H
-#define BONGOCAT_H
+#ifndef HERDCAT_H
+#define HERDCAT_H
 
 #include <errno.h>
 #include <fcntl.h>
@@ -23,7 +23,7 @@
 // VERSION
 // =============================================================================
 
-#define BONGOCAT_VERSION "2.0.2-agent"
+#define HERDCAT_VERSION "0.1.0"
 
 // =============================================================================
 // COMPILE-TIME CONSTANTS
@@ -41,15 +41,15 @@
 #define CAT_IMAGE_HEIGHT 277
 
 // Frame indices
-#define BONGOCAT_FRAME_BOTH_UP       0
-#define BONGOCAT_FRAME_LEFT_DOWN     1
-#define BONGOCAT_FRAME_RIGHT_DOWN    2
-#define BONGOCAT_FRAME_BOTH_DOWN     3
-#define BONGOCAT_FRAME_SLEEPING      4
-#define BONGOCAT_FRAME_AGENT_WORKING 5
-#define BONGOCAT_FRAME_AGENT_WAITING 6
-#define BONGOCAT_FRAME_AGENT_DONE    7
-#define BONGOCAT_FRAME_LAST_USER     BONGOCAT_FRAME_SLEEPING
+#define HERDCAT_FRAME_BOTH_UP       0
+#define HERDCAT_FRAME_LEFT_DOWN     1
+#define HERDCAT_FRAME_RIGHT_DOWN    2
+#define HERDCAT_FRAME_BOTH_DOWN     3
+#define HERDCAT_FRAME_SLEEPING      4
+#define HERDCAT_FRAME_AGENT_WORKING 5
+#define HERDCAT_FRAME_AGENT_WAITING 6
+#define HERDCAT_FRAME_AGENT_DONE    7
+#define HERDCAT_FRAME_LAST_USER     HERDCAT_FRAME_SLEEPING
 
 // Inotify buffer sizing
 #define INOTIFY_EVENT_SIZE (sizeof(struct inotify_event))
@@ -113,4 +113,4 @@ int config_watcher_timeout(ConfigWatcher *watcher);
 // Cleanup config watcher resources
 void config_watcher_cleanup(ConfigWatcher *watcher);
 
-#endif  // BONGOCAT_H
+#endif  // HERDCAT_H

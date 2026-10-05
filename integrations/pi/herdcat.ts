@@ -27,7 +27,7 @@ SOFTWARE.
 import { spawn } from "node:child_process";
 
 // Fixed-size dispatch queue preserves lifecycle ordering without blocking Pi.
-export default function bongocat(pi) {
+export default function herdcat(pi) {
   const queue = [];
   let busy = false;
   const pump = () => {
@@ -42,7 +42,7 @@ export default function bongocat(pi) {
       pump();
     };
     try {
-      const child = spawn("bongocat", ["--hook", "pi", "--event", item.event], {
+      const child = spawn("herdcat", ["--hook", "pi", "--event", item.event], {
         stdio: ["pipe", "ignore", "ignore"],
       });
       child.on("error", finish);

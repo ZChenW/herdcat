@@ -6,13 +6,13 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-temporary = tempfile.TemporaryDirectory(prefix='bongocat-sign-options-')
+temporary = tempfile.TemporaryDirectory(prefix='herdcat-sign-options-')
 r = Path(temporary.name)
 env = dict(os.environ, XDG_RUNTIME_DIR=str(r), XDG_STATE_HOME=str(r),
-           WAYLAND_DISPLAY='wayland-test', BONGOCAT_TEST_DRAG='1',
+           WAYLAND_DISPLAY='wayland-test', HERDCAT_TEST_DRAG='1',
            ASAN_OPTIONS='detect_leaks=1:halt_on_error=1')
 env.pop('NIRI_SOCKET', None)
-binary = str(Path('build/bongocat').resolve())
+binary = str(Path('build/herdcat').resolve())
 base = ('monitor=TEST-1\noverlay_position=bottom\ncat_height=110\n'
         'overlay_height=120\ndisable_fullscreen_hide=1\n'
         'hotplug_scan_interval=0\nagent_stale_timeout=0\n')
@@ -36,7 +36,7 @@ def wait(fn, seconds=4):
 def wire(text, ok=True):
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as s:
         s.settimeout(3)
-        s.connect(str(r / 'bongocat.sock'))
+        s.connect(str(r / 'herdcat.sock'))
         s.sendall(text.encode())
         out = s.recv(512).decode()
     assert out.startswith('0 ') == ok, (text, out)
@@ -45,14 +45,14 @@ try:
     wait(lambda: (r / 'wayland-test').exists())
     app = subprocess.Popen([binary, '-c', str(config), '-w'], env=env,
                            stdout=app_log, stderr=app_log)
-    wait(lambda: (r / 'bongocat.sock').exists())
+    wait(lambda: (r / 'herdcat.sock').exists())
     wire('ev claude waiting aaaaaaaaaaaaaaaa 0')
     wire('name aaaaaaaaaaaaaaaa 演示 project')
     values = {
         'sign_style': ['fan', 'post', 'off'],
         'sign_max': list(range(1, 6)),
         'sign_idle': ['hover', 'always', 'never'],
-        'sign_font': ['', 'Noto Sans', 'monospace', 'missing-bongocat-font'],
+        'sign_font': ['', 'Noto Sans', 'monospace', 'missing-herdcat-font'],
         'sign_font_size': list(range(10, 21)),
         'sign_animations': ['full', 'reduced', 'off'],
         'sign_language': ['auto', 'en', 'zh'],
@@ -112,7 +112,7 @@ try:
         # the process independently of signs. Model tests assert no deadlines.
     print('idle CPU ticks/context-switch deltas over 1.2s:', idle, flush=True)
     subprocess.run(['scripts/replay_agent_hooks.sh', '--config', str(config),
-                    '--pid', str(app.pid)], env=dict(env, BONGOCAT_BIN=binary),
+                    '--pid', str(app.pid)], env=dict(env, HERDCAT_BIN=binary),
                    check=True, timeout=35)
     assert app.wait(timeout=5) == 0
     log = (r / 'app.log').read_text()

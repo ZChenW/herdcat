@@ -1,6 +1,6 @@
-#ifndef BONGOCAT_OUTPUTS_H
-#define BONGOCAT_OUTPUTS_H
-#include "core/bongocat.h"
+#ifndef HERDCAT_OUTPUTS_H
+#define HERDCAT_OUTPUTS_H
+#include "core/herdcat.h"
 struct zxdg_output_manager_v1;
 extern output_ref_t outputs[MAX_OUTPUTS];
 extern size_t output_count;

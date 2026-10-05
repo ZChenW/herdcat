@@ -1,14 +1,13 @@
 #include "core/agent_state.h"
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "test_helpers.h"
 
 #include <string.h>
 
 int main(void) {
   const char *names[] = {"idle", "working", "waiting", "done"};
-  const int frames[] = {-1, BONGOCAT_FRAME_AGENT_WORKING,
-                        BONGOCAT_FRAME_AGENT_WAITING,
-                        BONGOCAT_FRAME_AGENT_DONE};
+  const int frames[] = {-1, HERDCAT_FRAME_AGENT_WORKING,
+                        HERDCAT_FRAME_AGENT_WAITING, HERDCAT_FRAME_AGENT_DONE};
   for (int i = 0; i < AGENT_STATE_COUNT; i++) {
     agent_state_t state = AGENT_STATE_COUNT;
     TEST_ASSERT(agent_state_parse(names[i], &state) == 0);

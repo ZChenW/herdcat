@@ -57,8 +57,8 @@ H_PROTOCOL_HDR = $(PROTOCOLDIR)/zwlr-layer-shell-v1-client-protocol.h $(PROTOCOL
 PROTOCOL_OBJECTS = $(C_PROTOCOL_SRC:$(PROTOCOLDIR)/%.c=$(OBJDIR)/%.o)
 
 # Target executable
-TARGET = $(BUILDDIR)/bongocat
-BUILD_TARGET = $(BUILDDIR)/$(BUILD_TYPE)/bongocat
+TARGET = $(BUILDDIR)/herdcat
+BUILD_TARGET = $(BUILDDIR)/$(BUILD_TYPE)/herdcat
 DEPS = $(OBJECTS:.o=.d) $(PROTOCOL_OBJECTS:.o=.d)
 -include $(DEPS)
 
@@ -93,7 +93,7 @@ $(BUILD_TARGET): $(OBJECTS) $(PROTOCOL_OBJECTS)
 
 .PHONY: $(TARGET)
 $(TARGET): $(BUILD_TARGET)
-	ln -sfn $(BUILD_TYPE)/bongocat $@
+	ln -sfn $(BUILD_TYPE)/herdcat $@
 
 # Regenerate Wayland protocol bindings from XML sources (requires wayland-scanner).
 # The generated files are committed to git, so this target only needs to be run
@@ -135,17 +135,17 @@ release:
 	$(MAKE) BUILD_TYPE=release
 
 install: $(TARGET)
-	install -Dm755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/bongocat
-	install -Dm644 bongocat.conf.example $(DESTDIR)$(PREFIX)/share/bongocat/bongocat.conf.example
-	install -Dm755 scripts/find_input_devices.sh $(DESTDIR)$(PREFIX)/bin/bongocat-find-devices
-	install -Dm644 man/bongocat.1 $(DESTDIR)$(PREFIX)/share/man/man1/bongocat.1
+	install -Dm755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/herdcat
+	install -Dm644 herdcat.conf.example $(DESTDIR)$(PREFIX)/share/herdcat/herdcat.conf.example
+	install -Dm755 scripts/find_input_devices.sh $(DESTDIR)$(PREFIX)/bin/herdcat-find-devices
+	install -Dm644 man/herdcat.1 $(DESTDIR)$(PREFIX)/share/man/man1/herdcat.1
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/bongocat
-	rm -f $(DESTDIR)$(PREFIX)/bin/bongocat-find-devices
-	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/bongocat.1
-	rm -f $(DESTDIR)$(PREFIX)/share/bongocat/bongocat.conf.example
-	-rmdir $(DESTDIR)$(PREFIX)/share/bongocat
+	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat
+	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat-find-devices
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/herdcat.1
+	rm -f $(DESTDIR)$(PREFIX)/share/herdcat/herdcat.conf.example
+	-rmdir $(DESTDIR)$(PREFIX)/share/herdcat
 
 # Memory check (requires valgrind)
 memcheck: debug

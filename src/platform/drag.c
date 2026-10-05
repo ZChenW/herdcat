@@ -85,14 +85,14 @@ static int state_dir(bool create) {
   char path[PATH_MAX];
   int length;
   if (base && base[0] == '/') {
-    length = snprintf(path, sizeof(path), "%s/bongocat", base);
+    length = snprintf(path, sizeof(path), "%s/herdcat", base);
   } else {
     base = getenv("HOME");
     if (!base || base[0] != '/') {
       errno = EINVAL;
       return -1;
     }
-    length = snprintf(path, sizeof(path), "%s/.local/state/bongocat", base);
+    length = snprintf(path, sizeof(path), "%s/.local/state/herdcat", base);
   }
   if (length < 0 || (size_t)length >= sizeof(path)) {
     errno = ENAMETOOLONG;
@@ -184,7 +184,7 @@ static int read_positions(int dir, position_t *entries, size_t *count) {
     position_t entry = {0};
     if (too_long || !valid_output(name) || !parse_number(x, &entry.x) ||
         !parse_number(y, &entry.y) || strtok_r(NULL, " \t\r\n", &save)) {
-      bongocat_log_warning("Skipping malformed drag position line");
+      herdcat_log_warning("Skipping malformed drag position line");
       continue;
     }
     size_t index = 0;
@@ -192,7 +192,7 @@ static int read_positions(int dir, position_t *entries, size_t *count) {
       index++;
     }
     if (index == MAX_OUTPUTS) {
-      bongocat_log_warning("Ignoring extra drag position entry");
+      herdcat_log_warning("Ignoring extra drag position entry");
       continue;
     }
     snprintf(entry.output, sizeof(entry.output), "%s", name);

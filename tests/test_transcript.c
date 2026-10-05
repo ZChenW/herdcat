@@ -132,7 +132,7 @@ static void begin(const char *agent, const char *path) {
 int main(void) {
   parser();
   hook_path();
-  char home[] = "/tmp/bongocat-transcript-XXXXXX";
+  char home[] = "/tmp/herdcat-transcript-XXXXXX";
   TEST_ASSERT(mkdtemp(home));
   TEST_ASSERT(setenv("HOME", home, 1) == 0);
   char path[256], other[300];

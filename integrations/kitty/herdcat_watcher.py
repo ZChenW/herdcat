@@ -1,7 +1,7 @@
 """Report the focused kitty split. This must not block kitty or print.
 
 The payload is the control-protocol command ``pane <pid> <split>`` with no
-newline: the same text ``bongocat --pane`` sends from src/core/main.c.
+newline: the same text ``herdcat --pane`` sends from src/core/main.c.
 The socket path follows src/core/control.c path() with the suffix sock.
 If either of those changes, update this file with it.
 """
@@ -28,9 +28,9 @@ def control_socket_path():
             or (info.st_mode & 0o022)
         ):
             return None
-        path = "%s/bongocat.sock" % runtime
+        path = "%s/herdcat.sock" % runtime
     else:
-        path = "/tmp/bongocat-%d.sock" % os.getuid()
+        path = "/tmp/herdcat-%d.sock" % os.getuid()
     if len(path) >= _SUN_PATH:
         return None
     return path

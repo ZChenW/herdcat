@@ -344,8 +344,7 @@ static void test_fixed_paint(void) {
   const char *wide = NULL, *narrow = NULL;
   int wide_w = 0, narrow_w = 0;
   for (int i = 0; i < 4; i++) {
-    int width =
-        text_measure_family(candidates[i], "wayland-bongocat", 13, true);
+    int width = text_measure_family(candidates[i], "herdcat", 13, true);
     if (width <= 0)
       continue;
     if (!narrow || width < narrow_w) {

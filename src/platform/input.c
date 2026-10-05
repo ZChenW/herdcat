@@ -54,7 +54,7 @@ static void privilege_raise(void) {
   if (privileged_gid != (gid_t)-1 &&
       setresgid((gid_t)-1, privileged_gid, (gid_t)-1) != 0) {
     // Not fatal: opening the devices simply fails and the cat stays idle.
-    bongocat_log_warning("Could not raise input group: %s", strerror(errno));
+    herdcat_log_warning("Could not raise input group: %s", strerror(errno));
   }
 }
 
@@ -277,8 +277,8 @@ static void discover_input_devices(active_device_t *active_devices,
       int path_len =
           snprintf(path, sizeof(path), "/dev/input/%s", entry->d_name);
       if (path_len < 0 || path_len >= (int)sizeof(path)) {
-        bongocat_log_warning("Hotplug: device path too long, skipping '%s'",
-                             entry->d_name);
+        herdcat_log_warning("Hotplug: device path too long, skipping '%s'",
+                            entry->d_name);
         continue;
       }
 
@@ -332,9 +332,9 @@ static void discover_input_devices(active_device_t *active_devices,
           active_devices[slot].identity = device_stat.st_rdev;
           snprintf(active_devices[slot].path, sizeof(active_devices[slot].path),
                    "%s", path);
-          bongocat_log_info("Hotplug: Attached device %s (fd=%d)", path, fd);
+          herdcat_log_info("Hotplug: Attached device %s (fd=%d)", path, fd);
         } else {
-          bongocat_log_warning("Hotplug: Too many devices, ignoring %s", path);
+          herdcat_log_warning("Hotplug: Too many devices, ignoring %s", path);
           close(fd);
         }
       } else {
@@ -370,8 +370,8 @@ static void read_ready_devices(active_device_t *active_devices,
             && errno != EWOULDBLOCK
 #endif
         ) {
-          bongocat_log_warning("Hotplug: Read error on %s, removing",
-                               active_devices[i].path);
+          herdcat_log_warning("Hotplug: Read error on %s, removing",
+                              active_devices[i].path);
           close(active_devices[i].fd);
           active_devices[i].fd = -1;
           *initial_devices_found = false;
@@ -380,8 +380,8 @@ static void read_ready_devices(active_device_t *active_devices,
       }
 
       if (rd == 0) {
-        bongocat_log_info("Hotplug: Device disconnected %s",
-                          active_devices[i].path);
+        herdcat_log_info("Hotplug: Device disconnected %s",
+                         active_devices[i].path);
         close(active_devices[i].fd);
         active_devices[i].fd = -1;
         *initial_devices_found = false;
@@ -396,7 +396,7 @@ static void read_ready_devices(active_device_t *active_devices,
           if (enable_debug) {
             // Never log which key: debug output ends up in terminals and
             // system journals, where key codes amount to a keystroke log.
-            bongocat_log_debug("Key press from %s", active_devices[i].path);
+            herdcat_log_debug("Key press from %s", active_devices[i].path);
           }
         }
       }
@@ -460,8 +460,8 @@ static void capture_input_hotplug(char **static_paths, int num_static,
   pid_t parent_pid = helper_parent;
   setup_helper_signals();
 
-  bongocat_log_debug("Starting input hotplug monitor (interval: %ds)",
-                     scan_interval);
+  herdcat_log_debug("Starting input hotplug monitor (interval: %ds)",
+                    scan_interval);
 
   active_device_t active_devices[MAX_ACTIVE_DEVICES];
 
@@ -480,7 +480,7 @@ static void capture_input_hotplug(char **static_paths, int num_static,
   while (1) {
     // Check if parent is still alive
     if (getppid() != parent_pid) {
-      bongocat_log_info("Parent process died, child exiting");
+      herdcat_log_info("Parent process died, child exiting");
       break;
     }
 
@@ -517,8 +517,8 @@ static void capture_input_hotplug(char **static_paths, int num_static,
           }
         }
         if (!initial_devices_found) {
-          bongocat_log_debug("No input devices found yet, retrying in %ds",
-                             fast_retry_interval);
+          herdcat_log_debug("No input devices found yet, retrying in %ds",
+                            fast_retry_interval);
         }
       }
     }
@@ -553,7 +553,7 @@ static void capture_input_hotplug(char **static_paths, int num_static,
 
     if (ret < 0) {
       if (errno != EINTR) {
-        bongocat_log_error("Poll error: %s", strerror(errno));
+        herdcat_log_error("Poll error: %s", strerror(errno));
         usleep(1000000);
       }
       continue;
@@ -573,7 +573,7 @@ static void capture_input_hotplug(char **static_paths, int num_static,
       close(active_devices[i].fd);
     }
   }
-  bongocat_log_info("Input monitoring stopped");
+  herdcat_log_info("Input monitoring stopped");
 }
 
 // =============================================================================
@@ -595,7 +595,7 @@ int input_helper_main(int argc, char **argv) {
   if (argc < 6) {
     return 1;
   }
-  bongocat_error_init(0);
+  herdcat_error_init(0);
   helper_socket = 3;
   struct ucred peer;
   socklen_t length = sizeof(peer);
@@ -621,17 +621,17 @@ int input_helper_main(int argc, char **argv) {
   return 0;
 }
 
-bongocat_error_t input_start_monitoring(char **paths, int num_paths,
-                                        char **names, int num_names,
-                                        int interval, int debug) {
+herdcat_error_t input_start_monitoring(char **paths, int num_paths,
+                                       char **names, int num_names,
+                                       int interval, int debug) {
   (void)debug;
   if (num_paths < 0 || num_names < 0 || num_paths > 256 || num_names > 256) {
-    return BONGOCAT_ERROR_INVALID_PARAM;
+    return HERDCAT_ERROR_INVALID_PARAM;
   }
   int sockets[2];
   if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0,
                  sockets) < 0) {
-    return BONGOCAT_ERROR_FILE_IO;
+    return HERDCAT_ERROR_FILE_IO;
   }
   char paths_count[16];
   char names_count[16];
@@ -644,7 +644,7 @@ bongocat_error_t input_start_monitoring(char **paths, int num_paths,
   if (!args) {
     close(sockets[0]);
     close(sockets[1]);
-    return BONGOCAT_ERROR_MEMORY;
+    return HERDCAT_ERROR_MEMORY;
   }
   args[0] = "/proc/self/exe";
   args[1] = "--input-helper";
@@ -676,17 +676,17 @@ bongocat_error_t input_start_monitoring(char **paths, int num_paths,
   if (error) {
     close(sockets[0]);
     input_child_pid = -1;
-    return BONGOCAT_ERROR_THREAD;
+    return HERDCAT_ERROR_THREAD;
   }
   wake_fd = sockets[0];
   atomic_init(&local_pending, 0);
   pending_paws = &local_pending;
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 
-bongocat_error_t input_restart_monitoring(char **paths, int num_paths,
-                                          char **names, int num_names,
-                                          int interval, int debug) {
+herdcat_error_t input_restart_monitoring(char **paths, int num_paths,
+                                         char **names, int num_names,
+                                         int interval, int debug) {
   input_cleanup();
   return input_start_monitoring(paths, num_paths, names, num_names, interval,
                                 debug);

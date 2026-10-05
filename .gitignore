@@ -39,7 +39,7 @@ Thumbs.db
 
 # Local Arch package builds
 packaging/arch/src/
-packaging/arch/wayland-bongocat/
+packaging/arch/herdcat/
 packaging/arch/pkg/
 packaging/arch/*.pkg.tar.*
 packaging/arch/*.src.tar.*

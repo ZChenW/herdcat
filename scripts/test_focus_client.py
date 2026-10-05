@@ -8,7 +8,7 @@ import tempfile
 import time
 
 binary = str(Path('build/test_focus').resolve())
-with tempfile.TemporaryDirectory(prefix='bongocat-focus-') as tmp:
+with tempfile.TemporaryDirectory(prefix='herdcat-focus-') as tmp:
     root = Path(tmp)
     with socket.socket(socket.AF_UNIX) as sock:
         sock.bind(str(root / 'niri.sock'))

@@ -9,14 +9,14 @@
 // Clang's analyzer does not yet model __builtin_c23_va_start. The legacy
 // GCC/Clang builtin has the same contract for our named variadic functions.
 #ifdef __GNUC__
-#  define BONGOCAT_VA_START(args, last) __builtin_va_start(args, last)
+#  define HERDCAT_VA_START(args, last) __builtin_va_start(args, last)
 #else
-#  define BONGOCAT_VA_START(args, last) va_start(args, last)
+#  define HERDCAT_VA_START(args, last) va_start(args, last)
 #endif
 
 static atomic_int debug_enabled = 1;
 
-void bongocat_error_init(int enable_debug) {
+void herdcat_error_init(int enable_debug) {
   atomic_store(&debug_enabled, enable_debug);
 }
 
@@ -31,10 +31,10 @@ static void log_timestamp(FILE *stream) {
   fprintf(stream, "[%s.%03ld] ", time_str, ts.tv_nsec / 1000000L);
 }
 
-void bongocat_log_error(const char *format, ...) {
+void herdcat_log_error(const char *format, ...) {
   va_list args;
   char message[1024];
-  BONGOCAT_VA_START(args, format);
+  HERDCAT_VA_START(args, format);
   vsnprintf(message, sizeof(message), format, args);
   va_end(args);
   log_timestamp(stderr);
@@ -42,10 +42,10 @@ void bongocat_log_error(const char *format, ...) {
   fflush(stderr);
 }
 
-void bongocat_log_warning(const char *format, ...) {
+void herdcat_log_warning(const char *format, ...) {
   va_list args;
   char message[1024];
-  BONGOCAT_VA_START(args, format);
+  HERDCAT_VA_START(args, format);
   vsnprintf(message, sizeof(message), format, args);
   va_end(args);
   log_timestamp(stderr);
@@ -53,10 +53,10 @@ void bongocat_log_warning(const char *format, ...) {
   fflush(stderr);
 }
 
-void bongocat_log_info(const char *format, ...) {
+void herdcat_log_info(const char *format, ...) {
   va_list args;
   char message[1024];
-  BONGOCAT_VA_START(args, format);
+  HERDCAT_VA_START(args, format);
   vsnprintf(message, sizeof(message), format, args);
   va_end(args);
   log_timestamp(stdout);
@@ -64,14 +64,14 @@ void bongocat_log_info(const char *format, ...) {
   fflush(stdout);
 }
 
-void bongocat_log_debug(const char *format, ...) {
+void herdcat_log_debug(const char *format, ...) {
   if (!atomic_load(&debug_enabled)) {
     return;
   }
 
   va_list args;
   char message[1024];
-  BONGOCAT_VA_START(args, format);
+  HERDCAT_VA_START(args, format);
   vsnprintf(message, sizeof(message), format, args);
   va_end(args);
   log_timestamp(stdout);
@@ -79,25 +79,25 @@ void bongocat_log_debug(const char *format, ...) {
   fflush(stdout);
 }
 
-const char *bongocat_error_string(bongocat_error_t error) {
+const char *herdcat_error_string(herdcat_error_t error) {
   switch (error) {
-  case BONGOCAT_SUCCESS:
+  case HERDCAT_SUCCESS:
     return "Success";
-  case BONGOCAT_ERROR_MEMORY:
+  case HERDCAT_ERROR_MEMORY:
     return "Memory allocation error";
-  case BONGOCAT_ERROR_FILE_IO:
+  case HERDCAT_ERROR_FILE_IO:
     return "File I/O error";
-  case BONGOCAT_ERROR_WAYLAND:
+  case HERDCAT_ERROR_WAYLAND:
     return "Wayland error";
-  case BONGOCAT_ERROR_CONFIG:
+  case HERDCAT_ERROR_CONFIG:
     return "Configuration error";
-  case BONGOCAT_ERROR_INPUT:
+  case HERDCAT_ERROR_INPUT:
     return "Input error";
-  case BONGOCAT_ERROR_ANIMATION:
+  case HERDCAT_ERROR_ANIMATION:
     return "Animation error";
-  case BONGOCAT_ERROR_THREAD:
+  case HERDCAT_ERROR_THREAD:
     return "Thread error";
-  case BONGOCAT_ERROR_INVALID_PARAM:
+  case HERDCAT_ERROR_INVALID_PARAM:
     return "Invalid parameter";
   default:
     return "Unknown error";

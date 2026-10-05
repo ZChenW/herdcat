@@ -41,7 +41,7 @@ static void warn_once(const char *text) {
   if (warned)
     return;
   warned = true;
-  bongocat_log_warning("%s", text);
+  herdcat_log_warning("%s", text);
 }
 
 static int open_tree(const char *path, bool create_leaf) {
@@ -96,7 +96,7 @@ static int runtime_dir(bool create) {
     errno = EINVAL;
     return -1;
   }
-  int length = snprintf(path, sizeof(path), "%s/bongocat", base);
+  int length = snprintf(path, sizeof(path), "%s/herdcat", base);
   if (length < 0 || (size_t)length >= sizeof(path)) {
     errno = ENAMETOOLONG;
     return -1;

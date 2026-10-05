@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_OVERLAY_SIGNS_H
-#define BONGOCAT_OVERLAY_SIGNS_H
+#ifndef HERDCAT_OVERLAY_SIGNS_H
+#define HERDCAT_OVERLAY_SIGNS_H
 
 #include "config/config.h"
 #include "graphics/signs.h"

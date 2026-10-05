@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "herdcat --hook cursor --event sessionStart 2>/dev/null || true",
+        "timeout": 3
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "herdcat --hook cursor --event beforeSubmitPrompt 2>/dev/null || true",
+        "timeout": 3
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "herdcat --hook cursor --event preToolUse 2>/dev/null || true",
+        "timeout": 3
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "herdcat --hook cursor --event postToolUse 2>/dev/null || true",
+        "timeout": 3
+      }
+    ],
+    "stop": [
+      {
+        "command": "herdcat --hook cursor --event stop 2>/dev/null || true",
+        "timeout": 3
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "herdcat --hook cursor --event sessionEnd 2>/dev/null || true",
+        "timeout": 3
+      }
+    ]
+  }
+}

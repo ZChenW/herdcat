@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static char root[] = "/tmp/bongocat-disc-XXXXXX";
+static char root[] = "/tmp/herdcat-disc-XXXXXX";
 
 static void rm_tree(const char *path) {
   struct stat st;

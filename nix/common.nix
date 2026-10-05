@@ -5,8 +5,8 @@
   ...
 }:
 let
-  cfg = config.programs.wayland-bongocat;
-  wayland-bongocat = pkgs.callPackage ./default.nix { };
+  cfg = config.programs.herdcat;
+  herdcat = pkgs.callPackage ./default.nix { };
   appearanceOption = type: lib.mkOption {
     type = lib.types.nullOr type;
     default = null;
@@ -35,9 +35,9 @@ let
       (lib.mapAttrsToList (key: value: "${key}=${renderSetting value}")
         (lib.filterAttrs (_: value: value != null) settings))) cfg.monitorSettings);
   configFile = pkgs.writeTextFile {
-    name = "bongocat.conf";
+    name = "herdcat.conf";
     text = ''
-      # Auto-generated config for `wayland-bongocat`
+      # Auto-generated config for `herdcat`
 
       # Cat position and size
       cat_x_offset=${toString cfg.catXOffset}
@@ -90,24 +90,24 @@ let
 in
 {
   meta.maintainers = with lib.maintainers; [ ];
-  options.programs.wayland-bongocat = {
+  options.programs.herdcat = {
     enable = lib.mkOption {
       type = lib.types.bool;
       default = false;
       example = true;
-      description = "Enable `wayland-bongocat` overlay";
+      description = "Enable `herdcat` overlay";
     };
     autostart = lib.mkOption {
       type = lib.types.bool;
       default = false;
       example = true;
-      description = "Enable and automatically start `bongocat-wayland` as a service on login";
+      description = "Enable and automatically start `herdcat-wayland` as a service on login";
     };
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = wayland-bongocat;
-      description = "The wayland-bongocat package to use.";
+      default = herdcat;
+      description = "The herdcat package to use.";
     };
 
     # Debug mode
@@ -123,7 +123,7 @@ in
       type = lib.types.enum [ "top" "bottom" ];
       default = "top";
       example = "bottom";
-      description = "Bongocat overlay position on screen - `top` or `bottom`";
+      description = "Herdcat overlay position on screen - `top` or `bottom`";
     };
     overlayHeight = lib.mkOption {
       type = lib.types.ints.between 20 300;
@@ -255,7 +255,7 @@ in
     inputDevices = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
-      description = "Explicit input devices (including by-id/by-path aliases). Empty paths and names select accessible keyboards automatically; run `bongocat-find-devices` to see all devices to add to this list";
+      description = "Explicit input devices (including by-id/by-path aliases). Empty paths and names select accessible keyboards automatically; run `herdcat-find-devices` to see all devices to add to this list";
       example = [
         "/dev/input/event4"
         "/dev/input/event20"
@@ -265,7 +265,7 @@ in
     inputDeviceNames = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
-      description = "List of input device names to monitor, run `bongocat-find-devices` to see all devices to add to this list";
+      description = "List of input device names to monitor, run `herdcat-find-devices` to see all devices to add to this list";
       example = [
         "hfd.cn KW75 Keyboard"
       ];
@@ -300,19 +300,19 @@ in
     extraConfig = lib.mkOption {
       type = lib.types.str;
       default = "";
-      description = "Extra lines to add to bongocat.conf";
+      description = "Extra lines to add to herdcat.conf";
     };
   };
 
   # Internal configuration (not exposed to users)
-  options._bongocat = lib.mkOption {
+  options._herdcat = lib.mkOption {
     type = lib.types.attrs;
     internal = true;
     visible = false;
     default = { };
   };
 
-  config._bongocat = lib.mkIf cfg.enable {
+  config._herdcat = lib.mkIf cfg.enable {
     inherit cfg configFile;
   };
 }

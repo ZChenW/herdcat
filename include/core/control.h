@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_CONTROL_H
-#define BONGOCAT_CONTROL_H
+#ifndef HERDCAT_CONTROL_H
+#define HERDCAT_CONTROL_H
 #include <stddef.h>
 int instance_lock(void);
 void instance_unlock(void);

@@ -1,6 +1,6 @@
-#ifndef BONGOCAT_SHM_BUFFER_H
-#define BONGOCAT_SHM_BUFFER_H
-#include "core/bongocat.h"
+#ifndef HERDCAT_SHM_BUFFER_H
+#define HERDCAT_SHM_BUFFER_H
+#include "core/herdcat.h"
 typedef struct shm_buffer {
   struct wl_buffer *object;
   uint8_t *pixels;

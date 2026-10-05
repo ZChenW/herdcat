@@ -38,10 +38,10 @@ static int path(char *buffer, size_t size, const char *suffix) {
       errno = EPERM;
       return -1;
     }
-    length = snprintf(buffer, size, "%s/bongocat.%s", runtime, suffix);
+    length = snprintf(buffer, size, "%s/herdcat.%s", runtime, suffix);
   } else {
     {
-      length = snprintf(buffer, size, "/tmp/bongocat-%lu.%s",
+      length = snprintf(buffer, size, "/tmp/herdcat-%lu.%s",
                         (unsigned long)getuid(), suffix);
     }
   }

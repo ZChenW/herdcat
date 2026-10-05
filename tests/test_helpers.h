@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_TEST_HELPERS_H
-#define BONGOCAT_TEST_HELPERS_H
+#ifndef HERDCAT_TEST_HELPERS_H
+#define HERDCAT_TEST_HELPERS_H
 #include <stdio.h>
 #include <stdlib.h>
 #define TEST_ASSERT(condition)                                             \

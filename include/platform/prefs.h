@@ -1,11 +1,11 @@
-#ifndef BONGOCAT_PREFS_H
-#define BONGOCAT_PREFS_H
+#ifndef HERDCAT_PREFS_H
+#define HERDCAT_PREFS_H
 
 #include "config/sign_options.h"
 
 #include <stddef.h>
 
-// ${XDG_STATE_HOME:-$HOME/.local/state}/bongocat/prefs
+// ${XDG_STATE_HOME:-$HOME/.local/state}/herdcat/prefs
 // Each line is three tab-separated fields: key, choice, and the config
 // value at the time of the choice. A choice may contain spaces. Lines
 // written before that change are three space-separated fields and still

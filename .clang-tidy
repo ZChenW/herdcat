@@ -1,4 +1,4 @@
-# Clang-Tidy Configuration for wayland-bongocat
+# Clang-Tidy Configuration for herdcat
 # Static analysis for C code with best practices
 
 # Enable checks

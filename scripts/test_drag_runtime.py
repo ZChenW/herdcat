@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import time
 
-binary = str(Path('build/bongocat').resolve())
+binary = str(Path('build/herdcat').resolve())
 fixture = str(Path('build/compositor/server').resolve())
 parser = argparse.ArgumentParser()
 parser.add_argument('--sign-style', choices=('fan', 'post', 'off'), default='fan')
@@ -28,17 +28,17 @@ def wait_for(condition):
     raise AssertionError('drag fixture condition timed out')
 
 
-with tempfile.TemporaryDirectory(prefix='bongocat-drag-runtime-') as directory:
+with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
     root = Path(directory)
     env = dict(os.environ, XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
-               WAYLAND_DISPLAY='wayland-test', BONGOCAT_TEST_DRAG='1')
+               WAYLAND_DISPLAY='wayland-test', HERDCAT_TEST_DRAG='1')
     config = root / 'cat.conf'
     base = ('monitor=TEST-1,TEST-2\noverlay_opacity=0\noverlay_position=bottom\n'
             'disable_fullscreen_hide=1\ncat_x_offset=0\ncat_y_offset=0\n'
             '[monitor:TEST-2]\noverlay_position=top\n[global]\n')
     base += f'sign_style={style}\n'
     config.write_text(base)
-    position = root / 'bongocat/position'
+    position = root / 'herdcat/position'
     server_log = root / 'server.log'
     app_log = root / 'app.log'
     server_file = server_log.open('w')
@@ -94,7 +94,7 @@ with tempfile.TemporaryDirectory(prefix='bongocat-drag-runtime-') as directory:
         app.terminate()
         assert app.wait(timeout=3) == 0
         app = start()
-        wait_for(lambda: (root / 'bongocat.sock').exists())
+        wait_for(lambda: (root / 'herdcat.sock').exists())
         wait_for(lambda: regions()['TEST-1'][0] == saved['TEST-1'][0])
         assert records() == saved
         for op in ('pause', 'resume', 'hide'):

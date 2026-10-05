@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_SIGNS_H
-#define BONGOCAT_SIGNS_H
+#ifndef HERDCAT_SIGNS_H
+#define HERDCAT_SIGNS_H
 
 #include "config/sign_options.h"
 #include "core/agent_sessions.h"
