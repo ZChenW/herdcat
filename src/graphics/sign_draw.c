@@ -227,6 +227,21 @@ static int build_svg(char *svg, int bw, int bh, const sign_shape_t *shape,
     if (wrote < 0 || used + wrote >= SVG_BYTES)
       return -1;
     used += wrote;
+  } else if (shape->kind == SIGN_CROSS) {
+    // Two strokes of equal length, so the mark stays square in any box.
+    double arm = fmin(w, h) / 2 - stroke / 2;
+    double mx = lx + w / 2, my = ly + h / 2;
+    int wrote = snprintf(
+        svg + used, SVG_BYTES - (size_t)used,
+        "<path d=\"M%.3f %.3f L%.3f %.3f M%.3f %.3f L%.3f %.3f\" fill=\"none\" "
+        "stroke=\"#%06x\" stroke-opacity=\"%.4f\" stroke-width=\"%.3f\" "
+        "stroke-linecap=\"round\"/>",
+        mx - arm, my - arm, mx + arm, my + arm, mx + arm, my - arm, mx - arm,
+        my + arm, shape->outline & 0xffffffU, (shape->outline >> 24) / 255.0,
+        stroke);
+    if (wrote < 0 || used + wrote >= SVG_BYTES)
+      return -1;
+    used += wrote;
   } else if (shape->kind == SIGN_CUT) {
     double cut = fmin(radius, fmin(w, h) / 2);
     if (stroke > .05 && (shape->outline >> 24)) {
@@ -282,7 +297,7 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
     }
   }
   double pad = SHAPE_PAD + (orbit ? 0 : spin_extra(w, h, shape->rotation));
-  if (shape->kind == SIGN_CHECK)
+  if (shape->kind == SIGN_CHECK || shape->kind == SIGN_CROSS)
     pad += stroke;
   int left = (int)floor(min_x - pad), top = (int)floor(min_y - pad);
   int right = (int)ceil(max_x + pad), bottom = (int)ceil(max_y + pad);

@@ -168,7 +168,7 @@ static void anim_select_frame(animation_state_t *state,
   } else if (left_live || right_live) {
     new_frame =
         frame_from_paw_state(left_live, right_live, current_config->idle_frame);
-  } else if (agent_frames && agent_state != AGENT_STATE_IDLE) {
+  } else if (agent_frames && agent_state_frame(agent_state) >= 0) {
     new_frame = agent_state_frame(agent_state);
   } else if (current_config->idle_sleep_timeout_sec > 0 &&
              state->last_key_pressed_timestamp > 0 &&

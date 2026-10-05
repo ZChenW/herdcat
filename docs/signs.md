@@ -111,6 +111,10 @@ completion timer. A completion in the focused window is already seen. When a
 kitty split report is available, only that split is seen. Without niri focus
 tracking, completions remain unread until clicked or submitted again.
 
+A turn that stops on an error (quota used up, API failure) turns coral with a
+cross and follows the same rule: it stays, with a dot, until you have seen it.
+In the fan style it is held higher than the others and named on hover.
+
 Typing in an agent's focused terminal moves its sign under the paws as a name
 board. It leaves after 2.5 seconds without typing, focus loss, submission or
 hiding. Its slot stays reserved and the board passes pointer clicks through.

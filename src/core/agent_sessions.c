@@ -42,7 +42,8 @@ static uint64_t focused_keys[AGENT_SESSIONS_MAX];
 static size_t focused_count;
 static int applied_done_timeout;
 static const char *const EVENT_NAMES[AGENT_EVENT_COUNT] = {
-    "idle", "working", "waiting", "done", "start", "rest", "end", "interrupt"};
+    "idle", "working", "waiting",   "done", "start",
+    "rest", "end",     "interrupt", "fail"};
 
 int agent_event_parse(const char *name, agent_event_t *out) {
   if (!name || !out) {
@@ -125,6 +126,11 @@ static agent_session_t *available_slot(void) {
   return idle ? idle : oldest;
 }
 
+// Both are shown until someone has looked at them.
+static bool finished(agent_state_t state) {
+  return state == AGENT_STATE_DONE || state == AGENT_STATE_ERROR;
+}
+
 static int64_t deadline(int64_t now_ms, int timeout_s) {
   int64_t duration = (int64_t)timeout_s * 1000;
   return now_ms > INT64_MAX - duration ? INT64_MAX : now_ms + duration;
@@ -136,7 +142,7 @@ void agent_sessions_note_focused(uint64_t key, int64_t now_ms,
     return;
   }
   agent_session_t *s = find_session(key);
-  if (!s || !s->unread || s->state != AGENT_STATE_DONE) {
+  if (!s || !s->unread || !finished(s->state)) {
     return;
   }
   s->unread = false;
@@ -159,7 +165,7 @@ void agent_sessions_configure_done(bool sticky, int64_t now_ms,
   bool changed = false;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     agent_session_t *s = &sessions[i];
-    if (s->used && s->unread && s->state == AGENT_STATE_DONE) {
+    if (s->used && s->unread && finished(s->state)) {
       s->unread = false;
       s->done_until_ms =
           done_timeout_s > 0 ? deadline(now_ms, done_timeout_s) : 0;
@@ -222,7 +228,7 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
     }
     return 0;
   }
-  if (event == AGENT_EVENT_INTERRUPT &&
+  if ((event == AGENT_EVENT_INTERRUPT || event == AGENT_EVENT_FAIL) &&
       (!s ||
        (s->state != AGENT_STATE_WORKING && s->state != AGENT_STATE_WAITING)))
     return 0;
@@ -266,9 +272,10 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   case AGENT_EVENT_WAITING:
     s->state = AGENT_STATE_WAITING;
     break;
+  case AGENT_EVENT_FAIL:
   case AGENT_EVENT_DONE: {
     bool seen = !done_sticky || key_is_focused(key);
-    s->state = AGENT_STATE_DONE;
+    s->state = event == AGENT_EVENT_FAIL ? AGENT_STATE_ERROR : AGENT_STATE_DONE;
     s->unread = !seen;
     s->done_until_ms =
         seen && done_timeout_s > 0 ? deadline(now_ms, done_timeout_s) : 0;
@@ -284,7 +291,7 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   }
   if (s->state != previous)
     s->state_since_ms = now_ms;
-  if (s->state != AGENT_STATE_DONE) {
+  if (!finished(s->state)) {
     s->done_until_ms = 0;
     s->unread = false;
   }
@@ -299,12 +306,12 @@ static int64_t session_deadline(const agent_session_t *s, int stale_timeout_s) {
   if (!s->used) {
     return 0;
   }
-  if (s->state == AGENT_STATE_DONE) {
+  if (finished(s->state)) {
     return s->done_until_ms;
   }
   // A session with no pid cannot be tied to a window or a process exit.
   // Drop it after it has been idle with no events for the stale timeout.
-  // Unread done stays above and does not time out.
+  // Unread done and error stay above and do not time out.
   if (stale_timeout_s > 0 && s->pid <= 0 && s->state == AGENT_STATE_IDLE) {
     return deadline(s->updated_ms, stale_timeout_s);
   }
@@ -409,7 +416,8 @@ bool agent_sessions_kitty(pid_t pid, uint64_t *window, char *listen,
 }
 
 agent_state_t agent_sessions_resolve(void) {
-  static const int PRIORITY[AGENT_STATE_COUNT] = {0, 1, 3, 2};
+  // waiting > error > done > working > idle
+  static const int PRIORITY[AGENT_STATE_COUNT] = {0, 1, 4, 2, 3};
   agent_state_t result = AGENT_STATE_IDLE;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     if (sessions[i].used && PRIORITY[sessions[i].state] > PRIORITY[result]) {
@@ -581,7 +589,7 @@ int agent_sessions_restore(const agent_session_record_t *record, int64_t now_ms,
                          .state = state,
                          .pid = record->pid,
                          .updated_ms = updated,
-                         .unread = state == AGENT_STATE_DONE && unread};
+                         .unread = finished(state) && unread};
   memcpy(s->agent, record->agent, strlen(record->agent) + 1);
   if (utf8_label_valid(record->name, 40))
     snprintf(s->name, sizeof(s->name), "%s", record->name);
@@ -590,7 +598,7 @@ int agent_sessions_restore(const agent_session_record_t *record, int64_t now_ms,
              (uint16_t)(record->key >> 48));
   if (transcript_ok(record->transcript))
     memcpy(s->transcript, record->transcript, strlen(record->transcript) + 1);
-  if (s->state == AGENT_STATE_DONE && !s->unread && done_timeout_s > 0)
+  if (finished(s->state) && !s->unread && done_timeout_s > 0)
     s->done_until_ms = deadline(now_ms, done_timeout_s);
   applied_done_timeout = done_timeout_s;
   if (s->pid > 0)
@@ -662,5 +670,12 @@ void agent_sessions_interrupt(uint64_t key, int64_t now_ms) {
   agent_session_t *s = find_session(key);
   if (s)
     agent_sessions_apply(key, s->agent, AGENT_EVENT_INTERRUPT, 0, now_ms,
+                         applied_done_timeout, NULL);
+}
+
+void agent_sessions_fail(uint64_t key, int64_t now_ms) {
+  agent_session_t *s = find_session(key);
+  if (s)
+    agent_sessions_apply(key, s->agent, AGENT_EVENT_FAIL, 0, now_ms,
                          applied_done_timeout, NULL);
 }

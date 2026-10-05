@@ -32,10 +32,11 @@
 #define DESK_LIFT      8
 #define DESK_SLIDE     22
 
-static const uint32_t FILLS[] = {0xfff8fafc, 0xffd9ebff, 0xffffe4a3,
-                                 0xffc7f1d6};
-static const uint32_t ICONS[] = {0xff8b93a1, 0xff24558f, 0xff71430b,
-                                 0xff22643d};
+// Indexed by agent_state_t. Error is darker than waiting, not only redder.
+static const uint32_t FILLS[AGENT_STATE_COUNT] = {
+    0xfff8fafc, 0xffd9ebff, 0xffffe4a3, 0xffc7f1d6, 0xffffbcae};
+static const uint32_t ICONS[AGENT_STATE_COUNT] = {
+    0xff8b93a1, 0xff24558f, 0xff71430b, 0xff22643d, 0xff8a2415};
 typedef struct {
   double x1, y1, x2, y2;
 } sign_bezier_t;
@@ -127,6 +128,7 @@ static void include_bounds(sign_frame_t *frame, double x, double y, double w,
 typedef struct {
   const char *working, *waiting, *idle, *minute;
   const char *done, *done_short, *unread, *unread_short;
+  const char *error, *error_short;
 } sign_words_t;
 // clang-format off
 static const sign_words_t WORDS[] = {
@@ -137,7 +139,9 @@ static const sign_words_t WORDS[] = {
      .done = "已完成",
      .done_short = "完成",
      .unread = "已完成 · 未查看",
-     .unread_short = "完成 · 未查看"},
+     .unread_short = "完成 · 未查看",
+     .error = "出错停止",
+     .error_short = "出错"},
     {.working = "Working",
      .waiting = "Needs approval",
      .idle = "Idle",
@@ -145,11 +149,25 @@ static const sign_words_t WORDS[] = {
      .done = "Done",
      .done_short = "Done",
      .unread = "Done · Unread",
-     .unread_short = "Done · Unread"},
+     .unread_short = "Done · Unread",
+     .error = "Stopped on error",
+     .error_short = "Error"},
 };
 // clang-format on
-static const char *done_label(const sign_input_t *in, bool fan, bool unread) {
+static bool finished(agent_state_t state) {
+  return state == AGENT_STATE_DONE || state == AGENT_STATE_ERROR;
+}
+// Meta text takes the icon colour on the two states that ask for attention.
+static uint32_t meta_color(agent_state_t state) {
+  bool urgent = state == AGENT_STATE_WAITING || state == AGENT_STATE_ERROR;
+  return urgent ? ICONS[state] & 0xffffffU : 0x4a5261;
+}
+static const char *done_label(const sign_input_t *in, bool fan,
+                              const agent_session_view_t *session) {
   const sign_words_t *words = &WORDS[in->english ? 1 : 0];
+  bool unread = session->unread;
+  if (session->state == AGENT_STATE_ERROR)
+    return fan ? words->error : words->error_short;
   if (fan)
     return unread ? words->unread : words->done;
   return unread ? words->unread_short : words->done_short;
@@ -180,14 +198,14 @@ static void add_shape(sign_frame_t *frame, sign_shape_kind_t kind, double x,
                                                        .outline = outline};
   include_bounds(frame, x, y, w, h);
 }
-static void add_unread(sign_frame_t *frame, double x, double y, double w,
-                       double scale, double opacity) {
+static void add_unread(sign_frame_t *frame, agent_state_t state, double x,
+                       double y, double w, double scale, double opacity) {
   if (scale <= 0) {
     return;
   }
   double dot = 9 * scale;
   add_shape(frame, SIGN_RECT, x + w - 4 * scale, y - 5 * scale, dot, dot,
-            dot / 2, 2 * scale, with_alpha(ICONS[AGENT_STATE_DONE], opacity),
+            dot / 2, 2 * scale, with_alpha(ICONS[state], opacity),
             with_alpha(INK, opacity));
 }
 static void wake_at(sign_frame_t *frame, int64_t when) {
@@ -230,6 +248,9 @@ static void add_icon(sign_frame_t *frame, agent_state_t state, double cx,
   } else if (state == AGENT_STATE_DONE) {
     add_shape(frame, SIGN_CHECK, cx - 8 * scale, cy - 6.5 * scale, 16 * scale,
               13 * scale, 0, 3 * scale, 0, color);
+  } else if (state == AGENT_STATE_ERROR) {
+    add_shape(frame, SIGN_CROSS, cx - 6.5 * scale, cy - 6.5 * scale, 13 * scale,
+              13 * scale, 0, 3 * scale, 0, color);
   } else {
     add_shape(frame, SIGN_RECT, cx - 5 * scale, cy - 1.5 * scale, 10 * scale,
               3 * scale, 2 * scale, 0, color, 0);
@@ -258,7 +279,9 @@ static void layout_board(sign_slot_t *slot, const sign_input_t *in,
                          double scale) {
   bool visible = slot->present && (show_session(in, slot->session.state)) &&
                  !(in->typing && in->typing_key == slot->session.key);
-  bool expanded = in->open || slot->session.state == AGENT_STATE_WAITING;
+  // Waiting and error say what they are without being hovered.
+  bool expanded = in->open || slot->session.state == AGENT_STATE_WAITING ||
+                  slot->session.state == AGENT_STATE_ERROR;
   double width = fmax(0, aim(&slot->width, visible ? (expanded ? 204 : 34) : 0,
                              WIDTH_MS, &BEZIER_WIDTH, in, frame));
   bool pressed = in->has_pressed && in->pressed_key == slot->session.key;
@@ -327,13 +350,12 @@ static void layout_board(sign_slot_t *slot, const sign_input_t *in,
     frame->shapes[i].clip_w = fmax(0, (width - 4) * scale);
     frame->shapes[i].clip_h = 22 * scale;
   }
-  if (slot->session.unread && slot->session.state == AGENT_STATE_DONE) {
-    add_unread(frame, x, y, width * scale, scale, opacity);
+  if (slot->session.unread && finished(slot->session.state)) {
+    add_unread(frame, slot->session.state, x, y, width * scale, scale, opacity);
   }
   if (width > 41 && frame->text_count < SIGN_MAX_TEXTS) {
     sign_text_t *text = &frame->texts[frame->text_count++];
-    uint32_t meta =
-        slot->session.state == AGENT_STATE_WAITING ? 0x71430b : 0x4a5261;
+    uint32_t meta = meta_color(slot->session.state);
     double ratio = font_ratio(in);
     double line_h = 13 * scale * ratio;
     *text = (sign_text_t){.x = x + (direction > 0 ? 33 : 8) * scale,
@@ -366,8 +388,8 @@ static void layout_board(sign_slot_t *slot, const sign_input_t *in,
       const char *label = WORDS[in->english ? 1 : 0].idle;
       if (slot->session.state == AGENT_STATE_WAITING)
         label = WORDS[in->english ? 1 : 0].waiting;
-      else if (slot->session.state == AGENT_STATE_DONE)
-        label = done_label(in, false, slot->session.unread);
+      else if (finished(slot->session.state))
+        label = done_label(in, false, &slot->session);
       snprintf(text->meta, sizeof(text->meta), "%s%s%s", other ? who : "",
                other ? " · " : "", label);
     }
@@ -427,12 +449,15 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
   bool hovered = visible && in->has_hover && in->hover_key == slot->session.key;
   bool pressed = in->has_pressed && in->pressed_key == slot->session.key;
   bool waiting = slot->session.state == AGENT_STATE_WAITING;
+  // Both are raised higher. Only waiting sways and is named without hover:
+  // two nameplates side by side would cover each other.
+  bool urgent = waiting || slot->session.state == AGENT_STATE_ERROR;
   double len_target = 34;
-  if (visible && waiting && hovered)
+  if (visible && urgent && hovered)
     len_target = 116;
   else if (visible && hovered)
     len_target = 102;
-  else if (visible && waiting)
+  else if (visible && urgent)
     len_target = 110;
   else if (visible)
     len_target = 94;
@@ -462,7 +487,7 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
       mixed += ((FILLS[state] >> (channel * 8)) & 255) * states[state];
     fill |= (uint32_t)lround(sum ? mixed / sum : 0) << (channel * 8);
   }
-  bool popping = slot->session.state == AGENT_STATE_DONE &&
+  bool popping = finished(slot->session.state) &&
                  in->animations != SIGN_ANIM_OFF &&
                  in->now_ms < slot->session.state_since_ms + FAN_POP_MS;
   double plate;
@@ -518,9 +543,9 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
             half_w * 2 * cat_scale, half_h * 2 * cat_scale,
             (codex ? 15 : 9) * plate * cat_scale, 2 * plate * cat_scale,
             with_alpha(fill, opacity), with_alpha(INK, opacity));
-  if (slot->session.unread && slot->session.state == AGENT_STATE_DONE)
-    add_unread(frame, left, top, half_w * 2 * cat_scale, plate * cat_scale,
-               opacity);
+  if (slot->session.unread && finished(slot->session.state))
+    add_unread(frame, slot->session.state, left, top, half_w * 2 * cat_scale,
+               plate * cat_scale, opacity);
   double icon_y = pivot_y - center_sy * cat_scale;
   for (int state = 0; state < AGENT_STATE_COUNT; state++)
     if (states[state] > .001)
@@ -536,18 +561,19 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
     sign_text_t *text = &frame->texts[frame->text_count++];
     char fallback[9];
     const char *who = agent_adapter_display(slot->session.agent, fallback);
-    *text = (sign_text_t){.x = pin_x,
-                          .anchor_y = box_bottom,
-                          .gap = 8 * cat_scale,
-                          .px = 13 * cat_scale * font_ratio(in),
-                          .meta_px = 11.5 * cat_scale * font_ratio(in),
-                          .color = with_alpha(INK, opacity * appear),
-                          .meta_color = with_alpha(
-                              waiting ? 0x71430b : 0x4a5261, opacity * appear),
-                          .above = true,
-                          .tag_scale = .96 + .04 * appear,
-                          .font_ratio = font_ratio(in),
-                          .back = with_alpha(fill, opacity * appear)};
+    *text =
+        (sign_text_t){.x = pin_x,
+                      .anchor_y = box_bottom,
+                      .gap = 8 * cat_scale,
+                      .px = 13 * cat_scale * font_ratio(in),
+                      .meta_px = 11.5 * cat_scale * font_ratio(in),
+                      .color = with_alpha(INK, opacity * appear),
+                      .meta_color = with_alpha(meta_color(slot->session.state),
+                                               opacity * appear),
+                      .above = true,
+                      .tag_scale = .96 + .04 * appear,
+                      .font_ratio = font_ratio(in),
+                      .back = with_alpha(fill, opacity * appear)};
     snprintf(text->value, sizeof(text->value), "%s", slot->session.name);
     if (slot->session.state == AGENT_STATE_WORKING) {
       int64_t elapsed = in->now_ms - slot->session.state_since_ms;
@@ -564,8 +590,8 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
       const char *label = WORDS[in->english ? 1 : 0].idle;
       if (waiting)
         label = WORDS[in->english ? 1 : 0].waiting;
-      else if (slot->session.state == AGENT_STATE_DONE)
-        label = done_label(in, true, slot->session.unread);
+      else if (finished(slot->session.state))
+        label = done_label(in, true, &slot->session);
       snprintf(text->meta, sizeof(text->meta), "%s · %s", who, label);
     }
     include_bounds(frame, pin_x - 220 * cat_scale, pin_y - 70 * cat_scale,

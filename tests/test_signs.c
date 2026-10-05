@@ -345,6 +345,41 @@ static void test_icons_text_and_loops(void) {
   one.unread = false;
   in.has_hover = false;
   in.style = SIGN_STYLE_POST;
+  one.state = AGENT_STATE_ERROR;
+  one.unread = true;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(!strcmp(frame.texts[0].meta, "出错"));
+  TEST_ASSERT((frame.texts[0].meta_color & 0xffffff) == 0x8a2415);
+  const sign_shape_t *cross = NULL;
+  badge = NULL;
+  checks = 0;
+  for (int i = 0; i < frame.shape_count; i++) {
+    const sign_shape_t *shape = &frame.shapes[i];
+    if (shape->kind == SIGN_CROSS)
+      cross = shape;
+    if (shape->kind == SIGN_CHECK)
+      checks++;
+    if (fabs(shape->w - 9) < 0.02 && fabs(shape->h - 9) < 0.02)
+      badge = shape;
+  }
+  TEST_ASSERT(cross && checks == 0 && cross->w == cross->h);
+  TEST_ASSERT(cross->fill == 0 && cross->stroke == 3);
+  TEST_ASSERT((cross->outline & 0xffffff) == 0x8a2415);
+  TEST_ASSERT(badge && (badge->fill & 0xffffff) == 0x8a2415);
+  in.english = true;
+  in.style = SIGN_STYLE_FAN;
+  signs_frame(&model, &in, &frame);
+  // Raised like waiting, but named only on hover.
+  TEST_ASSERT(frame.text_count == 0);
+  in.has_hover = true;
+  in.hover_key = one.key;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(frame.text_count == 1);
+  TEST_ASSERT(strstr(frame.texts[0].meta, "Stopped on error"));
+  in.has_hover = false;
+  in.english = false;
+  in.style = SIGN_STYLE_POST;
+  one.unread = false;
   one.state = AGENT_STATE_IDLE;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(!strcmp(frame.texts[0].meta, "空闲"));

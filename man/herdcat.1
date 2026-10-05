@@ -85,7 +85,7 @@ Show the configured idle frame and discard input, or resume with pending paw act
 Reload configuration or query the running application through a same-UID authenticated Unix socket. Failures return nonzero. Controls never rewrite configuration files; visibility and pause state reset on restart.
 .TP
 .BI --state " NAME"
-Set the manual session to idle, working, waiting or done. Idle removes the manual session. Other sessions resolve by priority: waiting > done > working > idle. Seen done sessions expire after agent_done_timeout seconds; sign_done=sticky preserves unread completions. Scheduled sleep and held paws take priority over agent artwork; agent artwork takes priority over idle sleep. Pause suppresses the artwork while deadlines continue. --status includes agent=NAME and sessions=N.
+Set the manual session to idle, working, waiting, done or error. Idle removes the manual session. Other sessions resolve by priority: waiting > error > done > working > idle. Error marks a turn that stopped on a failure and, like done, stays until it has been seen. Seen done sessions expire after agent_done_timeout seconds; sign_done=sticky preserves unread completions. Scheduled sleep and held paws take priority over agent artwork; agent artwork takes priority over idle sleep. Pause suppresses the artwork while deadlines continue. --status includes agent=NAME and sessions=N.
 .TP
 .B --sessions
 List up to 32 tracked sessions: agent, session key prefix, state, age in seconds, process ID, name and an unread marker. The response is limited to 480 bytes and may be truncated. Process exit removes all sessions associated with that process. A full table evicts the oldest idle session first, otherwise the oldest session.
@@ -93,7 +93,7 @@ List up to 32 tracked sessions: agent, session key prefix, state, age in seconds
 .BI --hook " AGENT"
 Read a lifecycle JSON event from stdin for an agent named with 1 to 8 lowercase ASCII letters (such as claude or codex). Streams input using fixed storage and a two-second timeout. Stdout remains empty; malformed JSON, unknown events and an absent overlay quietly return success. Invalid arguments return nonzero. HERDCAT_HOOK_DEBUG=1 prints the outgoing event to stderr.
 .PP
-SessionStart registers the session; UserPromptSubmit, PreToolUse, PostToolUse and PostToolUseFailure set working; PermissionRequest sets waiting; Stop sets done unless stop_hook_active is true; StopFailure and Interrupt set idle; SessionEnd removes the session. Notification maps permission_prompt, elicitation_dialog and agent_needs_input to waiting, and idle_prompt clears working only. SubagentStop is ignored. Missing or invalid session IDs share a fallback session per agent.
+SessionStart registers the session; UserPromptSubmit, PreToolUse, PostToolUse and PostToolUseFailure set working; PermissionRequest sets waiting; Stop sets done unless stop_hook_active is true; StopFailure sets error; Interrupt sets idle; SessionEnd removes the session. Notification maps permission_prompt, elicitation_dialog and agent_needs_input to waiting, and idle_prompt clears working only. SubagentStop is ignored. Missing or invalid session IDs share a fallback session per agent.
 .PP
 Approval does not emit a separate hook: waiting continues until PostToolUse after tool completion. Claude may not emit a hook on Escape, leaving working to expire; watched waiting remains until another event or exit. Codex Interrupt clears the session. Merge examples/hooks into existing agent configuration and renew Codex hook trust through /hooks after changes.
 .TP

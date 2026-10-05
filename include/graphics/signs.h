@@ -16,7 +16,8 @@
 typedef enum {
   SIGN_RECT,
   SIGN_CUT,  // radius is the 45-degree corner cut; stroke is inset.
-  SIGN_CHECK
+  SIGN_CHECK,
+  SIGN_CROSS
 } sign_shape_kind_t;
 
 // Surface logical pixels, y growing downward. A RECT stroke is an inset

@@ -51,7 +51,7 @@ static void test_mapping(void) {
                         AGENT_EVENT_WORKING,
                         AGENT_EVENT_WAITING,
                         AGENT_EVENT_DONE,
-                        AGENT_EVENT_IDLE,
+                        AGENT_EVENT_FAIL,
                         AGENT_EVENT_IDLE,
                         AGENT_EVENT_END,
                         -1,

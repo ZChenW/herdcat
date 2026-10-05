@@ -316,8 +316,11 @@ static int command(const char *request, char *response, size_t capacity) {
   } else if (strncmp(request, "state ", 6) == 0) {
     agent_state_t state;
     if (agent_state_parse(request + 6, &state) == 0) {
-      agent_event_t event;
+      agent_event_t event = AGENT_EVENT_FAIL;
       agent_event_parse(request + 6, &event);
+      // An error only replaces a turn in progress, so start one first.
+      if (state == AGENT_STATE_ERROR)
+        agent_apply(0, "manual", AGENT_EVENT_WORKING, 0);
       result = agent_apply(
           0, "manual", state == AGENT_STATE_IDLE ? AGENT_EVENT_END : event, 0);
     } else {
@@ -470,7 +473,8 @@ static void help(const char *program) {
       "  --focus KEY          Focus a session terminal (full key or unique "
       "prefix)\n"
       "  --pane PID ID        Report the focused kitty split\n"
-      "  --state NAME         Set manual state: idle, working, waiting, done\n"
+      "  --state NAME         Set manual state: idle, working, waiting, done,\n"
+      "                       error\n"
       "  --sessions           List tracked agent sessions\n"
       "  --reset-position     Restore configured positions on every output\n"
       "  --event NAME         Override stdin event (after --hook AGENT)\n"

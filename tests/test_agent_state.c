@@ -5,9 +5,10 @@
 #include <string.h>
 
 int main(void) {
-  const char *names[] = {"idle", "working", "waiting", "done"};
+  const char *names[] = {"idle", "working", "waiting", "done", "error"};
   const int frames[] = {-1, HERDCAT_FRAME_AGENT_WORKING,
-                        HERDCAT_FRAME_AGENT_WAITING, HERDCAT_FRAME_AGENT_DONE};
+                        HERDCAT_FRAME_AGENT_WAITING, HERDCAT_FRAME_AGENT_DONE,
+                        -1};
   for (int i = 0; i < AGENT_STATE_COUNT; i++) {
     agent_state_t state = AGENT_STATE_COUNT;
     TEST_ASSERT(agent_state_parse(names[i], &state) == 0);

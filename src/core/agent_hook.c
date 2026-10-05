@@ -721,9 +721,9 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
   if (pid > 0 && agent_process_tty(pid) == 0)
     pid = 0;
   char request[64];
-  static const char *const EVENTS[] = {"idle", "working",  "waiting",
-                                       "done", "start",    "rest",
-                                       "end",  "interrupt"};
+  static const char *const EVENTS[] = {"idle", "working",   "waiting",
+                                       "done", "start",     "rest",
+                                       "end",  "interrupt", "fail"};
   snprintf(request, sizeof(request), "ev %s %s %016" PRIx64 " %jd", agent,
            EVENTS[event], agent_hook_key(agent, &scanner), (intmax_t)pid);
   const char *debug = getenv("HERDCAT_HOOK_DEBUG");

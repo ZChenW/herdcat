@@ -21,6 +21,8 @@ typedef enum {
   AGENT_EVENT_REST,
   AGENT_EVENT_END,
   AGENT_EVENT_INTERRUPT,
+  // working/waiting -> error. Never creates a session.
+  AGENT_EVENT_FAIL,
   AGENT_EVENT_COUNT
 } agent_event_t;
 
@@ -31,7 +33,7 @@ typedef struct {
   agent_state_t state;
   pid_t pid;
   int64_t created_ms, state_since_ms, updated_ms;
-  // Set while a done sign is waiting for someone to look at it.
+  // Set while a done or error sign is waiting for someone to look at it.
   bool unread;
   // Kitty process and split. Both stay 0 until a socket is stored.
   pid_t kitty_pid;
@@ -47,6 +49,7 @@ int agent_sessions_select(const agent_session_view_t *input, size_t count,
 int agent_event_parse(const char *name, agent_event_t *out);
 void agent_sessions_reset(void);
 void agent_sessions_interrupt(uint64_t key, int64_t now_ms);
+void agent_sessions_fail(uint64_t key, int64_t now_ms);
 int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
                          pid_t pid, int64_t now_ms, int done_timeout_s,
                          bool *is_new);

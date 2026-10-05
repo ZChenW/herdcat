@@ -83,7 +83,7 @@ herdcat [OPTIONS]
   --doctor            Check config, protocols, outputs and input permissions
   --hide / --show     Change visibility of every overlay
   --pause / --resume  Show idle frame, discard input, or resume animation
-  --state NAME        Set manual state: idle, working, waiting, done
+  --state NAME        Set manual state: idle, working, waiting, done, error
   --sessions          List tracked agent sessions
   --pane PID ID       Report the focused kitty split
   --hook AGENT        Read a lifecycle event from stdin

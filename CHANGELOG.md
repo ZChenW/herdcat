@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Stopped on error** - A turn that ends on a quota or API failure turns its
+  sign coral with a cross instead of quietly going idle. It stays until seen,
+  like a completion. Reported by every agent that has a failure event, and
+  read from the session record for Codex.
+
 ## [0.1.0] - 2026-10-04
 
 First release of herdcat, based on wayland-bongocat 2.0.2.

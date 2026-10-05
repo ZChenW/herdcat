@@ -3,8 +3,10 @@
 herdcat keeps the keyboard paw animation and tracks up to 32 agent sessions.
 
 The shared indicator displays the highest priority state:
-**waiting > done > working > idle**. A working session cannot overwrite another
-session's waiting state. Each seen done session expires independently after
+**waiting > error > done > working > idle**. A working session cannot overwrite
+another session's waiting state. A turn that stops on an error (quota, API
+failure) turns the sign coral with a cross; like a completion it stays until
+you have looked at it. Each seen done session expires independently after
 `agent_done_timeout` seconds (default 5); unread completions remain sticky by
 default. After a timed completion, the display then falls back to any
 remaining work. Setting the timeout to 0 keeps that session done until its next
@@ -80,7 +82,7 @@ herdcat --hook claude >/dev/null 2>&1 || true
 | `Notification`: `permission_prompt`, `elicitation_dialog`, `agent_needs_input` | waiting (Claude) |
 | `Notification`: `idle_prompt` | Clear working only; preserve waiting/done (Claude) |
 | `Stop` | done, except when `stop_hook_active=true` |
-| `StopFailure` (Claude) | idle |
+| `StopFailure` (Claude) | error, from working/waiting only |
 | `Interrupt` (Codex) | Clear working/waiting only; preserve done |
 | `SessionEnd` | Remove this session |
 | Other events, including `SubagentStop` | Ignore |
@@ -132,7 +134,8 @@ Restart the agent after merging. No installer changes user configuration.
 | UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure | working |
 | PermissionRequest; permission_prompt/elicitation_dialog/agent_needs_input notification | waiting |
 | Stop | done unless stop_hook_active/stopHookActive is true |
-| StopFailure, StopCancelled, Interrupt | interrupt: clear working/waiting only |
+| StopFailure | error, from working/waiting only |
+| StopCancelled, Interrupt | interrupt: clear working/waiting only |
 | idle_prompt notification | Clear working only |
 | SessionEnd | Remove session |
 | Other events | Ignore |
@@ -159,7 +162,8 @@ config` before restarting Kimi. The hook writes no stdout.
 | PermissionRequest | waiting |
 | PermissionResult (approved or rejected) | working; later events settle the turn |
 | Stop | done unless stop_hook_active is true |
-| Interrupt, StopFailure | Clear working/waiting only |
+| StopFailure | error, from working/waiting only |
+| Interrupt | Clear working/waiting only |
 | SessionEnd | Remove session |
 
 Successful print-mode exit did not emit SessionEnd in the observation; the
@@ -183,7 +187,8 @@ Identity prefers `conversation_id`; directory prefers the first string in
 | sessionStart | Register idle; preserve existing state |
 | beforeSubmitPrompt, preToolUse, postToolUse | working |
 | stop with status=completed | done |
-| stop with status=aborted or error | Clear working/waiting only |
+| stop with status=error | error, from working/waiting only |
+| stop with status=aborted | Clear working/waiting only |
 | sessionEnd | Remove session |
 | stop with absent/unknown status; afterShellExecution; postToolUseFailure | Ignore |
 
@@ -206,7 +211,8 @@ payloads do not identify the event. Stdout is `{}` plus newline.
 | userPromptSubmitted, preToolUse, postToolUse, postToolUseFailure | working |
 | notification with notification_type=permission_prompt | waiting |
 | agentStop with stopReason=end_turn | done |
-| errorOccurred; agentStop with error/aborted/interrupted | Clear working/waiting only (error display pending) |
+| errorOccurred; agentStop with error | error, from working/waiting only |
+| agentStop with aborted/interrupted | Clear working/waiting only |
 | sessionEnd | Remove session |
 | permissionRequest; unknown notifications or stop reasons | Ignore |
 
@@ -215,9 +221,9 @@ Only the observed permission_prompt notification maps to waiting. Submission
 can precede sessionStart; that later start does not reset working. Only end_turn
 has been verified as a successful stop reason; missing/new reasons do not turn
 the sign green. Running-command Escape produced no hook during the four-second
-observation, so interruption detection remains a limitation. The errorOccurred
-and error/aborted/interrupted stop-reason mappings are defensive and were not
-exercised in the successful model probe. Other stop reasons are ignored.
+observation, so interruption detection remains a limitation. The
+aborted/interrupted stop-reason mappings are defensive and were not exercised.
+errorOccurred was observed on a rejected model request (HTTP 400). Other stop reasons are ignored.
 
 ## Pi
 
@@ -232,7 +238,8 @@ permission decisions, and silently ignores client/spawn failures.
 | session_start | Register idle |
 | before_agent_start, agent_start, tool_call, tool_result | working |
 | agent_end: last assistant stopReason=stop | done |
-| agent_end: error, aborted or length | Clear working/waiting only |
+| agent_end: error or length | error, from working/waiting only |
+| agent_end: aborted | Clear working/waiting only |
 | agent_end: missing/unknown reason | Ignore |
 | session_shutdown | Remove session |
 
@@ -271,7 +278,8 @@ for v2; it is not a v1 plugin.
 | permission.asked | waiting |
 | permission.replied | working |
 | session.execution.succeeded | done |
-| session.execution.interrupted/failed | Clear working/waiting only |
+| session.execution.failed | error, from working/waiting only |
+| session.execution.interrupted | Clear working/waiting only |
 | session.deleted | Remove session |
 | Step failures, streaming messages and other events | Ignore |
 

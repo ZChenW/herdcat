@@ -10,7 +10,7 @@ A desktop cat for Wayland that herds your coding agents: it types along with you
 ## Features
 
 - 🪧 One sign per agent session, with its name and state
-- 🚦 Working, waiting for approval, done and idle at a glance
+- 🚦 Working, waiting for approval, done, stopped on error and idle at a glance
 - 🖱️ Click a sign to jump to that session's terminal (niri, kitty splits)
 - 🔔 Finished sessions stay up until you have looked at them
 - ⌨️ The sign of the terminal you type in comes down under the paws

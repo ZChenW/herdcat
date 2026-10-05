@@ -11,8 +11,8 @@ static void apply(uint64_t key, agent_event_t event, pid_t pid, int64_t now,
 }
 
 static void test_events(void) {
-  const char *names[] = {"idle",  "working", "waiting", "done",
-                         "start", "rest",    "end",     "interrupt"};
+  const char *names[] = {"idle", "working", "waiting",   "done", "start",
+                         "rest", "end",     "interrupt", "fail"};
   for (int i = 0; i < AGENT_EVENT_COUNT; i++) {
     agent_event_t event = AGENT_EVENT_COUNT;
     TEST_ASSERT(agent_event_parse(names[i], &event) == 0);
@@ -451,7 +451,58 @@ static void test_interrupt(void) {
   apply(1, AGENT_EVENT_END, 42, 7000, 5);
 }
 
+static void test_fail(void) {
+  agent_sessions_reset();
+  apply(1, AGENT_EVENT_FAIL, 42, 1000, 5);
+  TEST_ASSERT(agent_sessions_count() == 0);  // Never creates a session.
+  apply(1, AGENT_EVENT_START, 42, 1000, 5);
+  apply(1, AGENT_EVENT_FAIL, 42, 1500, 5);
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_IDLE);
+  apply(1, AGENT_EVENT_WORKING, 42, 2000, 5);
+  apply(1, AGENT_EVENT_FAIL, 42, 3000, 5);
+  agent_session_view_t view;
+  TEST_ASSERT(agent_sessions_snapshot(&view, 1) == 1);
+  TEST_ASSERT(view.state == AGENT_STATE_ERROR && view.unread);
+  TEST_ASSERT(view.state_since_ms == 3000);
+  // Unread errors do not time out, and a later interrupt leaves them alone.
+  TEST_ASSERT(!agent_sessions_expire(999000, 600));
+  apply(1, AGENT_EVENT_INTERRUPT, 42, 4000, 5);
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_ERROR);
+  // waiting > error > done > working
+  apply(2, AGENT_EVENT_WORKING, 43, 4000, 5);
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_ERROR);
+  apply(2, AGENT_EVENT_DONE, 43, 4500, 5);
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_ERROR);
+  apply(2, AGENT_EVENT_WAITING, 43, 5000, 5);
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_WAITING);
+  apply(2, AGENT_EVENT_END, 43, 5500, 5);
+  // Looking at it starts the same timeout a seen completion gets.
+  agent_sessions_note_click(1, 6000);
+  TEST_ASSERT(agent_sessions_snapshot(&view, 1) == 1 && !view.unread);
+  TEST_ASSERT(view.state == AGENT_STATE_ERROR);
+  TEST_ASSERT(!agent_sessions_expire(10999, 600));
+  TEST_ASSERT(agent_sessions_expire(11000, 600));
+  TEST_ASSERT(agent_sessions_resolve() == AGENT_STATE_IDLE);
+  // The next submission clears it at once.
+  apply(1, AGENT_EVENT_WORKING, 42, 12000, 5);
+  apply(1, AGENT_EVENT_FAIL, 42, 13000, 5);
+  apply(1, AGENT_EVENT_WORKING, 42, 14000, 5);
+  TEST_ASSERT(agent_sessions_snapshot(&view, 1) == 1 && !view.unread);
+  TEST_ASSERT(view.state == AGENT_STATE_WORKING);
+  // An error survives a restart unread; a turn in progress does not.
+  apply(1, AGENT_EVENT_FAIL, 42, 15000, 5);
+  agent_session_record_t record;
+  TEST_ASSERT(agent_sessions_export(&record, 1) == 1);
+  TEST_ASSERT(record.state == AGENT_STATE_ERROR && record.unread);
+  agent_sessions_reset();
+  TEST_ASSERT(agent_sessions_restore(&record, 16000, 5) == 0);
+  TEST_ASSERT(agent_sessions_snapshot(&view, 1) == 1);
+  TEST_ASSERT(view.state == AGENT_STATE_ERROR && view.unread);
+  agent_sessions_reset();
+}
+
 int main(void) {
+  test_fail();
   test_one_process();
   test_pidless();
   test_interrupt();

@@ -95,7 +95,7 @@ signal an unrelated process group.
 
 `core/agent_sessions.c` owns a fixed 32-slot table keyed by the FNV-1a hash of
 agent and session ID; key zero is the manual session. The table resolves waiting
-before done, working and idle. It owns all done/stale deadlines and unread completion; animation only
+before error, done, working and idle. It owns all done/stale deadlines and unread completion; animation only
 receives the resolved state and redraws when it changes. With signs off, display priority is scheduled sleep, held paws, resolved agent
 artwork, idle sleep, then idle frame. Enabled signs suppress whole-cat agent
 artwork, retaining paw and sleep animation.

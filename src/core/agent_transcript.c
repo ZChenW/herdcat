@@ -123,3 +123,14 @@ bool agent_transcript_interrupted(const char *agent, const char *line,
   }
   return false;
 }
+
+bool agent_transcript_failed(const char *agent, const char *line,
+                             size_t length) {
+  if (!agent_transcript_interrupted(agent, line, length) ||
+      strcmp(agent, "codex"))
+    return false;
+  value_t root = {line, line + length};
+  spaces(&root);
+  value_t payload = field(root, "payload");
+  return string_is(field(payload, "type"), "task_complete", false);
+}
