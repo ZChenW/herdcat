@@ -190,7 +190,10 @@ while the configuration value it replaced is unchanged; editing that option
 afterward makes the file win.
 .SS Interruption detection
 agent_interrupt_detect=1 (default) enables event-driven Claude Code interruption
-and Codex abort/error detection from paths supplied by their hooks. This global
+and Codex abort/error detection from paths supplied by their hooks. On niri it
+also returns a working Claude Code session to idle once its window title has
+shown the at-rest mark for two seconds with no hook event, which is the only
+trace of Esc pressed before a reply starts. This global
 boolean is reloadable. Setting 0 removes recording watches immediately.
 Only newly appended complete JSONL lines (at most 4096 bytes) are inspected in
 memory; contents and error messages are never logged, saved or transmitted.

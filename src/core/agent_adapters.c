@@ -231,6 +231,7 @@ static const agent_adapter_t ADAPTERS[] = {
      .json_stdout = false,
      .stop_guard = true,
      .explicit_pid = false,
+     .rest_title = true,
      .process_name = "claude"},
     {.name = "codex",
      .interrupt_source = AGENT_SIGNAL_HOOK,

@@ -167,7 +167,7 @@ int focus_parse_windows(const char *json, size_t length, focus_window_t *out,
       if (pid) {
         if (count >= capacity)
           return -1;
-        out[count++] = (focus_window_t){id, (pid_t)pid};
+        out[count++] = (focus_window_t){.id = id, .pid = (pid_t)pid};
       }
       if (take(&j, ']'))
         break;

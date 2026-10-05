@@ -11,6 +11,13 @@ All notable changes to this project will be documented in this file.
   like a completion. Reported by every agent that has a failure event, and
   read from the session record for Codex.
 
+### Fixed
+
+- **Cancelled before the reply** - Pressing Esc in Claude Code before it starts
+  to answer left the sign on working until the stale timeout. On niri the
+  terminal title going back to its at-rest mark now clears it within two
+  seconds.
+
 ## [0.1.0] - 2026-10-04
 
 First release of herdcat, based on wayland-bongocat 2.0.2.

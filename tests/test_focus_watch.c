@@ -245,6 +245,94 @@ static void test_current_session(void) {
       focus_current_choose(4, windows, 2, sessions, 2, panes, 1, 4, 1) == 0);
 }
 
+static void test_rest_title(void) {
+  focus_watch_event_t event;
+  focus_window_t parsed_windows[3];
+  // Claude Code: "✳ name" at rest, a spinner glyph while working.
+  parsed("{\"WindowOpenedOrChanged\":{\"window\":{\"id\":7,\"title\":"
+         "\"\xe2\x9c\xb3 Claude Code\",\"pid\":42}}}",
+         &event, NULL, 0);
+  TEST_ASSERT(event.kind == FOCUS_WATCH_UPSERT && event.resting);
+  parsed("{\"WindowOpenedOrChanged\":{\"window\":{\"id\":7,\"title\":"
+         "\"\\u2733 Claude Code\",\"pid\":42}}}",
+         &event, NULL, 0);
+  TEST_ASSERT(event.resting);
+  parsed("{\"WindowOpenedOrChanged\":{\"window\":{\"id\":7,\"title\":"
+         "\"\xe2\x97\x90 Claude Code\",\"pid\":42}}}",
+         &event, NULL, 0);
+  TEST_ASSERT(!event.resting);
+  parsed("{\"WindowOpenedOrChanged\":{\"window\":{\"id\":7,\"title\":null,"
+         "\"pid\":42}}}",
+         &event, NULL, 0);
+  TEST_ASSERT(!event.resting);
+  // The mark only counts at the very start of the title.
+  parsed("{\"WindowsChanged\":{\"windows\":[{\"id\":1,\"title\":"
+         "\"\xe2\x9c\xb3 a\",\"pid\":9},{\"id\":2,\"title\":\"vim "
+         "\xe2\x9c\xb3\",\"pid\":10},{\"id\":3,\"pid\":11}]}}",
+         &event, parsed_windows, 3);
+  TEST_ASSERT(event.count == 3 && parsed_windows[0].resting_since_ms == 1);
+  TEST_ASSERT(!parsed_windows[1].resting_since_ms);
+  TEST_ASSERT(!parsed_windows[2].resting_since_ms);
+
+  focus_window_t windows[2] = {
+      {.id = 4, .pid = 42, .resting_since_ms = 5000},
+      {.id = 8, .pid = 80},
+  };
+  agent_session_view_t sessions[2];
+  sessions[0] = split_session(1, 42, 2556, 10, 4600);
+  sessions[0].state = AGENT_STATE_WORKING;
+  strcpy(sessions[0].agent, "claude");
+  uint64_t keys[2] = {0};
+  int next = 0;
+  // Submitted at 4600, the title went back to rest at 5000 with no reply.
+  TEST_ASSERT(focus_watch_rested(windows, 2, sessions, 1, NULL, 0, 6999, keys,
+                                 2, &next) == 0);
+  TEST_ASSERT(next == 1);
+  TEST_ASSERT(focus_watch_rested(windows, 2, sessions, 1, NULL, 0, 7000, keys,
+                                 2, &next) == 1);
+  TEST_ASSERT(keys[0] == 1 && next == -1);
+  // A hook event after the title rested restarts the wait: the title lags a
+  // new submission, and a Stop hook follows a normal finish.
+  sessions[0].updated_ms = 6500;
+  TEST_ASSERT(focus_watch_rested(windows, 2, sessions, 1, NULL, 0, 7000, keys,
+                                 2, &next) == 0);
+  TEST_ASSERT(next == 1500);
+  TEST_ASSERT(focus_watch_rested(windows, 2, sessions, 1, NULL, 0, 8500, keys,
+                                 2, &next) == 1);
+  // Only a turn in progress, only an agent that uses the mark.
+  for (int state = 0; state < AGENT_STATE_COUNT; state++) {
+    sessions[0].state = (agent_state_t)state;
+    TEST_ASSERT(focus_watch_rested(windows, 2, sessions, 1, NULL, 0, 99000,
+                                   keys, 2,
+                                   &next) == (state == AGENT_STATE_WORKING));
+    TEST_ASSERT(next == -1);
+  }
+  sessions[0].state = AGENT_STATE_WORKING;
+  strcpy(sessions[0].agent, "codex");
+  TEST_ASSERT(focus_watch_rested(windows, 2, sessions, 1, NULL, 0, 99000, keys,
+                                 2, &next) == 0);
+  strcpy(sessions[0].agent, "claude");
+  // A working title is never a cancel.
+  windows[0].resting_since_ms = 0;
+  TEST_ASSERT(focus_watch_rested(windows, 2, sessions, 1, NULL, 0, 99000, keys,
+                                 2, &next) == 0);
+  windows[0].resting_since_ms = 5000;
+  // Two sessions share the window: the title could be either one's.
+  sessions[1] = split_session(2, 42, 2556, 11, 4000);
+  sessions[1].state = AGENT_STATE_IDLE;
+  strcpy(sessions[1].agent, "claude");
+  TEST_ASSERT(focus_watch_rested(windows, 2, sessions, 2, NULL, 0, 99000, keys,
+                                 2, &next) == 0);
+  // A split report says whose title is showing.
+  focus_pane_t pane = {.pid = 2556, .split = 10};
+  TEST_ASSERT(focus_watch_rested(windows, 2, sessions, 2, &pane, 1, 99000, keys,
+                                 2, &next) == 1);
+  TEST_ASSERT(keys[0] == 1);
+  pane.split = 11;
+  TEST_ASSERT(focus_watch_rested(windows, 2, sessions, 2, &pane, 1, 99000, keys,
+                                 2, &next) == 0);
+  TEST_ASSERT(focus_watch_rested_now(sessions, 2, 99000, keys, 2, &next) == 0);
+}
 static void test_stream_down(void) {
   agent_session_view_t sessions[1] = {0};
   sessions[0].key = 1;
@@ -268,6 +356,7 @@ int main(void) {
   test_match();
   test_pane_request();
   test_current_session();
+  test_rest_title();
   test_stream_down();
   TEST_ASSERT(!focus_watch_available());
   TEST_ASSERT(focus_watch_focused_id() == 0);

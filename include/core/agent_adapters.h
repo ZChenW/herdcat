@@ -50,6 +50,8 @@ typedef struct {
   bool stop_guard;
   bool explicit_pid;
   bool no_pid;
+  // The terminal title starts with "✳" whenever the agent is not working.
+  bool rest_title;
   // Exact /proc comm. NULL when that process cannot be identified.
   const char *process_name;
 } agent_adapter_t;

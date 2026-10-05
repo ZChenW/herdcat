@@ -28,7 +28,7 @@
 | `idle_frame`               | 0-4               | 0        | Frame shown when idle                |
 | `idle_sleep_timeout`       | seconds           | 0        | Sleep after idle (0=disabled)        |
 | `agent_done_timeout`       | 0-3600 seconds    | 5        | Return done to idle (0=stay)         |
-| `agent_interrupt_detect`   | 0/1              | 1        | Watch interruption/error records    |
+| `agent_interrupt_detect`   | 0/1              | 1        | Detect interrupted and failed turns |
 | `agent_stale_timeout`      | 0-86400 seconds   | 600      | Clear stale work (0=disabled)        |
 | `hotplug_scan_interval`    | seconds           | 30       | Device rescan interval (0=once)      |
 | `enable_scheduled_sleep`   | 0/1               | 0        | Enable time-based sleep schedule     |

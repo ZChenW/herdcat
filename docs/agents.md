@@ -327,11 +327,20 @@ enabling it starts at the current end of each file.
 Claude's observed single user text block beginning with
 `[Request interrupted by user` returns working/waiting to idle. Matches read
 within one second of submission are ignored. Codex `event_msg` records with
-`payload.type=turn_aborted`, or `task_complete` with an `error` object, also
-return working/waiting to idle. Normal Codex `task_complete` records do nothing:
+`payload.type=turn_aborted` also return working/waiting to idle; a
+`task_complete` with an `error` object turns the sign to error. Normal Codex `task_complete` records do nothing:
 Stop hooks retain ownership of normal completion and unread signs. Duplicate
-interruptions cannot clear done or recreate an ended session. Errors currently
-share this idle behavior; a separate error appearance is not implemented.
+interruptions cannot clear done or recreate an ended session.
+
+Pressing Esc before Claude Code starts to answer leaves no hook event and no
+marker in the recording. The only trace is the terminal title, which goes from
+a spinner glyph back to `✳`. On niri, a working Claude session whose window
+title has shown `✳` for two seconds with no hook event in between returns to
+idle. This is skipped when the title could belong to another session: several
+sessions in one window need the kitty watcher's split report to tell them
+apart. It does nothing if the terminal title is disabled or rewritten (tmux,
+`CLAUDE_CODE_DISABLE_TERMINAL_TITLE`); the stale timeout still applies then.
+A wrong guess is corrected by the session's next hook event.
 
 Only newly appended complete lines of at most 4096 bytes are inspected in
 memory. No transcript content or error message is logged, saved or sent anywhere,

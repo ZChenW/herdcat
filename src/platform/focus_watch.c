@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "platform/focus_watch.h"
 
+#include "core/agent_adapters.h"
 #include "platform/agent_watch.h"
 #include "platform/focus_current.h"
 
@@ -213,9 +214,15 @@ static bool same(const char *key, size_t n, const char *literal) {
   size_t length = strlen(literal);
   return n == length && !memcmp(key, literal, length);
 }
+// Claude Code's title is "✳ name" at rest and a spinner glyph while working.
+static bool rest_mark(const char *title, size_t n) {
+  return (n >= 3 && !memcmp(title, "\xe2\x9c\xb3", 3)) ||
+         (n >= 6 && !memcmp(title, "\\u2733", 6));
+}
 static int window_fields(json_t *j, uint64_t *id, uint64_t *pid, bool *has_pid,
-                         bool *is_focused) {
+                         bool *is_focused, bool *resting) {
   *id = 0;
+  *resting = false;
   *pid = 0;
   *has_pid = false;
   bool has_id = false;
@@ -247,6 +254,17 @@ static int window_fields(json_t *j, uint64_t *id, uint64_t *pid, bool *has_pid,
       if (j->end - j->p >= 4 && !memcmp(j->p, "null", 4)) {
         j->p += 4;
       } else if (!integer(j, pid) || *pid > INT_MAX) {
+        return -1;
+      }
+    } else if (same(key, n, "title")) {
+      space(j);
+      if (j->p < j->end && *j->p == '"') {
+        const char *title;
+        size_t length;
+        if (!key_string(j, &title, &length))
+          return -1;
+        *resting = rest_mark(title, length);
+      } else if (!value(j, 1)) {
         return -1;
       }
     } else if (same(key, n, "is_focused")) {
@@ -332,12 +350,13 @@ int focus_watch_parse(const char *line, size_t length,
       return -1;
     }
     uint64_t id = 0, pid = 0;
-    bool has_pid = false, is_focused = false;
-    if (window_fields(&j, &id, &pid, &has_pid, &is_focused) < 0 ||
+    bool has_pid = false, is_focused = false, resting = false;
+    if (window_fields(&j, &id, &pid, &has_pid, &is_focused, &resting) < 0 ||
         !take(&j, '}')) {
       return -1;
     }
     event->kind = FOCUS_WATCH_UPSERT;
+    event->resting = resting;
     event->has_focused = is_focused;
     event->focused = is_focused ? id : 0;
     event->id = id;
@@ -358,8 +377,8 @@ int focus_watch_parse(const char *line, size_t length,
     if (!(j.p < j.end && *j.p == ']')) {
       do {
         uint64_t id = 0, pid = 0;
-        bool has_pid = false, is_focused = false;
-        if (window_fields(&j, &id, &pid, &has_pid, &is_focused) < 0) {
+        bool has_pid = false, is_focused = false, resting = false;
+        if (window_fields(&j, &id, &pid, &has_pid, &is_focused, &resting) < 0) {
           return -1;
         }
         if (is_focused && id) {
@@ -367,7 +386,7 @@ int focus_watch_parse(const char *line, size_t length,
           event->focused = id;
         }
         if (has_pid && pid && out && (size_t)count < capacity) {
-          out[count] = (focus_window_t){id, (pid_t)pid};
+          out[count] = (focus_window_t){id, (pid_t)pid, resting ? 1 : 0};
         }
         if (has_pid && pid) {
           count++;
@@ -440,21 +459,39 @@ static void apply_event(const focus_watch_event_t *event,
     for (size_t i = 0; i < window_count; i++) {
       if (windows[i].id == event->id) {
         windows[i].pid = event->pid;
+        if (!event->resting)
+          windows[i].resting_since_ms = 0;
+        else if (!windows[i].resting_since_ms)
+          windows[i].resting_since_ms = now_ms();
         replaced = true;
         break;
       }
     }
     if (!replaced && window_count < WINDOW_MAX) {
-      windows[window_count++] = (focus_window_t){event->id, event->pid};
+      windows[window_count++] = (focus_window_t){event->id, event->pid,
+                                                 event->resting ? now_ms() : 0};
     }
     if (event->has_focused) {
       have_focus = true;
       focused_id = event->focused;
     }
   } else if (event->kind == FOCUS_WATCH_WINDOWS) {
+    // A reconnect resends the list. A title that was already at rest keeps
+    // its start; a new one starts now.
+    focus_window_t old[WINDOW_MAX];
+    size_t old_count = window_count;
+    memcpy(old, windows, sizeof(old[0]) * old_count);
+    int64_t now = now_ms();
     window_count = 0;
     for (int i = 0; i < event->count && window_count < WINDOW_MAX; i++) {
-      windows[window_count++] = parsed[i];
+      focus_window_t window = parsed[i];
+      if (window.resting_since_ms) {
+        window.resting_since_ms = now;
+        for (size_t k = 0; k < old_count; k++)
+          if (old[k].id == window.id && old[k].resting_since_ms)
+            window.resting_since_ms = old[k].resting_since_ms;
+      }
+      windows[window_count++] = window;
     }
     // The first line of a new stream is the full window list. No separate
     // focus event follows it, so this is the only source of the initial focus.
@@ -689,4 +726,59 @@ uint64_t focus_watch_focused_session(const agent_session_view_t *sessions,
   return focus_current_choose(focused_id, windows, window_count, sessions,
                               count, panes, panes_count, clicked_window,
                               clicked_key);
+}
+int focus_watch_rested(const focus_window_t *wins, size_t windows_count,
+                       const agent_session_view_t *sessions, size_t count,
+                       const focus_pane_t *panes, size_t pane_count,
+                       int64_t now, uint64_t *keys, size_t capacity,
+                       int *next_ms) {
+  if (next_ms)
+    *next_ms = -1;
+  if (!wins || !sessions || !keys)
+    return 0;
+  size_t written = 0;
+  for (size_t w = 0; w < windows_count; w++) {
+    if (wins[w].resting_since_ms <= 0)
+      continue;
+    // A split report narrows this to the split whose title is showing.
+    // Without one the title is only trusted for a window with one session.
+    uint64_t owners[2];
+    if (focus_current_seen(wins[w].id, wins, windows_count, sessions, count,
+                           panes, pane_count, owners, 2) != 1)
+      continue;
+    const agent_session_view_t *session = NULL;
+    for (size_t i = 0; i < count; i++)
+      if (sessions[i].key == owners[0])
+        session = &sessions[i];
+    if (!session || session->state != AGENT_STATE_WORKING)
+      continue;
+    const agent_adapter_t *adapter = agent_adapter_find(session->agent);
+    if (!adapter->rest_title || strcmp(adapter->name, session->agent))
+      continue;
+    // The grace period covers the title lagging behind a new submission
+    // and the Stop hook that follows a normal finish.
+    int64_t since = wins[w].resting_since_ms > session->updated_ms
+                        ? wins[w].resting_since_ms
+                        : session->updated_ms;
+    int64_t left = since + FOCUS_REST_GRACE_MS - now;
+    if (left > 0) {
+      if (next_ms && (*next_ms < 0 || left < *next_ms))
+        *next_ms = (int)left;
+    } else if (written < capacity) {
+      keys[written++] = session->key;
+    }
+  }
+  return (int)written;
+}
+int focus_watch_rested_now(const agent_session_view_t *sessions, size_t count,
+                           int64_t now, uint64_t *keys, size_t capacity,
+                           int *next_ms) {
+  if (next_ms)
+    *next_ms = -1;
+  if (!focus_watch_available())
+    return 0;
+  focus_pane_t panes[FOCUS_PANE_MAX];
+  size_t panes_count = focus_pane_copy(panes, FOCUS_PANE_MAX);
+  return focus_watch_rested(windows, window_count, sessions, count, panes,
+                            panes_count, now, keys, capacity, next_ms);
 }

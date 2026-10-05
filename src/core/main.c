@@ -388,6 +388,22 @@ static void note_window_focus(void) {
     agent_sessions_note_focused(keys[i], now, config.agent_done_timeout);
   }
 }
+// Claude Code says nothing when Esc is pressed before it starts to answer.
+// Its terminal title going back to the at-rest mark is the only trace.
+static int rest_next_ms = -1;
+static void note_window_rest(void) {
+  rest_next_ms = -1;
+  if (!config.agent_interrupt_detect)
+    return;
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  uint64_t keys[AGENT_SESSIONS_MAX];
+  int64_t now = monotonic_ms();
+  int rested = focus_watch_rested_now(views, (size_t)count, now, keys,
+                                      AGENT_SESSIONS_MAX, &rest_next_ms);
+  for (int i = 0; i < rested; i++)
+    agent_sessions_interrupt(keys[i], now);
+}
 static void extra_ready(uint32_t token) {
   focus_watch_ready(token);
   transcript_watch_ready(token, monotonic_ms());
@@ -404,6 +420,7 @@ static void tick(void) {
   agent_watch_process(agent_sessions_remove_pid);
   focus_watch_poll();
   note_window_focus();
+  note_window_rest();
   agent_sessions_expire(monotonic_ms(), config.agent_stale_timeout);
   agent_refresh();
   control_process(command);
@@ -427,6 +444,7 @@ static int runtime_timeout(void) {
                       -1,
                       focus_timeout(),
                       focus_watch_timeout(),
+                      rest_next_ms,
                       session_store_timeout(monotonic_ms())};
   if (!input_child_is_alive()) {
     int64_t remaining = input_retry_at - monotonic_ms();

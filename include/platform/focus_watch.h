@@ -3,6 +3,7 @@
 
 #include "core/agent_sessions.h"
 #include "platform/focus.h"
+#include "platform/focus_current.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -26,6 +27,8 @@ typedef struct {
   // Set from a window's is_focused in window lists and updates.
   bool has_focused;
   uint64_t focused;
+  // The title of an upserted window starts with the at-rest mark.
+  bool resting;
 } focus_watch_event_t;
 
 // 0 ignored, 1 parsed, -1 malformed or longer than 65536 bytes.
@@ -59,6 +62,23 @@ int focus_watch_matching(uint64_t focused, const focus_window_t *windows,
                          size_t windows_count,
                          const agent_session_view_t *sessions, size_t count,
                          uint64_t *keys, size_t capacity);
+// How long a title must stay at rest, with no hook event, before the turn
+// counts as cancelled.
+#define FOCUS_REST_GRACE_MS 2000
+// Working sessions whose terminal title has gone back to the at-rest mark:
+// the agent stopped without telling anyone, as Claude Code does when Esc is
+// pressed before it starts to answer. Only agents whose adapter sets
+// rest_title, and only when the title can belong to no other session.
+// *next_ms is the delay until a pending case matures, or -1.
+int focus_watch_rested(const focus_window_t *windows, size_t windows_count,
+                       const agent_session_view_t *sessions, size_t count,
+                       const focus_pane_t *panes, size_t pane_count,
+                       int64_t now_ms, uint64_t *keys, size_t capacity,
+                       int *next_ms);
+// The same over the live window list. Nothing while the stream is down.
+int focus_watch_rested_now(const agent_session_view_t *sessions, size_t count,
+                           int64_t now_ms, uint64_t *keys, size_t capacity,
+                           int *next_ms);
 // Sessions treated as seen. A reported split narrows this to that split.
 // With no report, every session in the focused window is included.
 // Empty when the stream is down.
