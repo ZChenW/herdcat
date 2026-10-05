@@ -71,7 +71,7 @@ and reloads 300 ms after the final relevant event.
 ## Command Line
 
 ```bash
-bongocat [OPTIONS]
+herdcat [OPTIONS]
 
   -c, --config FILE    Config file path (default: auto-detect)
   -m, --monitor NAME   Force specific monitor output

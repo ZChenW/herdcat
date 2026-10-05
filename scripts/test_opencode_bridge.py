@@ -7,15 +7,15 @@ import socket
 import subprocess
 import tempfile
 
-binary = Path('build/bongocat').resolve()
+binary = Path('build/herdcat').resolve()
 with tempfile.TemporaryDirectory(prefix='bongo-opencode-') as directory:
     root = Path(directory)
-    (root / 'bongocat').symlink_to(binary)
+    (root / 'herdcat').symlink_to(binary)
     env = dict(os.environ, XDG_RUNTIME_DIR=directory,
                PATH=directory + os.pathsep + os.environ['PATH'])
-    env.pop('BONGOCAT_HOOK_DEBUG', None)
+    env.pop('HERDCAT_HOOK_DEBUG', None)
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as server:
-        server.bind(str(root / 'bongocat.sock'))
+        server.bind(str(root / 'herdcat.sock'))
         server.listen(16)
         server.settimeout(4)
         proc = subprocess.Popen(['node', 'tests/integrations/opencode_driver.mjs'],

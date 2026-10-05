@@ -646,7 +646,7 @@ static int stop(int signal, void *data) {
   return 0;
 }
 int main(void) {
-  drag_mode = getenv("BONGOCAT_TEST_DRAG") != NULL;
+  drag_mode = getenv("HERDCAT_TEST_DRAG") != NULL;
   server = wl_display_create();
   assert(server);
   wl_display_set_default_max_buffer_size(server, 4 * 1024 * 1024);

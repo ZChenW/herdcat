@@ -16,13 +16,13 @@ import urllib.request
 executable = shutil.which('opencode')
 if not executable:
     raise SystemExit('opencode unavailable; runtime check not performed')
-binary = Path('build/bongocat').resolve()
+binary = Path('build/herdcat').resolve()
 plugin = Path('integrations/opencode').resolve()
 with tempfile.TemporaryDirectory(prefix='bongo-opencode-runtime-') as directory:
     root = Path(directory)
     work = root / 'work'
     work.mkdir()
-    (root / 'bongocat').symlink_to(binary)
+    (root / 'herdcat').symlink_to(binary)
     with socket.socket() as address:
         address.bind(('127.0.0.1', 0))
         port = address.getsockname()[1]
@@ -33,11 +33,11 @@ with tempfile.TemporaryDirectory(prefix='bongo-opencode-runtime-') as directory:
                PATH=directory + os.pathsep + os.environ['PATH'],
                OPENCODE_CONFIG_CONTENT=json.dumps({'plugin': [str(plugin)]}),
                OPENCODE_CONFIG_PROJECT_DISABLE='true')
-    for key in ('OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'BONGOCAT_HOOK_DEBUG'):
+    for key in ('OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'HERDCAT_HOOK_DEBUG'):
         env.pop(key, None)
     secret = {}
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as overlay:
-        overlay.bind(str(root / 'bongocat.sock'))
+        overlay.bind(str(root / 'herdcat.sock'))
         overlay.listen(16)
         overlay.settimeout(5)
         proc = subprocess.Popen([executable, 'serve', '--hostname', '127.0.0.1',
@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory(prefix='bongo-opencode-runtime-') as directory:
             for _ in range(60):
                 try:
                     plugins = request('/api/plugin' + query)['data']
-                    active = any(p['id'] == 'bongocat.sessions' and
+                    active = any(p['id'] == 'herdcat.sessions' and
                                  p['state']['status'] == 'active' for p in plugins)
                     if active:
                         break

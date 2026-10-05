@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-binary=$(realpath ./build/bongocat)
+binary=$(realpath ./build/herdcat)
 if [[ ! -x "$binary" || -z "${WAYLAND_DISPLAY:-}" || -z "${XDG_RUNTIME_DIR:-}" ]]; then
   echo "Skipping: build the application and provide a Wayland session."
   exit 0

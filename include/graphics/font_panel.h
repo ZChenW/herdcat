@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_FONT_PANEL_H
-#define BONGOCAT_FONT_PANEL_H
+#ifndef HERDCAT_FONT_PANEL_H
+#define HERDCAT_FONT_PANEL_H
 
 #include "config/sign_options.h"
 

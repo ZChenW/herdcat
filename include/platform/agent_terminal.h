@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_AGENT_TERMINAL_H
-#define BONGOCAT_AGENT_TERMINAL_H
+#ifndef HERDCAT_AGENT_TERMINAL_H
+#define HERDCAT_AGENT_TERMINAL_H
 
 #include <stdbool.h>
 #include <stddef.h>

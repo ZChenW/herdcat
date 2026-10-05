@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static char root[] = "/tmp/bongocat-prefs-XXXXXX";
+static char root[] = "/tmp/herdcat-prefs-XXXXXX";
 static char *saved_home;
 static char *saved_state;
 
@@ -19,9 +19,9 @@ static void use_root(void) {
 }
 static void write_text(const char *text) {
   char path[512];
-  snprintf(path, sizeof(path), "%s/bongocat", root);
+  snprintf(path, sizeof(path), "%s/herdcat", root);
   TEST_ASSERT(mkdir(path, 0700) == 0 || errno == EEXIST);
-  snprintf(path, sizeof(path), "%s/bongocat/prefs", root);
+  snprintf(path, sizeof(path), "%s/herdcat/prefs", root);
   FILE *file = fopen(path, "w");
   TEST_ASSERT(file != NULL);
   TEST_ASSERT(fputs(text, file) >= 0);
@@ -33,7 +33,7 @@ static void resolve_ok(sign_style_t *style, sign_language_t *language) {
 }
 static char *slurp(void) {
   char path[512];
-  snprintf(path, sizeof(path), "%s/bongocat/prefs", root);
+  snprintf(path, sizeof(path), "%s/herdcat/prefs", root);
   FILE *file = fopen(path, "r");
   TEST_ASSERT(file != NULL);
   char *buffer = malloc(4096);
@@ -55,7 +55,7 @@ static void round_trip(void) {
   TEST_ASSERT(prefs_choose_style(SIGN_STYLE_OFF) == -1);
   TEST_ASSERT(prefs_choose_language(SIGN_LANGUAGE_AUTO) == -1);
   char path[512];
-  snprintf(path, sizeof(path), "%s/bongocat/prefs", root);
+  snprintf(path, sizeof(path), "%s/herdcat/prefs", root);
   struct stat st;
   TEST_ASSERT(stat(path, &st) == 0);
   TEST_ASSERT(S_ISREG(st.st_mode) && st.st_uid == getuid());
@@ -120,7 +120,7 @@ static void old_format(void) {
 static void font_spaces(void) {
   use_root();
   char path[512];
-  snprintf(path, sizeof(path), "%s/bongocat/prefs", root);
+  snprintf(path, sizeof(path), "%s/herdcat/prefs", root);
   unlink(path);
   sign_style_t style = SIGN_STYLE_FAN;
   sign_language_t language = SIGN_LANGUAGE_EN;
@@ -162,7 +162,7 @@ static void home_fallback(void) {
   resolve_ok(&style, &language);
   TEST_ASSERT(prefs_choose_style(SIGN_STYLE_FAN) == 0);
   char path[512];
-  snprintf(path, sizeof(path), "%s/.local/state/bongocat/prefs", root);
+  snprintf(path, sizeof(path), "%s/.local/state/herdcat/prefs", root);
   FILE *file = fopen(path, "r");
   TEST_ASSERT(file != NULL);
   char line[64];

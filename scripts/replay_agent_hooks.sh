@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Replay against a dedicated running overlay. The supplied PID is stopped at end.
-# Usage: BONGOCAT_BIN=./build/bongocat scripts/replay_agent_hooks.sh \
+# Usage: HERDCAT_BIN=./build/herdcat scripts/replay_agent_hooks.sh \
 #          --config /path/to/test.conf --pid <test-overlay-pid>
 # Optional real niri check: --focus-pid <owned-kitty-child> --focus-window <id>
 set -euo pipefail
@@ -24,9 +24,9 @@ parser.add_argument('--focus-window', type=int, help='Expected niri window ID')
 args = parser.parse_args()
 if (args.focus_pid is None) != (args.focus_window is None):
     parser.error('--focus-pid and --focus-window must be supplied together')
-binary = os.environ.get('BONGOCAT_BIN', 'bongocat')
+binary = os.environ.get('HERDCAT_BIN', 'herdcat')
 env = dict(os.environ)
-env.pop('BONGOCAT_HOOK_DEBUG', None)
+env.pop('HERDCAT_HOOK_DEBUG', None)
 original = args.config.read_bytes()
 mode = args.config.stat().st_mode & 0o777
 child = None
@@ -80,7 +80,7 @@ def replace(data):
 
 def wire(request, success=True):
     runtime = env.get('XDG_RUNTIME_DIR')
-    path = str(Path(runtime) / 'bongocat.sock') if runtime else f'/tmp/bongocat-{os.getuid()}.sock'
+    path = str(Path(runtime) / 'herdcat.sock') if runtime else f'/tmp/herdcat-{os.getuid()}.sock'
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as client:
         client.settimeout(2)
         client.connect(path)
@@ -280,7 +280,7 @@ os.execv('/usr/bin/sleep', ['sleep', '30'])
     control('reload')
     # Send stop directly, so a disappearing instance cannot toggle a new one on.
     runtime = env.get('XDG_RUNTIME_DIR')
-    path = str(Path(runtime) / 'bongocat.sock') if runtime else f'/tmp/bongocat-{os.getuid()}.sock'
+    path = str(Path(runtime) / 'herdcat.sock') if runtime else f'/tmp/herdcat-{os.getuid()}.sock'
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control_socket:
         control_socket.settimeout(2)
         control_socket.connect(path)

@@ -10,12 +10,12 @@ import tempfile
 import threading
 import time
 
-binary = str(Path('build/bongocat').resolve())
+binary = str(Path('build/herdcat').resolve())
 with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
     env = dict(os.environ, XDG_RUNTIME_DIR=directory)
-    env.pop('BONGOCAT_HOOK_DEBUG', None)
+    env.pop('HERDCAT_HOOK_DEBUG', None)
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as server:
-        server.bind(str(Path(directory) / 'bongocat.sock'))
+        server.bind(str(Path(directory) / 'herdcat.sock'))
         server.listen(1)
 
         def invoke(payload, expected=None, shell=False):
@@ -104,7 +104,7 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
             os.close(slave)
 
     # No overlay must also be quiet and successful.
-    Path(directory, 'bongocat.sock').unlink()
+    Path(directory, 'herdcat.sock').unlink()
     result = subprocess.run([binary, '--hook', 'claude'], env=env,
                             input=b'{"hook_event_name":"Stop"}',
                             capture_output=True, timeout=3)

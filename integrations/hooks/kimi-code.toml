@@ -2,50 +2,50 @@
 
 [[hooks]]
 event = "SessionStart"
-command = "bongocat --hook kimi >/dev/null 2>&1 || true"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
 timeout = 3
 
 [[hooks]]
 event = "UserPromptSubmit"
-command = "bongocat --hook kimi >/dev/null 2>&1 || true"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
 timeout = 3
 
 [[hooks]]
 event = "PreToolUse"
-command = "bongocat --hook kimi >/dev/null 2>&1 || true"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
 timeout = 3
 
 [[hooks]]
 event = "PostToolUse"
-command = "bongocat --hook kimi >/dev/null 2>&1 || true"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
 timeout = 3
 
 [[hooks]]
 event = "PostToolUseFailure"
-command = "bongocat --hook kimi >/dev/null 2>&1 || true"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
 timeout = 3
 
 [[hooks]]
 event = "PermissionRequest"
-command = "bongocat --hook kimi >/dev/null 2>&1 || true"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
 timeout = 3
 
 [[hooks]]
 event = "PermissionResult"
-command = "bongocat --hook kimi >/dev/null 2>&1 || true"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
 timeout = 3
 
 [[hooks]]
 event = "Stop"
-command = "bongocat --hook kimi >/dev/null 2>&1 || true"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
 timeout = 3
 
 [[hooks]]
 event = "Interrupt"
-command = "bongocat --hook kimi >/dev/null 2>&1 || true"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
 timeout = 3
 
 [[hooks]]
 event = "SessionEnd"
-command = "bongocat --hook kimi >/dev/null 2>&1 || true"
+command = "herdcat --hook kimi >/dev/null 2>&1 || true"
 timeout = 3

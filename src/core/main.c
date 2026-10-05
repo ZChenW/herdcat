@@ -4,8 +4,8 @@
 #include "core/agent_hook.h"
 #include "core/agent_sessions.h"
 #include "core/agent_state.h"
-#include "core/bongocat.h"
 #include "core/control.h"
+#include "core/herdcat.h"
 #include "graphics/animation.h"
 #include "graphics/sign_draw.h"
 #include "graphics/text.h"
@@ -90,13 +90,13 @@ static bool arrays_equal(char **a, int na, char **b, int nb) {
   }
   return true;
 }
-static bongocat_error_t force_monitor(config_t *settings) {
+static herdcat_error_t force_monitor(config_t *settings) {
   if (!monitor_override) {
-    return BONGOCAT_SUCCESS;
+    return HERDCAT_SUCCESS;
   }
   char *name = strdup(monitor_override);
   if (!name) {
-    return BONGOCAT_ERROR_MEMORY;
+    return HERDCAT_ERROR_MEMORY;
   }
   free(settings->output_name);
   settings->output_name = name;
@@ -106,7 +106,7 @@ static bongocat_error_t force_monitor(config_t *settings) {
   free((void *)settings->output_names);
   settings->output_names = NULL;
   settings->num_output_names = 0;
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 static void sign_policy(void) {
   transcript_watch_sync(config.agent_interrupt_detect, monotonic_ms());
@@ -115,14 +115,14 @@ static void sign_policy(void) {
 }
 static int reload(void) {
   config_t next = {0};
-  bongocat_error_t result = load_config_strict(&next, config_path);
-  if (result == BONGOCAT_SUCCESS) {
+  herdcat_error_t result = load_config_strict(&next, config_path);
+  if (result == HERDCAT_SUCCESS) {
     result = force_monitor(&next);
   }
-  if (result != BONGOCAT_SUCCESS) {
+  if (result != HERDCAT_SUCCESS) {
     config_cleanup_full(&next);
-    bongocat_error_init(config.enable_debug);
-    bongocat_log_warning("Reload rejected; keeping current configuration");
+    herdcat_error_init(config.enable_debug);
+    herdcat_log_warning("Reload rejected; keeping current configuration");
     return 1;
   }
   bool input_changed =
@@ -135,13 +135,13 @@ static int reload(void) {
   config = next;
   if (prefs_resolve(&config.sign_style, &config.sign_language, config.sign_font,
                     sizeof(config.sign_font)))
-    bongocat_log_warning("Menu preferences were not updated");
+    herdcat_log_warning("Menu preferences were not updated");
   overlay_signs_use_config();
   sign_policy();
   if (strcmp(old.sign_font, config.sign_font)) {
     sign_draw_cleanup();
     if (text_init(config.sign_font) != 0)
-      bongocat_log_warning("Sign text unavailable; boards will omit labels");
+      herdcat_log_warning("Sign text unavailable; boards will omit labels");
   }
   wayland_update_config(&config);
   if (input_changed) {
@@ -149,12 +149,12 @@ static int reload(void) {
                                       config.num_keyboard_devices,
                                       config.keyboard_names, config.num_names,
                                       config.hotplug_scan_interval, 0);
-    if (result != BONGOCAT_SUCCESS) {
-      bongocat_log_warning("Input helper restart failed; retrying");
+    if (result != HERDCAT_SUCCESS) {
+      herdcat_log_warning("Input helper restart failed; retrying");
     }
   }
   config_cleanup_full(&old);
-  bongocat_error_init(config.enable_debug);
+  herdcat_error_init(config.enable_debug);
   return 0;
 }
 static void changed(const char *path) {
@@ -407,12 +407,12 @@ static void tick(void) {
   session_store_flush(agent_sessions_generation(), monotonic_ms(), false);
   if (!input_child_is_alive() && monotonic_ms() >= input_retry_at) {
     input_retry_at = monotonic_ms() + 5000;
-    bongocat_error_t result = input_restart_monitoring(
+    herdcat_error_t result = input_restart_monitoring(
         config.keyboard_devices, config.num_keyboard_devices,
         config.keyboard_names, config.num_names, config.hotplug_scan_interval,
         0);
-    if (result != BONGOCAT_SUCCESS) {
-      bongocat_log_warning("Input helper unavailable; retrying in 5s");
+    if (result != HERDCAT_SUCCESS) {
+      herdcat_log_warning("Input helper unavailable; retrying in 5s");
     }
   }
 }
@@ -488,13 +488,13 @@ static void help(const char *program) {
 }
 static void menu_style(sign_style_t style) {
   if (prefs_choose_style(style))
-    bongocat_log_warning("Menu style was not saved");
+    herdcat_log_warning("Menu style was not saved");
   config.sign_style = style;
   wayland_update_config(&config);
 }
 static void menu_language(sign_language_t language) {
   if (prefs_choose_language(language))
-    bongocat_log_warning("Menu language was not saved");
+    herdcat_log_warning("Menu language was not saved");
   config.sign_language = language;
   wayland_update_config(&config);
 }
@@ -505,29 +505,28 @@ static void menu_font(const char *family, bool save) {
   snprintf(config.sign_font, sizeof(config.sign_font), "%s",
            family ? family : "");
   if (text_set_family(config.sign_font))
-    bongocat_log_warning("Sign font was not changed");
+    herdcat_log_warning("Sign font was not changed");
   if (save && prefs_choose_font(config.sign_font))
-    bongocat_log_warning("Menu font was not saved");
+    herdcat_log_warning("Menu font was not saved");
   wayland_update_config(&config);
 }
-static int run_application(bool watch, bongocat_error_t result) {
+static int run_application(bool watch, herdcat_error_t result) {
   int exit_code = 1;
-  if (result != BONGOCAT_SUCCESS ||
-      force_monitor(&config) != BONGOCAT_SUCCESS) {
+  if (result != HERDCAT_SUCCESS || force_monitor(&config) != HERDCAT_SUCCESS) {
     goto cleanup;
   }
   if (prefs_resolve(&config.sign_style, &config.sign_language, config.sign_font,
                     sizeof(config.sign_font)))
-    bongocat_log_warning("Menu preferences were ignored");
+    herdcat_log_warning("Menu preferences were ignored");
   if (instance_lock() < 0) {
-    bongocat_log_error("Cannot lock instance: %s", strerror(errno));
+    herdcat_log_error("Cannot lock instance: %s", strerror(errno));
     goto cleanup;
   }
   if (control_start() < 0 || setup_signals() < 0) {
     goto cleanup;
   }
   if (agent_watch_init() < 0) {
-    bongocat_log_warning("Agent process watches unavailable; using timeouts");
+    herdcat_log_warning("Agent process watches unavailable; using timeouts");
   }
   sign_policy();
   focus_set_kitty(kitty_for_session);
@@ -540,28 +539,28 @@ static int run_application(bool watch, bongocat_error_t result) {
     config_watcher_start(&watcher);
   }
   result = animation_init(&config);
-  if (result != BONGOCAT_SUCCESS) {
+  if (result != HERDCAT_SUCCESS) {
     goto cleanup;
   }
   animation_set_key_hook(overlay_signs_note_key);
   result = wayland_init(&config);
-  if (result != BONGOCAT_SUCCESS) {
+  if (result != HERDCAT_SUCCESS) {
     goto cleanup;
   }
   result = input_start_monitoring(
       config.keyboard_devices, config.num_keyboard_devices,
       config.keyboard_names, config.num_names, config.hotplug_scan_interval, 0);
-  if (result != BONGOCAT_SUCCESS) {
+  if (result != HERDCAT_SUCCESS) {
     goto cleanup;
   }
   wayland_set_tick_callback(tick);
   wayland_set_runtime_fds(runtime_fds);
   wayland_set_runtime_timeout(runtime_timeout);
   result = wayland_run(&running);
-  if (result != BONGOCAT_SUCCESS) {
-    bongocat_log_error("Runtime stopped: %s", bongocat_error_string(result));
+  if (result != HERDCAT_SUCCESS) {
+    herdcat_log_error("Runtime stopped: %s", herdcat_error_string(result));
   }
-  exit_code = result == BONGOCAT_SUCCESS ? 0 : 1;
+  exit_code = result == HERDCAT_SUCCESS ? 0 : 1;
 cleanup:
   session_store_flush(agent_sessions_generation(), monotonic_ms(), true);
   config_watcher_cleanup(&watcher);
@@ -592,7 +591,7 @@ int main(int argc, char **argv) {
     return input_helper_main(argc, argv);
   }
   input_privilege_drop();
-  bongocat_error_init(0);
+  herdcat_error_init(0);
   const char *explicit_path = NULL;
   const char *request = NULL;
   const char *hook_agent = NULL;
@@ -612,7 +611,7 @@ int main(int argc, char **argv) {
       return 0;
     }
     if (!strcmp(arg, "--version") || !strcmp(arg, "-v")) {
-      puts(BONGOCAT_VERSION);
+      puts(HERDCAT_VERSION);
       return 0;
     }
     if (!strcmp(arg, "--config") || !strcmp(arg, "-c") ||
@@ -724,18 +723,18 @@ int main(int argc, char **argv) {
   }
   config_path = config_resolve_path(explicit_path);
   if (!config_path) {
-    config_path = strdup("bongocat.conf");
+    config_path = strdup("herdcat.conf");
   }
   if (!config_path) {
     return 1;
   }
-  bongocat_error_t result = (check || doctor)
-                                ? load_config_strict(&config, config_path)
-                                : load_config(&config, config_path);
+  herdcat_error_t result = (check || doctor)
+                               ? load_config_strict(&config, config_path)
+                               : load_config(&config, config_path);
   if (check || doctor) {
     printf("Config: %s (%s)\n", config_path,
-           result == BONGOCAT_SUCCESS ? "valid" : "invalid");
-    int failure = result != BONGOCAT_SUCCESS;
+           result == HERDCAT_SUCCESS ? "valid" : "invalid");
+    int failure = result != HERDCAT_SUCCESS;
     if (doctor) {
       printf("focus=%s\n", focus_available() ? "niri" : "none");
       failure |= input_list_devices();

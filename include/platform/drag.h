@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_DRAG_H
-#define BONGOCAT_DRAG_H
+#ifndef HERDCAT_DRAG_H
+#define HERDCAT_DRAG_H
 
 #include "config/config.h"
 

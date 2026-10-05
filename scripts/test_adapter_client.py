@@ -8,10 +8,10 @@ import tempfile
 import threading
 
 fixture = str(Path('build/test_agent_adapters').resolve())
-binary = str(Path('build/bongocat').resolve())
+binary = str(Path('build/herdcat').resolve())
 with tempfile.TemporaryDirectory(prefix='bongo-adapter-') as directory:
     env = dict(os.environ, XDG_RUNTIME_DIR=directory)
-    env.pop('BONGOCAT_HOOK_DEBUG', None)
+    env.pop('HERDCAT_HOOK_DEBUG', None)
     def invoke(payload, args=None):
         result = subprocess.run(args or [fixture, '--client'], input=payload,
                                 env=env, capture_output=True, timeout=4)
@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='bongo-adapter-') as directory:
     for payload in (b'{', b'{}', b'{"event":"finish","status":"completed"}'):
         invoke(payload)
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as server:
-        server.bind(str(Path(directory) / 'bongocat.sock'))
+        server.bind(str(Path(directory) / 'herdcat.sock'))
         server.listen()
         captured = []
         def receive():

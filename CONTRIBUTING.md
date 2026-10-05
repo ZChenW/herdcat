@@ -1,4 +1,4 @@
-# Contributing to Bongo Cat Wayland Overlay
+# Contributing to herdcat
 
 Thank you for your interest in contributing! 🐱
 
@@ -8,7 +8,7 @@ Thank you for your interest in contributing! 🐱
 
 - Wayland compositor with layer shell support
 - GCC or Clang (C23 support)
-- wayland-client
+- wayland-client, FreeType, Fontconfig
 - Make
 
 > **Note:** `wayland-scanner` and `wayland-protocols` are only needed if you modify protocol XML files (`make protocols`). The generated protocol bindings are committed to git.
@@ -16,8 +16,8 @@ Thank you for your interest in contributing! 🐱
 ### Building
 
 ```bash
-git clone https://github.com/saatvik333/wayland-bongocat.git
-cd wayland-bongocat
+git clone https://github.com/ZChenW/herdcat.git
+cd herdcat
 make debug    # Development build with debug symbols
 make          # Release build
 ```
@@ -25,7 +25,7 @@ make          # Release build
 ### Running
 
 ```bash
-./build/bongocat -c bongocat.conf -w
+./build/herdcat -c herdcat.conf -w
 ```
 
 ## Development Workflow
@@ -73,7 +73,7 @@ src/
 make test
 
 # Run with debug logging
-./build/bongocat -c bongocat.conf -w
+./build/herdcat -c herdcat.conf -w
 
 # Check for memory leaks
 make memcheck
@@ -91,4 +91,4 @@ When reporting bugs, please include:
 
 Open an issue or reach out to the maintainer.
 
-Thanks for helping make Bongo Cat better! 🎉
+Thanks for helping make herdcat better! 🎉

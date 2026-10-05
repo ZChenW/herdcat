@@ -1,24 +1,24 @@
-.TH BONGOCAT 1 "July 2026" "v2.0.2-agent" "User Commands"
+.TH HERDCAT 1 "October 2026" "v0.1.0" "User Commands"
 .SH NAME
-bongocat \- Bongo Cat Wayland Overlay
+herdcat \- desktop cat that shows coding agent sessions on Wayland
 .SH SYNOPSIS
-.B bongocat
+.B herdcat
 [OPTIONS]
 .SH DESCRIPTION
-.B bongocat
-is a lightweight, highly customizable Bongo Cat overlay for Wayland compositors. It displays an SVG-rendered animated cat that reacts to your keyboard input in real-time. Features include multi-monitor support, hot-reloadable configuration (all properties), idle sleep animation, and fullscreen auto-hiding.
+.B herdcat
+is a lightweight Bongo Cat overlay for Wayland compositors. The cat reacts to your keyboard input in real-time and holds up one sign for every coding agent session, showing its name and state; clicking a sign jumps to that session's terminal. Features include multi-monitor support, hot-reloadable configuration (all properties), idle sleep animation, and fullscreen auto-hiding.
 
 .SH OPTIONS
 .TP
 .BR \-c ", " \-\-config " \fIFILE\fR"
-Specify the configuration file path. If not provided, \fBbongocat\fR searches for \fBbongocat.conf\fR in:
+Specify the configuration file path. If not provided, \fBherdcat\fR searches for \fBherdcat.conf\fR in:
 .RS
 .IP 1. 3
-\fIXDG_CONFIG_HOME\fR/bongocat/bongocat.conf
+\fIXDG_CONFIG_HOME\fR/herdcat/herdcat.conf
 .IP 2. 3
-$HOME/.config/bongocat/bongocat.conf
+$HOME/.config/herdcat/herdcat.conf
 .IP 3. 3
-./bongocat.conf
+./herdcat.conf
 .RE
 .TP
 .BR \-m ", " \-\-monitor " \fINAME\fR"
@@ -28,7 +28,7 @@ Force the overlay to display on a specific monitor output (e.g., HDMI-A-1). Over
 Watch the configuration file for changes and automatically reload without restarting (uses inotify).
 .TP
 .BR \-t ", " \-\-toggle
-Send SIGTERM to a running bongocat instance to stop it. If no instance is running, this starts a new one.
+Send SIGTERM to a running herdcat instance to stop it. If no instance is running, this starts a new one.
 .TP
 .BR \-h ", " \-\-help
 Display this help message and exit.
@@ -37,7 +37,7 @@ Display this help message and exit.
 Display version information and exit.
 
 .SH CONFIGURATION
-The default configuration file location is \fB~/.config/bongocat/bongocat.conf\fR.
+The default configuration file location is \fB~/.config/herdcat/herdcat.conf\fR.
 .PP
 .B Key Configuration Options:
 .TP
@@ -45,7 +45,7 @@ The default configuration file location is \fB~/.config/bongocat/bongocat.conf\f
 Set to one or more output names (e.g., \fBeDP-1\fR or \fBeDP-1,HDMI-A-1\fR). A comma-separated list creates one overlay per available listed monitor in a single rendering process. Missing named monitors wait for reconnection.
 .TP
 .B keyboard_device
-Path to an evdev device, including stable /dev/input/by-id/ and /dev/input/by-path/ aliases. With no paths or names, accessible keyboard-capable devices are selected automatically. Explicit selectors never fall back to unrelated devices. Use \fBbongocat-find-devices\fR to locate yours.
+Path to an evdev device, including stable /dev/input/by-id/ and /dev/input/by-path/ aliases. With no paths or names, accessible keyboard-capable devices are selected automatically. Explicit selectors never fall back to unrelated devices. Use \fBherdcat-find-devices\fR to locate yours.
 .TP
 .B enable_debug
 Set to \fB1\fR to enable debug logging. Keycodes are never logged or transmitted.
@@ -56,7 +56,7 @@ By default, debug logging is disabled (\fBenable_debug=0\fR). Taking care not to
 .SH AUTHOR
 Maintained by Saatvik Sharma.
 .SH SEE ALSO
-.BR bongocat-find-devices (1)
+.BR herdcat-find-devices (1)
 
 .SH DIAGNOSTICS AND CONTROLS
 .TP
@@ -91,7 +91,7 @@ Set the manual session to idle, working, waiting or done. Idle removes the manua
 List up to 32 tracked sessions: agent, session key prefix, state, age in seconds, process ID, name and an unread marker. The response is limited to 480 bytes and may be truncated. Process exit removes all sessions associated with that process. A full table evicts the oldest idle session first, otherwise the oldest session.
 .TP
 .BI --hook " AGENT"
-Read a lifecycle JSON event from stdin for an agent named with 1 to 8 lowercase ASCII letters (such as claude or codex). Streams input using fixed storage and a two-second timeout. Stdout remains empty; malformed JSON, unknown events and an absent overlay quietly return success. Invalid arguments return nonzero. BONGOCAT_HOOK_DEBUG=1 prints the outgoing event to stderr.
+Read a lifecycle JSON event from stdin for an agent named with 1 to 8 lowercase ASCII letters (such as claude or codex). Streams input using fixed storage and a two-second timeout. Stdout remains empty; malformed JSON, unknown events and an absent overlay quietly return success. Invalid arguments return nonzero. HERDCAT_HOOK_DEBUG=1 prints the outgoing event to stderr.
 .PP
 SessionStart registers the session; UserPromptSubmit, PreToolUse, PostToolUse and PostToolUseFailure set working; PermissionRequest sets waiting; Stop sets done unless stop_hook_active is true; StopFailure and Interrupt set idle; SessionEnd removes the session. Notification maps permission_prompt, elicitation_dialog and agent_needs_input to waiting, and idle_prompt clears working only. SubagentStop is ignored. Missing or invalid session IDs share a fallback session per agent.
 .PP
@@ -112,7 +112,7 @@ agent_stale_timeout sets the inactivity limit for working sessions (default 600,
 .SH DRAGGING
 cat_draggable is a boolean (default 1). Hold the left button on the cat to drag; motion under four logical pixels leaves its position unchanged. The cat's bounding rectangle intercepts clicks while the remaining bar is click-through. Set cat_draggable=0 for complete click-through. Hidden and fullscreen-hidden cats intercept no clicks. Pause does not disable dragging.
 .PP
-Each output saves its own logical x and vertical margin on release to ${XDG_STATE_HOME:-$HOME/.local/state}/bongocat/position (directory mode 0700, file mode 0600). Writes are atomic and symbolic links are rejected. Saved positions override cat_align and cat_x_offset, survive restart and reload, and are clamped when output dimensions change. overlay_position chooses the margin's anchor edge; cat_y_offset still applies within the bar. Use --reset-position to restore configured positions. Cross-output dragging is not supported. Cursor grab/grabbing shapes are optional; --doctor reports cursor-shape support.
+Each output saves its own logical x and vertical margin on release to ${XDG_STATE_HOME:-$HOME/.local/state}/herdcat/position (directory mode 0700, file mode 0600). Writes are atomic and symbolic links are rejected. Saved positions override cat_align and cat_x_offset, survive restart and reload, and are clamped when output dimensions change. overlay_position chooses the margin's anchor edge; cat_y_offset still applies within the bar. Use --reset-position to restore configured positions. Cross-output dragging is not supported. Cursor grab/grabbing shapes are optional; --doctor reports cursor-shape support.
 
 .SH SESSION SIGNS
 All sign options are global and apply on reload. The cat keeps its typing and
@@ -180,9 +180,9 @@ right click closes the panel and the card. There is no card with
 .BR sign_style=off .
 .PP
 Choices are stored in
-.I $XDG_STATE_HOME/bongocat/prefs
+.I $XDG_STATE_HOME/herdcat/prefs
 (default
-.IR ~/.local/state/bongocat/prefs ),
+.IR ~/.local/state/herdcat/prefs ),
 and recent families in
 .I fonts-recent
 beside it. The configuration file is never rewritten. A stored choice applies

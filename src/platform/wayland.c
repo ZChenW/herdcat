@@ -2,7 +2,7 @@
 #include "platform/wayland.h"
 
 #include "config/config.h"
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "utils/error.h"
 #include "zwlr-layer-shell-v1-client-protocol.h"
 
@@ -156,8 +156,8 @@ static void finish_drag(void) {
     clamp_position(pointer_overlay);
     if (drag_position_save(pointer_overlay->name, pointer_overlay->cat_x,
                            pointer_overlay->margin_y) < 0) {
-      bongocat_log_warning("Cannot save drag position for %s",
-                           pointer_overlay->name);
+      herdcat_log_warning("Cannot save drag position for %s",
+                          pointer_overlay->name);
     }
   }
   if (drag_frame) {
@@ -187,8 +187,8 @@ static void drag_follow_y(overlay_t *overlay) {
   if (y == overlay->margin_y) {
     return;
   }
-  bongocat_log_debug("Drag margin %d -> %d (pointer y %.1f, grab y %.1f)",
-                     overlay->margin_y, y, pointer_y, origin_y);
+  herdcat_log_debug("Drag margin %d -> %d (pointer y %.1f, grab y %.1f)",
+                    overlay->margin_y, y, pointer_y, origin_y);
   overlay->margin_y = y;
   set_margin(overlay);
   drag_frame = wl_surface_frame(overlay->surface);
@@ -755,7 +755,7 @@ static bool create(overlay_t *overlay, output_ref_t *ref) {
       drag_position_load(overlay->name, &overlay->cat_x, &overlay->margin_y);
   overlay->has_position = position == 0;
   if (position < 0) {
-    bongocat_log_warning("Cannot load drag position for %s", overlay->name);
+    herdcat_log_warning("Cannot load drag position for %s", overlay->name);
   }
   clamp_position(overlay);
   overlay->animation = animation_overlay_create(&overlay->config);
@@ -766,7 +766,7 @@ static bool create(overlay_t *overlay, output_ref_t *ref) {
   overlay->surface = wl_compositor_create_surface(compositor);
   overlay->layer = zwlr_layer_shell_v1_get_layer_surface(
       layer_shell, overlay->surface, ref->wl_output,
-      layer_value(overlay->config.layer), "bongocat-overlay");
+      layer_value(overlay->config.layer), "herdcat-overlay");
   zwlr_layer_surface_v1_add_listener(overlay->layer, &LAYER_LISTENER, overlay);
   struct wl_region *region = wl_compositor_create_region(compositor);
   wl_surface_set_input_region(overlay->surface, region);
@@ -1000,30 +1000,30 @@ int wayland_list_monitors(bool doctor) {
   wayland_cleanup();
   return failure;
 }
-bongocat_error_t wayland_init(config_t *config) {
+herdcat_error_t wayland_init(config_t *config) {
   global_config = config;
   if (text_init(config->sign_font) != 0) {
-    bongocat_log_warning("Sign text unavailable; boards will omit labels");
+    herdcat_log_warning("Sign text unavailable; boards will omit labels");
   }
   if (discover() < 0 || !compositor || !shm || !layer_shell) {
-    bongocat_log_error(
+    herdcat_log_error(
         "Wayland requires wl_compositor v4, wl_shm and layer-shell");
     wayland_cleanup();
-    return BONGOCAT_ERROR_WAYLAND;
+    return HERDCAT_ERROR_WAYLAND;
   }
   reconcile_pending = true;
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 void wayland_update_config(config_t *config) {
   finish_drag();
   global_config = config;
   reconcile_pending = true;
 }
-bongocat_error_t wayland_run(const volatile sig_atomic_t *running) {
+herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
   bool flush_blocked = false;
   while (*running && display) {
     if (wl_display_dispatch_pending(display) < 0) {
-      return BONGOCAT_ERROR_WAYLAND;
+      return HERDCAT_ERROR_WAYLAND;
     }
     if (tick_callback) {
       tick_callback();
@@ -1038,7 +1038,7 @@ bongocat_error_t wayland_run(const volatile sig_atomic_t *running) {
       if (wl_display_flush(display) >= 0) {
         flush_blocked = false;
       } else if (errno != EAGAIN) {
-        return BONGOCAT_ERROR_WAYLAND;
+        return HERDCAT_ERROR_WAYLAND;
       }
     }
     if (reconcile_pending && !flush_blocked) {
@@ -1056,17 +1056,17 @@ bongocat_error_t wayland_run(const volatile sig_atomic_t *running) {
       }
       activate(overlay);
       if (overlay->resize && !resize_buffers(overlay)) {
-        return BONGOCAT_ERROR_MEMORY;
+        return HERDCAT_ERROR_MEMORY;
       }
       int cat_h = scale_size_120(overlay->config.cat_height, overlay->scale);
       int64_t cat_w = scale_size_120(cat_width(overlay), overlay->scale);
       if (!cat_h || cat_w > INT_MAX) {
-        return BONGOCAT_ERROR_MEMORY;
+        return HERDCAT_ERROR_MEMORY;
       }
       animation_overlay_cache((int)cat_w, cat_h);
       for (int frame = 0; frame < NUM_FRAMES; frame++) {
         if (!anim_cached_frames[frame].data) {
-          return BONGOCAT_ERROR_MEMORY;
+          return HERDCAT_ERROR_MEMORY;
         }
       }
       int next = animation_tick(paws);
@@ -1103,13 +1103,13 @@ bongocat_error_t wayland_run(const volatile sig_atomic_t *running) {
     }
     while (wl_display_prepare_read(display) != 0) {
       if (wl_display_dispatch_pending(display) < 0) {
-        return BONGOCAT_ERROR_WAYLAND;
+        return HERDCAT_ERROR_WAYLAND;
       }
     }
     if (wl_display_flush(display) < 0) {
       if (errno != EAGAIN) {
         wl_display_cancel_read(display);
-        return BONGOCAT_ERROR_WAYLAND;
+        return HERDCAT_ERROR_WAYLAND;
       }
       flush_blocked = true;
       fds[0].events |= POLLOUT;
@@ -1117,18 +1117,18 @@ bongocat_error_t wayland_run(const volatile sig_atomic_t *running) {
     int result = poll(fds, (nfds_t)count + 1, timeout);
     if (result > 0 && (fds[0].revents & POLLIN)) {
       if (wl_display_read_events(display) < 0) {
-        return BONGOCAT_ERROR_WAYLAND;
+        return HERDCAT_ERROR_WAYLAND;
       }
     } else
       wl_display_cancel_read(display);
     if (result < 0 && errno != EINTR) {
-      return BONGOCAT_ERROR_WAYLAND;
+      return HERDCAT_ERROR_WAYLAND;
     }
     if (fds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
-      return BONGOCAT_ERROR_WAYLAND;
+      return HERDCAT_ERROR_WAYLAND;
     }
   }
-  return BONGOCAT_SUCCESS;
+  return HERDCAT_SUCCESS;
 }
 struct wl_output *wayland_get_current_screen_output(void) {
   return output;

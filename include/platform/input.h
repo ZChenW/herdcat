@@ -1,7 +1,7 @@
 #ifndef INPUT_H
 #define INPUT_H
 
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "utils/error.h"
 
 #include <stdatomic.h>
@@ -18,12 +18,12 @@ extern atomic_uint *pending_paws;
 // =============================================================================
 
 // Start input monitoring with hotplug support - must be checked
-BONGOCAT_NODISCARD bongocat_error_t
+HERDCAT_NODISCARD herdcat_error_t
 input_start_monitoring(char **paths, int num_paths, char **names, int num_names,
                        int interval, int debug);
 
 // Restart input monitoring with new devices - must be checked
-BONGOCAT_NODISCARD bongocat_error_t
+HERDCAT_NODISCARD herdcat_error_t
 input_restart_monitoring(char **paths, int num_paths, char **names,
                          int num_names, int interval, int debug);
 

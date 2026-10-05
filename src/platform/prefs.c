@@ -31,14 +31,14 @@ static int state_dir(bool create) {
   char path[PATH_MAX];
   int length;
   if (base && base[0] == '/') {
-    length = snprintf(path, sizeof(path), "%s/bongocat", base);
+    length = snprintf(path, sizeof(path), "%s/herdcat", base);
   } else {
     base = getenv("HOME");
     if (!base || base[0] != '/') {
       errno = EINVAL;
       return -1;
     }
-    length = snprintf(path, sizeof(path), "%s/.local/state/bongocat", base);
+    length = snprintf(path, sizeof(path), "%s/.local/state/herdcat", base);
   }
   if (length < 0 || (size_t)length >= sizeof(path)) {
     errno = ENAMETOOLONG;

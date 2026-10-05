@@ -9,7 +9,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static char root[] = "/tmp/bongocat-term-XXXXXX";
+static char root[] = "/tmp/herdcat-term-XXXXXX";
 
 static void remove_tree(const char *path) {
   struct stat st;

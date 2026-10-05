@@ -3,7 +3,7 @@
 
 #include "config/config.h"
 #include "core/agent_state.h"
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 #include "utils/error.h"
 
 #include <stdint.h>
@@ -33,7 +33,7 @@ void animation_invalidate_cache(void);
 // =============================================================================
 
 // Initialize animation system - must be checked
-BONGOCAT_NODISCARD bongocat_error_t animation_init(config_t *config);
+HERDCAT_NODISCARD herdcat_error_t animation_init(config_t *config);
 
 void *animation_overlay_create(config_t *config);
 void animation_overlay_activate(void *opaque, config_t *config);
@@ -51,7 +51,7 @@ void animation_use_agent_frames(bool enabled);
 agent_state_t animation_get_agent_state(void);
 
 // Compatibility lifecycle entrypoint - must be checked
-BONGOCAT_NODISCARD bongocat_error_t animation_start(void);
+HERDCAT_NODISCARD herdcat_error_t animation_start(void);
 
 // Cleanup animation resources
 void animation_cleanup(void);

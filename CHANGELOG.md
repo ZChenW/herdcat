@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0] - 2026-10-04
+
+First release of herdcat, based on wayland-bongocat 2.0.2.
+
+### Added
+
+- **Session signs** - One sign per coding agent session with its name and
+  state, in a fan or a signpost style. Click a sign to jump to its terminal.
+- **Eight agents** - Claude Code, Codex, Grok, Kimi Code, Cursor Agent, Copilot
+  CLI, Pi and opencode, through `herdcat --hook <agent>` and two bridges.
+- **Unread and typing desk** - Finished sessions stay up until seen; the sign
+  of the terminal being typed in comes down under the paws.
+- **Switch card and font panel** - Right-click to change style, language and
+  font.
+- **Dragging** - Move the cat with the pointer; the position is remembered.
+
+### Changed
+
+- The command, config directory, state files and socket are named `herdcat`.
+
+Entries below are the history of wayland-bongocat.
+
 ## [2.0.2] - 2026-07-13
 
 ### Fixed

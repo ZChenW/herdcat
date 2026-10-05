@@ -11,7 +11,7 @@ struct zxdg_output_v1;
 #define _XDG_OUTPUT_UNSTABLE_V1_CLIENT_PROTOCOL_H
 
 #include "../include/config/config.h"
-#include "../include/core/bongocat.h"
+#include "../include/core/herdcat.h"
 #include "../include/utils/error.h"
 
 #include <assert.h>
@@ -58,15 +58,14 @@ static void write_temp_config(const char *path, const char *content) {
 static void test_defaults(void) {
   printf("test_defaults...\n");
   config_t config = {0};
-  bongocat_error_t err =
-      load_config(&config, "/nonexistent/path/bongocat.conf");
+  herdcat_error_t err = load_config(&config, "/nonexistent/path/herdcat.conf");
   // load_config should succeed even with missing file (uses defaults)
-  TEST_ASSERT(err == BONGOCAT_SUCCESS || err != BONGOCAT_SUCCESS,
+  TEST_ASSERT(err == HERDCAT_SUCCESS || err != HERDCAT_SUCCESS,
               "load_config returns");
   config_cleanup_full(&config);
 
   // Test with a valid empty config
-  char path[] = "/tmp/bongocat_test_XXXXXX";
+  char path[] = "/tmp/herdcat_test_XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
   write(fd, "\n", 1);
@@ -74,7 +73,7 @@ static void test_defaults(void) {
 
   memset(&config, 0, sizeof(config));
   err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "empty config loads successfully");
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "empty config loads successfully");
   TEST_ASSERT_EQ(config.fps, 60, "default fps is 60");
   TEST_ASSERT_EQ(config.cat_height, 40, "default cat_height is 40");
   TEST_ASSERT_EQ(config.overlay_height, 50, "default overlay_height is 50");
@@ -105,7 +104,7 @@ static void test_defaults(void) {
 // ---------------------------------------------------------------------------
 static void test_integer_clamping(void) {
   printf("test_integer_clamping...\n");
-  char path[] = "/tmp/bongocat_test_XXXXXX";
+  char path[] = "/tmp/herdcat_test_XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
   close(fd);
@@ -114,8 +113,8 @@ static void test_integer_clamping(void) {
                           "overlay_height=1\n");
 
   config_t config = {0};
-  bongocat_error_t err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "clamping config loads");
+  herdcat_error_t err = load_config(&config, path);
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "clamping config loads");
   TEST_ASSERT_EQ(config.fps, 120, "fps clamped to MAX_FPS=120");
   TEST_ASSERT_EQ(config.cat_height, 10, "cat_height clamped to MIN=10");
   TEST_ASSERT_EQ(config.overlay_opacity, 0, "overlay_opacity clamped to 0");
@@ -130,7 +129,7 @@ static void test_integer_clamping(void) {
 // ---------------------------------------------------------------------------
 static void test_time_parsing(void) {
   printf("test_time_parsing...\n");
-  char path[] = "/tmp/bongocat_test_XXXXXX";
+  char path[] = "/tmp/herdcat_test_XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
   close(fd);
@@ -139,8 +138,8 @@ static void test_time_parsing(void) {
       path, "enable_scheduled_sleep=1\nsleep_begin=22:30\nsleep_end=06:15\n");
 
   config_t config = {0};
-  bongocat_error_t err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "time config loads");
+  herdcat_error_t err = load_config(&config, path);
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "time config loads");
   TEST_ASSERT_EQ(config.sleep_begin.hour, 22, "sleep_begin hour");
   TEST_ASSERT_EQ(config.sleep_begin.min, 30, "sleep_begin min");
   TEST_ASSERT_EQ(config.sleep_end.hour, 6, "sleep_end hour");
@@ -155,7 +154,7 @@ static void test_time_parsing(void) {
 // ---------------------------------------------------------------------------
 static void test_malformed_integers(void) {
   printf("test_malformed_integers...\n");
-  char path[] = "/tmp/bongocat_test_XXXXXX";
+  char path[] = "/tmp/herdcat_test_XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
   close(fd);
@@ -165,8 +164,8 @@ static void test_malformed_integers(void) {
   write_temp_config(path, "fps=abc\n");
 
   config_t config = {0};
-  bongocat_error_t err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "malformed int config loads");
+  herdcat_error_t err = load_config(&config, path);
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "malformed int config loads");
   // fps should remain at default since "abc" was rejected
   TEST_ASSERT_EQ(config.fps, 60, "fps stays at default on invalid input");
 
@@ -175,7 +174,7 @@ static void test_malformed_integers(void) {
                     "fps=60junk\nsleep_begin=22:30junk\nenable_debug=2\n");
   memset(&config, 0, sizeof(config));
   err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "trailing junk is rejected safely");
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "trailing junk is rejected safely");
   TEST_ASSERT_EQ(config.fps, 60, "invalid integer leaves default");
   TEST_ASSERT_EQ(config.sleep_begin.hour, 0, "invalid time leaves default");
   TEST_ASSERT_EQ(config.sleep_begin.min, 0,
@@ -191,7 +190,7 @@ static void test_malformed_integers(void) {
 // ---------------------------------------------------------------------------
 static void test_monitor_list(void) {
   printf("test_monitor_list...\n");
-  char path[] = "/tmp/bongocat_test_XXXXXX";
+  char path[] = "/tmp/herdcat_test_XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
   close(fd);
@@ -199,8 +198,8 @@ static void test_monitor_list(void) {
   write_temp_config(path, "monitor=eDP-1, HDMI-A-1 , DP-2\n");
 
   config_t config = {0};
-  bongocat_error_t err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "monitor list config loads");
+  herdcat_error_t err = load_config(&config, path);
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "monitor list config loads");
   TEST_ASSERT_EQ(config.num_output_names, 3, "3 monitors parsed");
 
   config_cleanup_full(&config);
@@ -212,7 +211,7 @@ static void test_monitor_list(void) {
 // ---------------------------------------------------------------------------
 static void test_keyboard_device_validation(void) {
   printf("test_keyboard_device_validation...\n");
-  char path[] = "/tmp/bongocat_test_XXXXXX";
+  char path[] = "/tmp/herdcat_test_XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
   close(fd);
@@ -220,8 +219,8 @@ static void test_keyboard_device_validation(void) {
   // Valid path should be accepted
   write_temp_config(path, "keyboard_device=/dev/input/event0\n");
   config_t config = {0};
-  bongocat_error_t err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "valid device path loads");
+  herdcat_error_t err = load_config(&config, path);
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "valid device path loads");
   TEST_ASSERT_EQ(config.num_keyboard_devices, 1, "device added");
   config_cleanup_full(&config);
 
@@ -229,7 +228,7 @@ static void test_keyboard_device_validation(void) {
   write_temp_config(path, "keyboard_device=/dev/input/../shadow\n");
   memset(&config, 0, sizeof(config));
   err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "traversal path config loads");
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "traversal path config loads");
   // The invalid device should be rejected, so count stays at default (1)
   // since config_set_default_devices adds /dev/input/event4
   TEST_ASSERT(config.num_keyboard_devices <= 1,
@@ -240,7 +239,7 @@ static void test_keyboard_device_validation(void) {
   write_temp_config(path, "keyboard_device=/etc/passwd\n");
   memset(&config, 0, sizeof(config));
   err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "invalid path config loads");
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "invalid path config loads");
   config_cleanup_full(&config);
 
   unlink(path);
@@ -251,7 +250,7 @@ static void test_keyboard_device_validation(void) {
 // ---------------------------------------------------------------------------
 static void test_enum_parsing(void) {
   printf("test_enum_parsing...\n");
-  char path[] = "/tmp/bongocat_test_XXXXXX";
+  char path[] = "/tmp/herdcat_test_XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
   close(fd);
@@ -260,8 +259,8 @@ static void test_enum_parsing(void) {
                           "cat_align=right\n");
 
   config_t config = {0};
-  bongocat_error_t err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "enum config loads");
+  herdcat_error_t err = load_config(&config, path);
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "enum config loads");
   TEST_ASSERT_EQ(config.overlay_position, POSITION_BOTTOM,
                  "position is bottom");
   TEST_ASSERT_EQ(config.layer, LAYER_BACKGROUND, "layer is background");
@@ -276,7 +275,7 @@ static void test_enum_parsing(void) {
     write_temp_config(path, line);
     memset(&config, 0, sizeof(config));
     err = load_config(&config, path);
-    TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "layer config loads");
+    TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "layer config loads");
     TEST_ASSERT_EQ(config.layer, (layer_type_t)i, "layer maps correctly");
     config_cleanup_full(&config);
   }
@@ -288,7 +287,7 @@ static void test_enum_parsing(void) {
 // ---------------------------------------------------------------------------
 static void test_comments_and_whitespace(void) {
   printf("test_comments_and_whitespace...\n");
-  char path[] = "/tmp/bongocat_test_XXXXXX";
+  char path[] = "/tmp/herdcat_test_XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
   close(fd);
@@ -301,8 +300,8 @@ static void test_comments_and_whitespace(void) {
                           "cat_height = 100\n");
 
   config_t config = {0};
-  bongocat_error_t err = load_config(&config, path);
-  TEST_ASSERT_EQ(err, BONGOCAT_SUCCESS, "comment config loads");
+  herdcat_error_t err = load_config(&config, path);
+  TEST_ASSERT_EQ(err, HERDCAT_SUCCESS, "comment config loads");
   TEST_ASSERT_EQ(config.fps, 30, "fps is 30");
   TEST_ASSERT_EQ(config.cat_height, 100, "cat_height is 100");
 
@@ -311,7 +310,7 @@ static void test_comments_and_whitespace(void) {
 }
 
 static void test_agent_config(void) {
-  char path[] = "/tmp/bongocat_test_XXXXXX";
+  char path[] = "/tmp/herdcat_test_XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
   close(fd);
@@ -321,14 +320,14 @@ static void test_agent_config(void) {
     snprintf(text, sizeof(text), "agent_done_timeout=%d\n", values[i]);
     write_temp_config(path, text);
     config_t config = {0};
-    TEST_ASSERT_EQ(load_config(&config, path), BONGOCAT_SUCCESS,
+    TEST_ASSERT_EQ(load_config(&config, path), HERDCAT_SUCCESS,
                    "startup loads agent timeout");
     bool valid = values[i] >= 0 && values[i] <= 3600;
     TEST_ASSERT_EQ(config.agent_done_timeout, valid ? values[i] : 5,
                    "out-of-range timeout resets to default");
     config_cleanup_full(&config);
     TEST_ASSERT_EQ(load_config_strict(&config, path),
-                   valid ? BONGOCAT_SUCCESS : BONGOCAT_ERROR_CONFIG,
+                   valid ? HERDCAT_SUCCESS : HERDCAT_ERROR_CONFIG,
                    "strict loading rejects invalid timeout");
     config_cleanup_full(&config);
   }
@@ -339,54 +338,54 @@ static void test_agent_config(void) {
     write_temp_config(path, text);
     config_t config = {0};
     bool valid = stale_values[i] >= 0 && stale_values[i] <= 86400;
-    TEST_ASSERT_EQ(load_config(&config, path), BONGOCAT_SUCCESS,
+    TEST_ASSERT_EQ(load_config(&config, path), HERDCAT_SUCCESS,
                    "startup loads stale timeout");
     TEST_ASSERT_EQ(config.agent_stale_timeout, valid ? stale_values[i] : 600,
                    "invalid stale timeout resets to default");
     config_cleanup_full(&config);
     TEST_ASSERT_EQ(load_config_strict(&config, path),
-                   valid ? BONGOCAT_SUCCESS : BONGOCAT_ERROR_CONFIG,
+                   valid ? HERDCAT_SUCCESS : HERDCAT_ERROR_CONFIG,
                    "strict loading rejects invalid stale timeout");
     config_cleanup_full(&config);
   }
-  for (int frame = BONGOCAT_FRAME_SLEEPING; frame < NUM_FRAMES; frame++) {
+  for (int frame = HERDCAT_FRAME_SLEEPING; frame < NUM_FRAMES; frame++) {
     char text[32];
     snprintf(text, sizeof(text), "idle_frame=%d\n", frame);
     write_temp_config(path, text);
     config_t config = {0};
-    TEST_ASSERT_EQ(load_config(&config, path), BONGOCAT_SUCCESS,
+    TEST_ASSERT_EQ(load_config(&config, path), HERDCAT_SUCCESS,
                    "startup validates idle frame");
     TEST_ASSERT_EQ(config.idle_frame,
-                   frame <= BONGOCAT_FRAME_LAST_USER ? frame : 0,
+                   frame <= HERDCAT_FRAME_LAST_USER ? frame : 0,
                    "agent frames cannot be used as idle_frame");
     config_cleanup_full(&config);
   }
   write_temp_config(path, "[monitor:TEST-1]\nagent_done_timeout=10\n");
   config_t config = {0};
-  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+  TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_ERROR_CONFIG,
                  "agent timing must remain global");
   config_cleanup_full(&config);
   write_temp_config(path, "[monitor:TEST-1]\nagent_stale_timeout=10\n");
-  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+  TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_ERROR_CONFIG,
                  "stale timing must remain global");
   config_cleanup_full(&config);
   unlink(path);
 }
 
 static void test_drag_config(void) {
-  char path[] = "/tmp/bongocat-drag-config-XXXXXX";
+  char path[] = "/tmp/herdcat-drag-config-XXXXXX";
   int fd = mkstemp(path);
   TEST_ASSERT(fd >= 0, "temporary config created");
   close(fd);
   config_t config = {0}, effective;
   write_temp_config(path, "");
-  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+  TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_SUCCESS,
                  "default drag config loads");
   TEST_ASSERT_EQ(config.cat_draggable, 1, "dragging defaults to enabled");
   config_cleanup_full(&config);
   write_temp_config(path,
                     "cat_draggable=0\n[monitor:TEST-1]\ncat_draggable=1\n");
-  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+  TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_SUCCESS,
                  "drag monitor override loads");
   config_for_monitor(&config, "TEST-1", &effective);
   TEST_ASSERT_EQ(effective.cat_draggable, 1, "monitor can enable dragging");
@@ -394,20 +393,20 @@ static void test_drag_config(void) {
   TEST_ASSERT_EQ(effective.cat_draggable, 0, "other monitor remains disabled");
   config_cleanup_full(&config);
   write_temp_config(path, "cat_draggable=2\n");
-  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+  TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_ERROR_CONFIG,
                  "drag flag rejects non-boolean values");
   config_cleanup_full(&config);
   unlink(path);
 }
 
 static void test_sign_config(void) {
-  char path[] = "/tmp/bongocat-sign-config-XXXXXX";
+  char path[] = "/tmp/herdcat-sign-config-XXXXXX";
   int fd = mkstemp(path);
   TEST_ASSERT(fd >= 0, "temporary sign config");
   close(fd);
   config_t config = {0};
   write_temp_config(path, "");
-  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+  TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_SUCCESS,
                  "sign defaults load");
   TEST_ASSERT(config.sign_style == SIGN_STYLE_FAN && config.sign_max == 5 &&
                   config.sign_idle == SIGN_IDLE_HOVER && !config.sign_font[0] &&
@@ -431,7 +430,7 @@ static void test_sign_config(void) {
   };
   for (size_t i = 0; i < sizeof(valid) / sizeof(valid[0]); i++) {
     write_temp_config(path, valid[i]);
-    TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+    TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_SUCCESS,
                    "every sign enum and font value loads");
     config_cleanup_full(&config);
   }
@@ -441,7 +440,7 @@ static void test_sign_config(void) {
       snprintf(line, sizeof(line), "sign_max=%d\nsign_font_size=%d\n", max,
                size);
       write_temp_config(path, line);
-      TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+      TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_SUCCESS,
                      "all numeric sign values load");
       TEST_ASSERT(config.sign_max == max && config.sign_font_size == size,
                   "numeric sign values preserved");
@@ -467,7 +466,7 @@ static void test_sign_config(void) {
   };
   for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
     write_temp_config(path, invalid[i]);
-    TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+    TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_ERROR_CONFIG,
                    "invalid sign values rejected");
     config_cleanup_full(&config);
   }
@@ -475,7 +474,7 @@ static void test_sign_config(void) {
   memset(long_font + 10, 'a', 128);
   long_font[138] = '\0';
   write_temp_config(path, long_font);
-  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+  TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_ERROR_CONFIG,
                  "overlong font rejected without truncating");
   config_cleanup_full(&config);
   char *lang = getenv("LANG") ? strdup(getenv("LANG")) : NULL;
@@ -511,7 +510,7 @@ static void test_sign_config(void) {
 }
 
 int main(void) {
-  bongocat_error_init(0);  // Suppress debug output
+  herdcat_error_init(0);  // Suppress debug output
   printf("=== Config Parser Tests ===\n");
 
   test_defaults();
@@ -523,7 +522,7 @@ int main(void) {
   test_enum_parsing();
   test_comments_and_whitespace();
   test_agent_config();
-  char path[] = "/tmp/bongocat-interrupt-config-XXXXXX";
+  char path[] = "/tmp/herdcat-interrupt-config-XXXXXX";
   int fd = mkstemp(path);
   TEST_ASSERT(fd >= 0, "interrupt config tempfile");
   close(fd);
@@ -534,7 +533,7 @@ int main(void) {
     config_t cfg;
     bool valid = v == 0 || v == 1;
     TEST_ASSERT_EQ(load_config_strict(&cfg, path),
-                   valid ? BONGOCAT_SUCCESS : BONGOCAT_ERROR_CONFIG,
+                   valid ? HERDCAT_SUCCESS : HERDCAT_ERROR_CONFIG,
                    "interrupt boolean is strict");
     TEST_ASSERT_EQ(cfg.agent_interrupt_detect, valid ? v : 1,
                    "interrupt default and boolean");
@@ -542,7 +541,7 @@ int main(void) {
   }
   write_temp_config(path, "[monitor:TEST-1]\nagent_interrupt_detect=0\n");
   config_t cfg;
-  TEST_ASSERT_EQ(load_config_strict(&cfg, path), BONGOCAT_ERROR_CONFIG,
+  TEST_ASSERT_EQ(load_config_strict(&cfg, path), HERDCAT_ERROR_CONFIG,
                  "interrupt detect is global only");
   config_cleanup_full(&cfg);
   unlink(path);

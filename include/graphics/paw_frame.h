@@ -1,10 +1,10 @@
-#ifndef BONGOCAT_PAW_FRAME_H
-#define BONGOCAT_PAW_FRAME_H
+#ifndef HERDCAT_PAW_FRAME_H
+#define HERDCAT_PAW_FRAME_H
 
 // Shared pending-paw bits. Input child ORs bits; animation thread atomically
 // consumes them. Sleep handling is caller responsibility.
 
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 
 #include <stdbool.h>
 
@@ -36,15 +36,15 @@ static inline unsigned paw_apply_mirror(unsigned paws, bool mirror) {
 static inline int frame_from_paw_state(bool left_live, bool right_live,
                                        int idle_frame) {
   if (left_live && right_live) {
-    return BONGOCAT_FRAME_BOTH_DOWN;
+    return HERDCAT_FRAME_BOTH_DOWN;
   }
   if (left_live) {
-    return BONGOCAT_FRAME_LEFT_DOWN;
+    return HERDCAT_FRAME_LEFT_DOWN;
   }
   if (right_live) {
-    return BONGOCAT_FRAME_RIGHT_DOWN;
+    return HERDCAT_FRAME_RIGHT_DOWN;
   }
   return idle_frame;
 }
 
-#endif  // BONGOCAT_PAW_FRAME_H
+#endif  // HERDCAT_PAW_FRAME_H

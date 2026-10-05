@@ -68,7 +68,7 @@ static void write_file(const char *path, const char *text) {
 int main(void) {
   follow_tests();
   geometry();
-  char root[] = "/tmp/bongocat-drag-XXXXXX";
+  char root[] = "/tmp/herdcat-drag-XXXXXX";
   TEST_ASSERT(mkdtemp(root) != NULL);
   TEST_ASSERT(setenv("XDG_STATE_HOME", root, 1) == 0);
   int x = -1, y = -1;
@@ -80,8 +80,8 @@ int main(void) {
   TEST_ASSERT(drag_position_load("DP-1", &x, &y) == 0 && x == 140 && y == 320);
   TEST_ASSERT(drag_position_load("eDP-1", &x, &y) == 0 && x == 20 && y == 30);
   char path[512], dir[512];
-  snprintf(dir, sizeof(dir), "%s/bongocat", root);
-  snprintf(path, sizeof(path), "%s/bongocat/position", root);
+  snprintf(dir, sizeof(dir), "%s/herdcat", root);
+  snprintf(path, sizeof(path), "%s/herdcat/position", root);
   struct stat st;
   TEST_ASSERT(stat(dir, &st) == 0 && (st.st_mode & 0777) == 0700);
   TEST_ASSERT(stat(path, &st) == 0 && (st.st_mode & 0777) == 0600);
@@ -124,7 +124,7 @@ int main(void) {
   TEST_ASSERT(drag_position_save("DP-1", 50, 60) == 0);
   TEST_ASSERT(drag_position_load("DP-1", &x, &y) == 0 && x == 50 && y == 60);
   TEST_ASSERT(drag_position_reset(NULL) == 0);
-  snprintf(dir, sizeof(dir), "%s/.local/state/bongocat", root);
+  snprintf(dir, sizeof(dir), "%s/.local/state/herdcat", root);
   TEST_ASSERT(rmdir(dir) == 0);
   snprintf(dir, sizeof(dir), "%s/.local/state", root);
   TEST_ASSERT(rmdir(dir) == 0);

@@ -41,7 +41,7 @@ shm_buffer_t *shm_buffer_create(struct wl_shm *shm, int width, int height) {
     return NULL;
   }
   size_t size = (size_t)wide_size;
-  int fd = memfd_create("bongocat", MFD_CLOEXEC);
+  int fd = memfd_create("herdcat", MFD_CLOEXEC);
   if (fd < 0) {
     return NULL;
   }

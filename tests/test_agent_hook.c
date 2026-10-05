@@ -346,7 +346,7 @@ static void remove_tree(const char *path) {
 }
 
 static void test_repo_name(void) {
-  char root[] = "/tmp/bongocat-name-XXXXXX";
+  char root[] = "/tmp/herdcat-name-XXXXXX";
   TEST_ASSERT(mkdtemp(root));
   char repo[160], src[180], git[180], name[41];
   snprintf(repo, sizeof(repo), "%s/repo", root);

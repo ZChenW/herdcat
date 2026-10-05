@@ -15,7 +15,7 @@ remote_control_password "" focus-window
 listen_on unix:${XDG_RUNTIME_DIR}/kitty-{kitty_pid}
 ```
 
-`listen_on` is the socket bongocat talks to. The empty password with one
+`listen_on` is the socket herdcat talks to. The empty password with one
 listed action lets a program on that socket move focus between kitty windows
 and nothing else: it cannot type into a window, read one, or open and close
 them. This is all the jump needs. The broader `allow_remote_control
@@ -37,17 +37,17 @@ every session in it seen. Clicking a sign acknowledges that sign and does not
 change which other split counts as seen.
 
 A kitty watcher can report which split is focused. Copy
-[`integrations/kitty/bongocat_watcher.py`](../integrations/kitty/bongocat_watcher.py) into the kitty config directory and
+[`integrations/kitty/herdcat_watcher.py`](../integrations/kitty/herdcat_watcher.py) into the kitty config directory and
 add one line:
 
 ```
-watcher bongocat_watcher.py
+watcher herdcat_watcher.py
 ```
 
 Kitty allows more than one `watcher` line. Keep an existing watcher, such as
 `focus_opacity.py`, and do not replace it. Reloading kitty.conf applies this
 watcher only to windows and splits opened afterward. The script sends the
-same `pane` request on bongocat's control socket. It does not start a
+same `pane` request on herdcat's control socket. It does not start a
 process and does not use `kitten @`, so it needs no extra remote-control
 permission. It gives up within a few tens of milliseconds when the cat is
 not running, and it writes nothing to the terminal.
@@ -84,7 +84,7 @@ try. Move the pointer away, or right-click the cat, to finish: the panel and
 the card close together. The panel is a separate surface that exists only
 while it is open.
 
-Choices live in `${XDG_STATE_HOME:-~/.local/state}/bongocat/prefs`, and the
+Choices live in `${XDG_STATE_HOME:-~/.local/state}/herdcat/prefs`, and the
 recent families in `fonts-recent` beside it. The config file is never
 rewritten. A choice applies while the config value it replaced is unchanged;
 editing that option in the config file afterward makes the file win and
@@ -135,7 +135,7 @@ scale. Larger text leaves less room for names. `never` hides idle signs even
 on hover. `timeout` also acknowledges existing unread completions on reload;
 returning to `sticky` applies to subsequent completions. `off` restores the
 original surface height, cat-only input region and whole-cat agent artwork;
-`sign_done` still applies. The temporary `BONGOCAT_SIGN_STYLE` override is gone.
+`sign_done` still applies. The temporary `HERDCAT_SIGN_STYLE` override is gone.
 
 FreeType and Fontconfig are required. Only niri supports terminal jumping and
 focus tracking. tmux panes stay on the shared window. A kitty click reaches the
@@ -158,9 +158,9 @@ the position. With cursor-shape support the cursor changes to grab/grabbing.
 `--doctor` reports whether the protocol is available.
 
 Each output saves its position on release to
-`${XDG_STATE_HOME:-$HOME/.local/state}/bongocat/position`. Positions survive
+`${XDG_STATE_HOME:-$HOME/.local/state}/herdcat/position`. Positions survive
 restart, reload and output reconnection, and are clamped when output dimensions
-change. `bongocat --reset-position` removes saved positions for every output
+change. `herdcat --reset-position` removes saved positions for every output
 and restores `cat_align` / `cat_x_offset` and zero vertical margin. Configuration
 files are never rewritten. `overlay_position` chooses the edge from which the
 saved vertical margin is measured; `cat_y_offset` still applies inside the bar.

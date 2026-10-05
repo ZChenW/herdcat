@@ -1,6 +1,6 @@
 # Agent status
 
-This fork keeps the keyboard paw animation and tracks up to 32 agent sessions.
+herdcat keeps the keyboard paw animation and tracks up to 32 agent sessions.
 
 The shared indicator displays the highest priority state:
 **waiting > done > working > idle**. A working session cannot overwrite another
@@ -11,12 +11,12 @@ remaining work. Setting the timeout to 0 keeps that session done until its next
 event or removal.
 
 ```bash
-bongocat --sessions        # Agent, session key prefix, state, age and process
-bongocat --status          # Includes agent=NAME and sessions=N
-bongocat --state working   # Set a separate manual session
-bongocat --state waiting
-bongocat --state done
-bongocat --state idle      # Remove the manual session
+herdcat --sessions        # Agent, session key prefix, state, age and process
+herdcat --status          # Includes agent=NAME and sessions=N
+herdcat --state working   # Set a separate manual session
+herdcat --state waiting
+herdcat --state done
+herdcat --state idle      # Remove the manual session
 ```
 
 Sessions disappear when their agent process exits, using pidfd/epoll watches.
@@ -26,7 +26,7 @@ Waiting sessions use the same fallback only when no process watch is available;
 a watched waiting session can wait indefinitely for a user. Identical events
 refresh the timestamp without redrawing. When all 32 slots are occupied, the
 oldest idle session is evicted first, otherwise the oldest session is evicted.
-Restarting the overlay reads `$XDG_RUNTIME_DIR/bongocat/sessions` back. The
+Restarting the overlay reads `$XDG_RUNTIME_DIR/herdcat/sessions` back. The
 file is written atomically, mode 0600, and updates are coalesced instead of
 landing on every event. A saved process that is no longer running is dropped. A saved process
 with no controlling terminal is dropped too.
@@ -47,20 +47,19 @@ resume shows the current resolved state. The indicator is shared across outputs.
 
 ## Agent status integration
 
-1. Install this fork (`make release && sudo make install`). Confirm that
-   `command -v bongocat` selects it and `bongocat --help` includes `--hook`;
-   upstream v2.0.2 does not support this option.
-2. Keep your config at `~/.config/bongocat/bongocat.conf` and run `bongocat -w`.
-   For niri startup, add `spawn-at-startup "bongocat" "-w"`. Keep
+1. Install herdcat (`make release && sudo make install`) and confirm that
+   `herdcat --help` includes `--hook`.
+2. Keep your config at `~/.config/herdcat/herdcat.conf` and run `herdcat -w`.
+   For niri startup, add `spawn-at-startup "herdcat" "-w"`. Keep
    `enable_debug=0` for normal use.
 3. Back up and merge [the Claude Code example](../integrations/hooks/claude-code.settings.json)
    into `~/.claude/settings.json`, and
    [the Codex example](../integrations/hooks/codex.hooks.json) into
-   `~/.codex/hooks.json` (or `$CODEX_HOME/hooks.json`). Replace earlier bongocat
+   `~/.codex/hooks.json` (or `$CODEX_HOME/hooks.json`). Replace earlier herdcat
    `--state` hooks with the new definitions; preserve unrelated hooks/settings.
    Do not replace whole configuration files with these examples.
 4. Start new agent sessions to load the hooks. In Codex, keep `[features] hooks`
-   enabled, open `/hooks`, review and trust the new bongocat definitions.
+   enabled, open `/hooks`, review and trust the new herdcat definitions.
    Modified definitions require renewed trust. Restart an older overlay after
    installing the new binary.
 
@@ -68,7 +67,7 @@ Every event for an agent uses the same command; the client reads stdin JSON and
 performs event filtering itself, without jq:
 
 ```sh
-bongocat --hook claude >/dev/null 2>&1 || true
+herdcat --hook claude >/dev/null 2>&1 || true
 # Use --hook codex for Codex.
 ```
 
@@ -101,7 +100,7 @@ uses fixed storage, streams large payloads, rejects nesting beyond 128 levels,
 and exits within two seconds if stdin stalls. Unknown events, malformed JSON,
 and an absent overlay quietly return success. Stdout stays empty. Only invalid
 CLI arguments return nonzero. For diagnosis, run the client without stderr
-redirection and set `BONGOCAT_HOOK_DEBUG=1` to print the outgoing event request.
+redirection and set `HERDCAT_HOOK_DEBUG=1` to print the outgoing event request.
 
 The Codex SessionEnd example has a one-second hook timeout. Hook execution must
 share the desktop user's UID and runtime directory; remote/cloud agents cannot
@@ -222,9 +221,9 @@ exercised in the successful model probe. Other stop reasons are ignored.
 
 ## Pi
 
-Pi 0.84.2 supports [integrations/pi/bongocat.ts](../integrations/pi/bongocat.ts)
+Pi 0.84.2 supports [integrations/pi/herdcat.ts](../integrations/pi/herdcat.ts)
 without a build or npm dependencies. Copy that file to
-`~/.pi/agent/extensions/bongocat.ts`, or test it with `pi -e /path/to/bongocat.ts`.
+`~/.pi/agent/extensions/herdcat.ts`, or test it with `pi -e /path/to/herdcat.ts`.
 Restart/reload Pi to load it. The extension writes no stdout, changes no tool or
 permission decisions, and silently ignores client/spawn failures.
 

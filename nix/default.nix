@@ -7,8 +7,8 @@
   fontconfig,
 }:
 stdenv.mkDerivation (finalAttrs: {
-  pname = "wayland-bongocat";
-  version = "2.0.2-agent";
+  pname = "herdcat";
+  version = "0.1.0";
   src = ../.;
 
   # Build toolchain and dependencies
@@ -27,23 +27,23 @@ stdenv.mkDerivation (finalAttrs: {
     runHook preInstall
 
     # Install binaries
-    install -Dm755 build/bongocat $out/bin/${finalAttrs.meta.mainProgram}
-    install -Dm755 scripts/find_input_devices.sh $out/bin/bongocat-find-devices
+    install -Dm755 build/herdcat $out/bin/${finalAttrs.meta.mainProgram}
+    install -Dm755 scripts/find_input_devices.sh $out/bin/herdcat-find-devices
     
     # Install man page
-    install -Dm644 man/bongocat.1 $out/share/man/man1/bongocat.1
-    install -Dm644 bongocat.conf.example $out/share/bongocat/bongocat.conf.example
+    install -Dm644 man/herdcat.1 $out/share/man/man1/herdcat.1
+    install -Dm644 herdcat.conf.example $out/share/herdcat/herdcat.conf.example
 
     runHook postInstall
   '';
 
   # Package information
   meta = {
-    description = "Delightful Wayland overlay that displays an animated bongo cat reacting to your keyboard input!";
-    homepage = "https://github.com/saatvik333/wayland-bongocat";
+    description = "Wayland desktop cat that holds up a sign for every coding agent session";
+    homepage = "https://github.com/ZChenW/herdcat";
     license = lib.licenses.mit;
-    maintainers = with lib.maintainers; [voxi0];
-    mainProgram = "bongocat";
+    maintainers = [];
+    mainProgram = "herdcat";
     platforms = lib.platforms.linux;
   };
 })

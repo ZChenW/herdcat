@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_SIGN_DRAW_H
-#define BONGOCAT_SIGN_DRAW_H
+#ifndef HERDCAT_SIGN_DRAW_H
+#define HERDCAT_SIGN_DRAW_H
 
 #include "graphics/signs.h"
 

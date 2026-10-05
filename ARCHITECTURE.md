@@ -4,7 +4,7 @@ The renderer owns one Wayland connection and one event loop for every overlay.
 One input helper is executed with `posix_spawn()` through `/proc/self/exe`.
 There are no animation or configuration-watcher threads and no per-monitor
 processes. Runtime dependencies are C23, Linux evdev, Wayland client, FreeType and
-Fontconfig. The text libraries are an intentional dependency of this fork.
+Fontconfig. The text libraries are an intentional dependency: the signs need real text.
 
 ## Ownership and event flow
 
@@ -139,7 +139,7 @@ the helper, tears down overlays and finally releases the singleton lock.
 ## Build and validation
 
 Objects and binaries live under `build/debug` and `build/release`, with
-compiler-generated header dependencies. `build/bongocat` selects the build.
+compiler-generated header dependencies. `build/herdcat` selects the build.
 `make test` runs deterministic regression suites; `make test-runtime` uses a
 small Wayland server fixture (test-only libwayland-server) for multiple outputs,
 scale/resolution changes, disconnect/reconnect, release and queue pressure.
@@ -182,7 +182,7 @@ Sign configuration is global. Reload selects fan/post/off and rebuilds surface
 geometry through normal reconciliation. It retains sessions, applies the idle
 policy and limit, changes font/language/animation immediately, and releases
 existing unread completions onto timers when switching sticky to timeout.
-The old BONGOCAT_SIGN_STYLE environment override is removed. Off restores the
+The old HERDCAT_SIGN_STYLE environment override is removed. Off restores the
 original cat geometry and agent frames; completion policy remains independent.
 
 `platform/focus_watch.c` reads niri's asynchronous EventStream into a bounded

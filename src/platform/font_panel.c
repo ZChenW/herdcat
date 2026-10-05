@@ -106,9 +106,9 @@ static bool recent_path(char *out, size_t cap, bool create) {
   char dir[PATH_MAX];
   int length;
   if (state && state[0] == '/')
-    length = snprintf(dir, sizeof(dir), "%s/bongocat", state);
+    length = snprintf(dir, sizeof(dir), "%s/herdcat", state);
   else if (home && home[0] == '/')
-    length = snprintf(dir, sizeof(dir), "%s/.local/state/bongocat", home);
+    length = snprintf(dir, sizeof(dir), "%s/.local/state/herdcat", home);
   else
     return false;
   if (length < 0 || (size_t)length >= sizeof(dir))
@@ -299,9 +299,9 @@ static void note_visible(int ms) {
     return;
   if (!stood_in) {
     stood_in = true;
-    bongocat_log_info("Font panel first paint %d ms for %d families, names "
-                      "in the main face",
-                      ms, catalog_count);
+    herdcat_log_info("Font panel first paint %d ms for %d families, names "
+                     "in the main face",
+                     ms, catalog_count);
     font_panel_set_real_preview(&panel, true);
     follow_up = true;
     return;
@@ -490,7 +490,7 @@ static bool create_surface(const config_t *config) {
     return false;
   panel_layer = zwlr_layer_shell_v1_get_layer_surface(
       layer_shell, panel_surface, output, layer_value(config->layer),
-      "bongocat-font-panel");
+      "herdcat-font-panel");
   if (!panel_layer) {
     wl_surface_destroy(panel_surface);
     panel_surface = NULL;

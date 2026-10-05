@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import time
 
-binary = str(Path("build/bongocat").resolve())
+binary = str(Path("build/herdcat").resolve())
 fixture = str(Path("build/compositor/server").resolve())
 
 
@@ -22,7 +22,7 @@ def wait_for(condition, seconds=4):
     raise AssertionError("condition did not become true")
 
 
-with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
+with tempfile.TemporaryDirectory(prefix="herdcat-integration-") as directory:
     root = Path(directory)
     env = dict(os.environ, XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
                WAYLAND_DISPLAY="wayland-test")
@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
     def wire(request, success=True):
         with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
             control.settimeout(2)
-            control.connect(str(root / "bongocat.sock"))
+            control.connect(str(root / "herdcat.sock"))
             control.sendall(request.encode() if isinstance(request, str) else request)
             response = control.recv(512).decode()
         assert response.startswith("0 ") == success, (request, response)
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
         wait_for(lambda: (root / "wayland-test").exists())
         app = subprocess.Popen([binary, "-c", str(config), "-w"], env=env,
                                stdout=app_log, stderr=app_log)
-        wait_for(lambda: (root / "bongocat.sock").exists())
+        wait_for(lambda: (root / "herdcat.sock").exists())
         assert "paused=no" in command("status")
         assert app.poll() is None
         competing = subprocess.run([binary, "-c", str(config)], env=env,
@@ -145,7 +145,7 @@ with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
             for _ in range(2500):
                 with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
                     control.settimeout(1.5)
-                    control.connect(str(root / "bongocat.sock"))
+                    control.connect(str(root / "herdcat.sock"))
                     control.sendall(b"reload")
                     assert control.recv(512).startswith(b"0 ")
         finally:
@@ -161,16 +161,16 @@ with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
                           "cat_y_offset=2147483647\n")
         command("reload")
         # Direct signals must exit cleanly, preserve the lock inode, and reap helper.
-        inode = (root / "bongocat.pid").stat().st_ino
+        inode = (root / "herdcat.pid").stat().st_ino
         for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT, signal.SIGHUP):
             app.send_signal(sig)
             assert app.wait(timeout=3) == 0
-            assert (root / "bongocat.pid").stat().st_ino == inode
-            assert not (root / "bongocat.sock").exists()
+            assert (root / "herdcat.pid").stat().st_ino == inode
+            assert not (root / "herdcat.sock").exists()
             assert not Path(f"/proc/{helper}").exists()
             app = subprocess.Popen([binary, "-c", str(config)], env=env,
                                    stdout=app_log, stderr=app_log)
-            wait_for(lambda: (root / "bongocat.sock").exists())
+            wait_for(lambda: (root / "herdcat.sock").exists())
             wait_for(lambda: Path(f"/proc/{app.pid}/task/{app.pid}/children").read_text().strip())
             helper = int(Path(f"/proc/{app.pid}/task/{app.pid}/children").read_text().split()[0])
         command("stop", success=False)  # Public stop option is intentionally absent.

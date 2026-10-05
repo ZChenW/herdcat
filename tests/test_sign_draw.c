@@ -145,7 +145,7 @@ static void test_transition_and_scale(void) {
   agent_session_view_t session = {
       .key = 7, .order = 2, .state = AGENT_STATE_DONE, .pid = 9};
   strcpy(session.agent, "codex");
-  strcpy(session.name, "wayland-bongocat-session");
+  strcpy(session.name, "herdcat-session");
   sign_input_t in = {.sessions = &session,
                      .count = 1,
                      .style = SIGN_STYLE_POST,

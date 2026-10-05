@@ -1,8 +1,8 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # BONGO CAT CONFIG - Default Configuration
 # ═══════════════════════════════════════════════════════════════════════════════
-# Save this file to: ~/.config/bongocat/bongocat.conf
-# Run with: bongocat --watch-config
+# Save this file to: ~/.config/herdcat/herdcat.conf
+# Run with: herdcat --watch-config
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -45,7 +45,7 @@ layer=top
 # │ INPUT DEVICES                                                               │
 # └─────────────────────────────────────────────────────────────────────────────┘
 
-# Find your device with: bongocat-find-devices
+# Find your device with: herdcat-find-devices
 # Add multiple lines for multiple keyboards
 # Leave selectors unset to select accessible keyboard-capable devices.
 # keyboard_device=/dev/input/by-id/YOUR-KEYBOARD-event-kbd

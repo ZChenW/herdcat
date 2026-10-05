@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_UTF8_H
-#define BONGOCAT_UTF8_H
+#ifndef HERDCAT_UTF8_H
+#define HERDCAT_UTF8_H
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

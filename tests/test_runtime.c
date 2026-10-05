@@ -1,7 +1,7 @@
 #define _GNU_SOURCE
 #include "config/config.h"
-#include "core/bongocat.h"
 #include "core/control.h"
+#include "core/herdcat.h"
 #include "test_helpers.h"
 
 #include <sys/wait.h>
@@ -35,7 +35,7 @@ static void config_tests(const char *path) {
   write_config(path,
                "[monitor:TEST-1]\ncat_height=80\nmirror_x=1\n"
                "[global]\ncat_height=40\nkeyboard_name=unmatched-selector\n");
-  TEST_ASSERT(load_config_strict(&config, path) == BONGOCAT_SUCCESS);
+  TEST_ASSERT(load_config_strict(&config, path) == HERDCAT_SUCCESS);
   TEST_ASSERT(config.num_keyboard_devices == 0);
   config_for_monitor(&config, "TEST-1", &effective);
   TEST_ASSERT(effective.cat_height == 80 && effective.mirror_x == 1);
@@ -44,7 +44,7 @@ static void config_tests(const char *path) {
   config_cleanup_full(&config);
   write_config(path, "fps=garbage\n");
   TEST_ASSERT(load_config_report(&config, path, true, report, NULL) !=
-              BONGOCAT_SUCCESS);
+              HERDCAT_SUCCESS);
   TEST_ASSERT(diagnostics > 0);
   config_cleanup_full(&config);
   const char *invalid[] = {"fps=0\n",
@@ -58,15 +58,15 @@ static void config_tests(const char *path) {
                            "keyboard_device=/dev/input/../shadow\n"};
   for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
     write_config(path, invalid[i]);
-    TEST_ASSERT(load_config_strict(&config, path) != BONGOCAT_SUCCESS);
+    TEST_ASSERT(load_config_strict(&config, path) != HERDCAT_SUCCESS);
     config_cleanup_full(&config);
   }
   unlink(path);
-  TEST_ASSERT(load_config_strict(&config, path) == BONGOCAT_ERROR_FILE_IO);
+  TEST_ASSERT(load_config_strict(&config, path) == HERDCAT_ERROR_FILE_IO);
   config_cleanup_full(&config);
   write_config(path, "keyboard_device=/dev/input/by-id/keyboard\n"
                      "keyboard_device=/dev/input/by-path/keyboard\n");
-  TEST_ASSERT(load_config_strict(&config, path) == BONGOCAT_SUCCESS);
+  TEST_ASSERT(load_config_strict(&config, path) == HERDCAT_SUCCESS);
   TEST_ASSERT(config.num_keyboard_devices == 2);
   config_cleanup_full(&config);
 }
@@ -133,7 +133,7 @@ static void instance_tests(const char *directory) {
   TEST_ASSERT(setenv("XDG_RUNTIME_DIR", directory, 1) == 0);
   TEST_ASSERT(instance_lock() == 0);
   char path[512];
-  snprintf(path, sizeof(path), "%s/bongocat.pid", directory);
+  snprintf(path, sizeof(path), "%s/herdcat.pid", directory);
   struct stat before, after;
   TEST_ASSERT(stat(path, &before) == 0);
   pid_t child = fork();
@@ -204,7 +204,7 @@ static void instance_tests(const char *directory) {
   unlink(path);
 }
 int main(void) {
-  char directory[] = "/tmp/bongocat-unit-XXXXXX";
+  char directory[] = "/tmp/herdcat-unit-XXXXXX";
   TEST_ASSERT(mkdtemp(directory));
   char path[512], other[512];
   snprintf(path, sizeof(path), "%s/config", directory);

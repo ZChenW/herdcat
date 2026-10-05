@@ -18,8 +18,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-static char home[] = "/tmp/bongocat-ss-home-XXXXXX";
-static char runtime[] = "/tmp/bongocat-ss-run-XXXXXX";
+static char home[] = "/tmp/herdcat-ss-home-XXXXXX";
+static char runtime[] = "/tmp/herdcat-ss-run-XXXXXX";
 
 static void apply(uint64_t key, const char *agent, agent_event_t event,
                   pid_t pid) {
@@ -86,7 +86,7 @@ static pid_t dead_pid(void) {
 }
 
 static void sessions_path(char *out, size_t n) {
-  int wrote = snprintf(out, n, "%s/bongocat/sessions", runtime);
+  int wrote = snprintf(out, n, "%s/herdcat/sessions", runtime);
   TEST_ASSERT(wrote > 0 && (size_t)wrote < n);
 }
 
@@ -114,7 +114,7 @@ static void cleanup_dirs(const char *jsonl) {
   char path[160];
   sessions_path(path, sizeof(path));
   unlink(path);
-  snprintf(path, sizeof(path), "%s/bongocat", runtime);
+  snprintf(path, sizeof(path), "%s/herdcat", runtime);
   rmdir(path);
   rmdir(runtime);
   unlink(jsonl);
@@ -125,7 +125,7 @@ int main(void) {
   TEST_ASSERT(mkdtemp(home) && mkdtemp(runtime));
   TEST_ASSERT(setenv("HOME", home, 1) == 0);
   TEST_ASSERT(setenv("XDG_RUNTIME_DIR", runtime, 1) == 0);
-  TEST_ASSERT(strstr(getenv("XDG_RUNTIME_DIR"), "bongocat-ss-run"));
+  TEST_ASSERT(strstr(getenv("XDG_RUNTIME_DIR"), "herdcat-ss-run"));
   char jsonl[128];
   snprintf(jsonl, sizeof(jsonl), "%s/turn.jsonl", home);
   int fd = open(jsonl, O_CREAT | O_WRONLY | O_CLOEXEC, 0600);
@@ -165,7 +165,7 @@ int main(void) {
   TEST_ASSERT(stat(path, &st) == 0);
   TEST_ASSERT(S_ISREG(st.st_mode) && (st.st_mode & 0777) == 0600);
   char dir[160];
-  snprintf(dir, sizeof(dir), "%s/bongocat", runtime);
+  snprintf(dir, sizeof(dir), "%s/herdcat", runtime);
   TEST_ASSERT(stat(dir, &st) == 0);
   TEST_ASSERT(S_ISDIR(st.st_mode) && (st.st_mode & 0777) == 0700);
   char before[4096];

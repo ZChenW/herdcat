@@ -3,37 +3,37 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "bongocat --hook cursor --event sessionStart 2>/dev/null || true",
+        "command": "herdcat --hook cursor --event sessionStart 2>/dev/null || true",
         "timeout": 3
       }
     ],
     "beforeSubmitPrompt": [
       {
-        "command": "bongocat --hook cursor --event beforeSubmitPrompt 2>/dev/null || true",
+        "command": "herdcat --hook cursor --event beforeSubmitPrompt 2>/dev/null || true",
         "timeout": 3
       }
     ],
     "preToolUse": [
       {
-        "command": "bongocat --hook cursor --event preToolUse 2>/dev/null || true",
+        "command": "herdcat --hook cursor --event preToolUse 2>/dev/null || true",
         "timeout": 3
       }
     ],
     "postToolUse": [
       {
-        "command": "bongocat --hook cursor --event postToolUse 2>/dev/null || true",
+        "command": "herdcat --hook cursor --event postToolUse 2>/dev/null || true",
         "timeout": 3
       }
     ],
     "stop": [
       {
-        "command": "bongocat --hook cursor --event stop 2>/dev/null || true",
+        "command": "herdcat --hook cursor --event stop 2>/dev/null || true",
         "timeout": 3
       }
     ],
     "sessionEnd": [
       {
-        "command": "bongocat --hook cursor --event sessionEnd 2>/dev/null || true",
+        "command": "herdcat --hook cursor --event sessionEnd 2>/dev/null || true",
         "timeout": 3
       }
     ]

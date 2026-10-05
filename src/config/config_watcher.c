@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#include "core/bongocat.h"
+#include "core/herdcat.h"
 
 #include <stdint.h>
 #include <stdlib.h>

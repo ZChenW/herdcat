@@ -42,7 +42,7 @@ typedef struct {
 static const font_curve_t CURVE_POP = {.34, 1.56, .64, 1};
 static const font_curve_t CURVE_MOVE = {.34, 1.4, .64, 1};
 static const font_curve_t CURVE_EASE = {.25, .1, .25, 1};
-static const char PREVIEW_NAME[] = "wayland-bongocat";
+static const char PREVIEW_NAME[] = "herdcat";
 static const char SANS[] = "sans-serif";
 
 static double component(double t, double p1, double p2) {

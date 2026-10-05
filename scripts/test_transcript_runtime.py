@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import time
 
-binary = str(Path("build/bongocat").resolve())
+binary = str(Path("build/herdcat").resolve())
 fixture = str(Path("build/compositor/server").resolve())
 marker = {"type": "user", "message": {"role": "user", "content": [
     {"type": "text", "text": "[Request interrupted by user]"}]}}
@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix="bongo-transcript-runtime-") as director
                XDG_STATE_HOME=directory, XDG_CONFIG_HOME=directory,
                WAYLAND_DISPLAY="wayland-test", XDG_CURRENT_DESKTOP="test")
     env.pop("NIRI_SOCKET", None)
-    env.pop("BONGOCAT_HOOK_DEBUG", None)
+    env.pop("HERDCAT_HOOK_DEBUG", None)
     config = root / "cat.conf"
     base = "monitor=TEST-1\nfps=1\nhotplug_scan_interval=0\nagent_stale_timeout=0\n"
     config.write_text(base)
@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix="bongo-transcript-runtime-") as director
     def wire(request):
         with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as client:
             client.settimeout(2)
-            client.connect(str(root / "bongocat.sock"))
+            client.connect(str(root / "herdcat.sock"))
             client.sendall(request.encode())
             reply = client.recv(4096).decode()
         assert reply.startswith("0 "), reply
@@ -69,7 +69,7 @@ with tempfile.TemporaryDirectory(prefix="bongo-transcript-runtime-") as director
         wait_for(lambda: (root / "wayland-test").exists())
         app = subprocess.Popen([binary, "-c", str(config), "-w"], env=env,
                                stdout=log, stderr=log)
-        wait_for(lambda: (root / "bongocat.sock").exists())
+        wait_for(lambda: (root / "herdcat.sock").exists())
         hook("claude", "SessionStart")
         hook("claude", "UserPromptSubmit")
         assert state("working")

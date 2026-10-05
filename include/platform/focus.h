@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_FOCUS_H
-#define BONGOCAT_FOCUS_H
+#ifndef HERDCAT_FOCUS_H
+#define HERDCAT_FOCUS_H
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

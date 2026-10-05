@@ -8,14 +8,14 @@
 ### Direct Installation with Flakes
 
 ```bash
-# Try `wayland-bongocat` without installing
-nix run github:saatvik333/wayland-bongocat
+# Try `herdcat` without installing
+nix run github:ZChenW/herdcat
 
 # Install to user profile
-nix profile install github:saatvik333/wayland-bongocat
+nix profile install github:ZChenW/herdcat
 
 # Find your input devices
-bongocat-find-devices
+herdcat-find-devices
 ```
 
 ### Using the NixOS Module (Recommended)
@@ -31,7 +31,7 @@ If you use flakes for your NixOS configuration (Which you should):
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    bongocat.url = "github:saatvik333/wayland-bongocat";
+    herdcat.url = "github:ZChenW/herdcat";
   };
 
   outputs = inputs: {
@@ -39,9 +39,9 @@ If you use flakes for your NixOS configuration (Which you should):
       system = "x86_64-linux";
       modules = [
         ./configuration.nix
-        inputs.bongocat.nixosModules.default
+        inputs.herdcat.nixosModules.default
         {
-          programs.wayland-bongocat = {
+          programs.herdcat = {
             enable = true;
             autostart = true;
           };
@@ -61,11 +61,11 @@ Download this repository wherever you desire and add this to your NixOS configur
   # Import the module
   imports = [
     # ... your other imports
-    /path/to/wayland-bongocat/nix/nixos-module.nix
+    /path/to/herdcat/nix/nixos-module.nix
   ];
 
-  # Enable and configure bongocat
-  programs.wayland-bongocat = {
+  # Enable and configure herdcat
+  programs.herdcat = {
     enable = true;
     autostart = true;        # Start on login by creating a SystemD service
 
@@ -85,8 +85,8 @@ Download this repository wherever you desire and add this to your NixOS configur
     # Visual
     overlayOpacity = 0;      # Overlay bar transparency
 
-    # REQUIRED - Bongocat won't work properly without configuring this first
-    # Input devices (Find yours with `bongocat-find-devices`)
+    # REQUIRED - Herdcat won't work properly without configuring this first
+    # Input devices (Find yours with `herdcat-find-devices`)
     inputDevices = [
       # Example devices
       "/dev/input/event4"
@@ -112,14 +112,14 @@ A home manager module is also provided by the repository flake. It's just like t
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    bongocat.url = "github:saatvik333/wayland-bongocat";
+    herdcat.url = "github:ZChenW/herdcat";
   };
 
   outputs = inputs: {
     homeConfigurations.user = inputs.home-manager.lib.homeManagerConfiguration {
       # ...
       modules = [
-        inputs.bongocat.homeModule.default
+        inputs.herdcat.homeModule.default
         # ...
       ];
     };
@@ -140,7 +140,7 @@ current directory.
 
 ## Configuration
 
-Run `bongocat-find-devices` to find all input devices.
+Run `herdcat-find-devices` to find all input devices.
 
 This will show you:
 
@@ -151,7 +151,7 @@ This will show you:
 
 ### Manual Configuration
 
-Create a `bongocat.conf` file wherever you desire:
+Create a `herdcat.conf` file wherever you desire:
 
 ```ini
 # Multiple input devices
@@ -176,19 +176,19 @@ enable_debug=0
 
 ## SystemD Service Management
 
-Set `programs.wayland-bongocat.autostart = true;` to create a SystemD user service so
+Set `programs.herdcat.autostart = true;` to create a SystemD user service so
 it gets automatically started upon login.
 
 ```bash
 # Check service status
-systemctl --user status wayland-bongocat
+systemctl --user status herdcat
 
 # Start/stop manually
-systemctl --user start wayland-bongocat
-systemctl --user stop wayland-bongocat
+systemctl --user start herdcat
+systemctl --user stop herdcat
 
 # View logs
-journalctl --user -u wayland-bongocat -f
+journalctl --user -u herdcat -f
 ```
 
 ## Troubleshooting
@@ -205,15 +205,15 @@ If you get permission errors accessing input devices:
 
 If the SystemD service fails to start:
 
-1. **Check logs:** `journalctl --user -u wayland-bongocat -n 50`
-1. **Test manually:** `bongocat --config /nix/store/.../bongocat.conf`
-1. **Enable debug mode:** `programs.wayland-bongocat.enableDebug = true;`
+1. **Check logs:** `journalctl --user -u herdcat -n 50`
+1. **Test manually:** `herdcat --config /nix/store/.../herdcat.conf`
+1. **Enable debug mode:** `programs.herdcat.enableDebug = true;`
 
 ### Input Device Detection
 
 If keyboard input isn't detected:
 
-1. **Find your devices:** `bongocat-find-devices`
+1. **Find your devices:** `herdcat-find-devices`
 
 1. **Test device events:** `sudo evtest  # Select your device and type`
 
@@ -221,7 +221,7 @@ If keyboard input isn't detected:
    If using the NixOS or home-manager module -
 
    ```nix
-   programs.wayland-bongocat.inputDevices = [
+   programs.herdcat.inputDevices = [
        # Add as many devices as required and replace X with your device number
        "/dev/input/eventX"
        "/dev/input/eventX"
@@ -229,7 +229,7 @@ If keyboard input isn't detected:
    ];
    ```
 
-   Standalone (In your `bongocat.conf` file) -
+   Standalone (In your `herdcat.conf` file) -
 
    ```ini
    # Add as many devices as required and replace `X` with the actual device number
@@ -238,12 +238,12 @@ If keyboard input isn't detected:
    keyboard_device=/dev/input/eventX
    ```
 
-You can also use the recommended `keyboard_name=your keyboard` config suggestion provided by `bongocat-find-devices`.
+You can also use the recommended `keyboard_name=your keyboard` config suggestion provided by `herdcat-find-devices`.
 
 In the NixOS or home-manager module -
 
 ```nix
-programs.wayland-bongocat.inputDeviceNames = ["your keyboard"]
+programs.herdcat.inputDeviceNames = ["your keyboard"]
 ```
 
 ### Wayland Compositor Compatibility
@@ -263,9 +263,9 @@ Ensure your compositor supports the layer shell protocol:
 You can override the package in the module:
 
 ```nix
-programs.wayland-bongocat = {
+programs.herdcat = {
   enable = true;
-  package = pkgs.wayland-bongocat.overrideAttrs (old: {
+  package = pkgs.herdcat.overrideAttrs (old: {
     # Custom build options
     buildInputs = old.buildInputs ++ [ pkgs.someExtraPackage ];
   });
@@ -278,16 +278,16 @@ You can run multiple instances using different configurations
 
 ```bash
 # Instance 1
-bongocat --config ~/.config/bongocat/work.conf &
+herdcat --config ~/.config/herdcat/work.conf &
 
 # Instance 2
-bongocat --config ~/.config/bongocat/gaming.conf &
+herdcat --config ~/.config/herdcat/gaming.conf &
 ```
 
 ### Integration with Window Managers
 
-- **Hyprland:** `exec-once = bongocat`
-- **Sway:** `exec bongocat`
+- **Hyprland:** `exec-once = herdcat`
+- **Sway:** `exec herdcat`
 
 ## Building from Source
 
@@ -325,7 +325,7 @@ keyboard-capable devices are selected automatically. Explicit selectors never
 fall back to unrelated devices. Stable `by-id` and `by-path` aliases work.
 
 ```nix
-programs.wayland-bongocat = {
+programs.herdcat = {
   monitor = "eDP-1,HDMI-A-1";
   inputDevices = [ ];
   monitorSettings."HDMI-A-1" = {

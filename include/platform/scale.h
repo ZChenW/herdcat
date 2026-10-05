@@ -1,5 +1,5 @@
-#ifndef BONGOCAT_SCALE_H
-#define BONGOCAT_SCALE_H
+#ifndef HERDCAT_SCALE_H
+#define HERDCAT_SCALE_H
 
 #include <limits.h>
 #include <stdbool.h>

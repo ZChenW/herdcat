@@ -1,5 +1,5 @@
 import readline from "node:readline";
-import extension from "../../integrations/pi/bongocat.ts";
+import extension from "../../integrations/pi/herdcat.ts";
 const handlers = new Map();
 extension({ on: (name, handler) => handlers.set(name, handler) });
 const ctx = {
