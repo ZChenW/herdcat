@@ -1,6 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include "config/sign_options.h"
 #include "core/bongocat.h"
 #include "utils/error.h"
 
@@ -61,13 +62,28 @@ typedef struct {
   int cat_x_offset;
   int cat_y_offset;
   int cat_height;
+  int cat_draggable;
   int mirror_x;             // Reflect across Y axis (horizontal flip)
   int mirror_y;             // Reflect across X axis (vertical flip)
   int enable_antialiasing;  // Enable bilinear interpolation
   align_type_t cat_align;
 
+  // Session signs (global, including shared font and completion policy).
+  sign_style_t sign_style;
+  int sign_max;
+  sign_idle_t sign_idle;
+  char sign_font[128];
+  int sign_font_size;
+  sign_animations_t sign_animations;
+  sign_language_t sign_language;
+  sign_done_t sign_done;
+  int sign_typing_desk;
+
   // Animation timing
   int idle_frame;
+  int agent_interrupt_detect;  // Event-driven transcript monitoring
+  int agent_stale_timeout;     // Seconds; 0 disables stale session expiry
+  int agent_done_timeout;  // Seconds; 0 keeps done until the next session event
   int keypress_duration;
   int test_animation_duration;
   int test_animation_interval;
@@ -126,6 +142,8 @@ BONGOCAT_NODISCARD bongocat_error_t load_config_strict(config_t *config,
                                                        const char *path);
 void config_for_monitor(const config_t *global, const char *name,
                         config_t *effective);
+
+bool config_sign_english(const config_t *config);
 
 // Get screen width - returns 0 on failure (should be checked)
 BONGOCAT_NODISCARD int get_screen_width(void);

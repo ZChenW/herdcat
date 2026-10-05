@@ -24,10 +24,11 @@ def wait_for(condition, seconds=4):
 
 with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
     root = Path(directory)
-    env = dict(os.environ, XDG_RUNTIME_DIR=directory, WAYLAND_DISPLAY="wayland-test")
+    env = dict(os.environ, XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
+               WAYLAND_DISPLAY="wayland-test")
     config = root / "cat.conf"
     config.write_text("monitor=TEST-1,TEST-2\noverlay_opacity=0\nfps=1\n"
-                      "test_animation_interval=1\n[monitor:TEST-2]\ncat_height=60\n"
+                      "sign_done=timeout\nagent_done_timeout=1\ntest_animation_interval=1\n[monitor:TEST-2]\ncat_height=60\n"
                       "[global]\ncat_height=40\n")
     compositor_log = (root / "compositor.log").open("w+")
     app_log = (root / "app.log").open("w+")
@@ -40,6 +41,15 @@ with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
                                 capture_output=True, text=True, timeout=3)
         assert (result.returncode == 0) == success, (name, result.stdout, result.stderr)
         return result.stdout
+
+    def wire(request, success=True):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
+            control.settimeout(2)
+            control.connect(str(root / "bongocat.sock"))
+            control.sendall(request.encode() if isinstance(request, str) else request)
+            response = control.recv(512).decode()
+        assert response.startswith("0 ") == success, (request, response)
+        return response
 
     try:
         wait_for(lambda: (root / "wayland-test").exists())
@@ -56,6 +66,55 @@ with tempfile.TemporaryDirectory(prefix="bongocat-integration-") as directory:
         assert "paused=yes" in command("status")
         command("resume")
         assert "paused=no" in command("status")
+        # Exercise the real daemon parser, not just the transport callback.
+        assert "No agent sessions" in command("sessions")
+        for request in (
+            "ev TOOL working 0123456789abcdef 0",
+            "ev opencodeworking 0123456789abcdef 0",
+            "ev claude working 0123456789abcdef0 0",
+            "ev claude working 0000000000000000 0",
+            "ev claude working 0123456789abcdef -1",
+            "ev claude working 0123456789abcdef 4194305",
+            "ev claude working 0123456789abcdef 42 garbage",
+        ):
+            wire(request, success=False)
+        wire("ev claude waiting aaaaaaaaaaaaaaaa 0")
+        wire("ev codex working bbbbbbbbbbbbbbbb 0")
+        wire("ev codex working bbbbbbbbbbbbbbbb 0")
+        wire("name aaaaaaaaaaaaaaaa 项目 with spaces")
+        assert "项目 with spaces" in command("sessions")
+        wire("name eeeeeeeeeeeeeeee unknown")
+        for request in ("name aaaaaaaaaaaaaaaa ", "name aaaaaaaaaaaaaaa name",
+                        "name aaaaaaaaaaaaaaaag name", "name aaaaaaaaaaaaaaaa " + "x" * 42,
+                        b"name aaaaaaaaaaaaaaaa bad\xff", "name aaaaaaaaaaaaaaaa bad\nname"):
+            wire(request, success=False)
+        assert "agent=waiting sessions=2" in command("status")
+        wire("ev claude done aaaaaaaaaaaaaaaa 0")
+        assert "agent=done" in command("status")
+        command("pause")
+        wait_for(lambda: "agent=working" in command("status"))
+        command("resume")
+        wire("state waiting")
+        assert "sessions=3" in command("status")
+        wire("state idle")
+        assert "sessions=2" in command("status")
+        wire("ev claude end aaaaaaaaaaaaaaaa 0")
+        wire("ev codex end bbbbbbbbbbbbbbbb 0")
+        assert "No agent sessions" in command("sessions")
+        # Both logical sessions share one process watch and die together.
+        agent = subprocess.Popen(["sleep", "30"])
+        try:
+            wire(f"ev claude waiting cccccccccccccccc {agent.pid}")
+            wire(f"ev codex working dddddddddddddddd {agent.pid}")
+            command("reload")
+            assert "sessions=2" in command("status")
+            agent.terminate()
+            agent.wait(timeout=3)
+            wait_for(lambda: "sessions=0" in command("status"))
+        finally:
+            if agent.poll() is None:
+                agent.terminate()
+                agent.wait(timeout=3)
         # Invalid, missing, and unreadable-as-config reloads are transactional.
         config.write_text("fps=invalid\n")
         command("reload", success=False)

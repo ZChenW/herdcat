@@ -3,13 +3,14 @@
 The renderer owns one Wayland connection and one event loop for every overlay.
 One input helper is executed with `posix_spawn()` through `/proc/self/exe`.
 There are no animation or configuration-watcher threads and no per-monitor
-processes. Runtime dependencies remain C23, Linux evdev and Wayland client.
+processes. Runtime dependencies are C23, Linux evdev, Wayland client, FreeType and
+Fontconfig. The text libraries are an intentional dependency of this fork.
 
 ## Ownership and event flow
 
 The renderer polls Wayland, the private input socket, directory inotify,
-authenticated control connections and a signal eventfd. Timeouts are the
-nearest animation, debounce, helper-recovery, control or Hyprland deadline.
+authenticated control connections, agent process epoll and a signal eventfd. Timeouts are the
+nearest animation, debounce, helper-recovery, control, agent session or Hyprland deadline.
 Idle overlays have no animation timeout; sleeping overlays wait for meaningful
 deadlines. Animation redraws respect live FPS changes, including `fps=1`.
 Wayland read preparation is cancelled whenever a poll wakeup has no display
@@ -45,6 +46,33 @@ exit status and termination/reaping on failure. It does not block Wayland.
 
 ## Configuration and control
 
+The first Wayland seat supplies `wl_pointer` events only; no keyboard seat is
+requested. Pointer enter selects an overlay. When configured, visible and
+draggable, its input region is the cat rectangle plus visible sign plates and
+the expanded hover pad; otherwise it is empty. Off uses the cat rectangle only.
+Region and pixels are committed together after configure, scale, reload,
+visibility/fullscreen and horizontal-position changes. Pointer capabilities,
+seat removal and overlay teardown share cleanup paths. Optional cursor-shape
+objects follow the pointer lifetime and add no library dependency.
+
+After four logical pixels of left-button motion, x changes the cat's in-buffer
+position and marks a redraw. Y changes the layer margin, with at most one
+margin submission per surface frame callback. During the implicit button
+grab the compositor reports coordinates against the surface position at press,
+so they do not shift as the margin moves the surface; the margin is computed
+absolutely from the press-time margin and grab point (`drag_margin_follow`),
+and the callback submits any travel that arrived while it was pending.
+Horizontal motion continues
+while waiting for a callback. Release, leave or pointer loss saves the position
+and destroys outstanding callbacks. Pause preserves pointer interaction.
+
+`platform/drag.c` owns geometry and the bounded per-output position file in the
+XDG state directory. Positions use logical pixels and convert to physical pixels
+only for rendering. The directory is mode 0700 and the atomic replacement file
+mode 0600; descriptor-based opens reject symlinks and non-regular files. Reload,
+scale/output changes and reconnection clamp saved positions. `reset-position`
+removes the state file and resets all overlays without rewriting configuration.
+
 `config/config.c` parses and validates without input access. Flat files remain
 supported. `[monitor:NAME]` overrides appearance; `[global]` returns to global
 settings. Overrides are applied after all global settings, independent of
@@ -63,7 +91,33 @@ socket, SO_PEERCRED same-UID authentication, bounded messages and deadlines.
 Toggle requests a stop through the socket; it never trusts a stale PID to
 signal an unrelated process group.
 
+## Agent sessions and hooks
+
+`core/agent_sessions.c` owns a fixed 32-slot table keyed by the FNV-1a hash of
+agent and session ID; key zero is the manual session. The table resolves waiting
+before done, working and idle. It owns all done/stale deadlines and unread completion; animation only
+receives the resolved state and redraws when it changes. With signs off, display priority is scheduled sleep, held paws, resolved agent
+artwork, idle sleep, then idle frame. Enabled signs suppress whole-cat agent
+artwork, retaining paw and sleep animation.
+Pause and hidden outputs do not suspend session expiry. Reload preserves sessions.
+
+`platform/agent_watch.c` deduplicates process pidfds under one epoll fd. The main
+loop removes sessions for exited processes, expires deadlines and resolves state
+before processing controls. END, eviction and PID replacement prune watches
+only when no remaining session references them. Unavailable pidfds fall back to
+stale expiry; watched waiting sessions do not expire. There is no polling worker.
+
+`core/agent_hook.c` streams stdin into a bounded JSON scanner, maps lifecycle
+events and sends a short `ev` request through the existing authenticated control
+socket. It never emits stdout and has a two-second alarm. The caller discovers
+the agent PID by walking at most eight process ancestors, skipping shell wrappers.
+`--state` controls the reserved manual session; `--sessions` lists the table.
+
 ## Input and privilege boundaries
+
+Dragging adds compositor-delivered `wl_pointer` input in the unprivileged
+renderer. Keyboard animation continues to use the existing evdev helper;
+dragging never requests `wl_keyboard` or changes device permissions.
 
 The renderer drops real, effective and saved setgid privilege before loading
 configuration. Executing the installed binary reacquires its setgid group
@@ -91,3 +145,127 @@ small Wayland server fixture (test-only libwayland-server) for multiple outputs,
 scale/resolution changes, disconnect/reconnect, release and queue pressure.
 `make test-sanitize` checks unit suites with ASan/UBSan; `make debug` also
 instruments the real runtime. Release retains PIE, RELRO and stack hardening.
+
+## Session window focus
+
+`platform/focus.c` owns one asynchronous niri CLI job at a time. Window query
+and focus share a one-second deadline, bounded output, checked exit status,
+and cleanup/reaping. Its descriptor and deadline join the renderer poll loop.
+`focus_json.c` extracts window IDs/PIDs without interpreting titles as fields.
+The nearest matching process ancestor (up to 16) supplies the terminal window.
+`--focus` accepts a full session key or a unique eight-character prefix; a
+successful command response means queued, with the job result consumed later.
+The backend is unavailable outside niri. No shell commands are constructed.
+
+## Session sign rendering and focus tracking
+
+`graphics/signs.c` is a pure model: supplied time, selected session views,
+configuration and pointer state produce shared shape/text/hit lists for fan and
+post. `graphics/sign_draw.c` rasterizes NanoSVG shapes into premultiplied BGRA
+with a bounded bitmap cache. `graphics/text.c` uses FreeType grayscale glyphs,
+a 512-entry glyph LRU, bounded faces and Fontconfig per-codepoint fallback.
+Scale changes clear glyph/bitmap caches; a font reload clears both. There is no
+HarfBuzz shaping (no RTL, ligatures or combining-character layout).
+
+`platform/overlay_signs.c` owns per-output models, hover and click state, the
+150 ms close delay, surface clearance, damage unions and typing desk. Wayland
+only consumes its frame, input rectangles and next wake time. Transitions ask
+for frame callbacks; settled working dots wake every 180 ms and waiting loops
+every 33 ms. Reduced disables loops; off makes transitions instantaneous.
+Visible elapsed-minute labels retain a minute deadline. A full-motion desk
+caret has a 500 ms deadline only while visible. No sessions, hover or typing
+means no sign-related periodic wakes. Hidden overlays schedule no sign frames.
+Existing input hotplug scanning is independent and can be disabled with
+hotplug_scan_interval=0 when measuring total idle wakes.
+
+Sign configuration is global. Reload selects fan/post/off and rebuilds surface
+geometry through normal reconciliation. It retains sessions, applies the idle
+policy and limit, changes font/language/animation immediately, and releases
+existing unread completions onto timers when switching sticky to timeout.
+The old BONGOCAT_SIGN_STYLE environment override is removed. Off restores the
+original cat geometry and agent frames; completion policy remains independent.
+
+`platform/focus_watch.c` reads niri's asynchronous EventStream into a bounded
+window/PID map, including initial is_focused state. Its fd joins agent_watch's
+epoll, preserving six basic fds plus the control socket in the seven-slot poll
+budget. Ancestor matches are cached and invalidated on window/PID changes.
+Connection loss backs off; absent niri disables the desk and treats completions
+as unread. Successful focus observations (or sign clicks) acknowledge unread
+completion. Submissions and session removal also clear unread.
+
+Paw activity plus a focused session enables a 2.5-second typing desk, retaining
+that session's sign slot. Focus loss, working submission, disabling the option
+or hiding dismisses it. The board never joins the pointer input region. Only
+presence of paw activity is used, never key contents. The confirmed desk top is
+68 design pixels; drag margin calculation remains absolute from button press.
+
+## Switch card, font panel and stored choices
+
+`graphics/signs.c` also lays out the switch card (style, language, font row)
+with the sign model's shapes, texts and hit rectangles. `platform/overlay_signs.c`
+handles the right button, the 800 ms leave and 6 s idle timers, the paw tap
+and the half-second debounce before a font stepped by wheel is saved.
+
+`graphics/font_panel.c` is the panel's pure model and drawing: two columns,
+ten visible rows, a three-way filter, hover and selection. Every box has a
+fixed size; only glyphs change with the face. `platform/font_panel.c` owns a
+separate layer surface that exists only while the panel is open, its two
+buffers, pointer handling and placement beside the card inside the output.
+The always-present overlay surface is not made taller for it. Catalog order
+is rebuilt each time the panel opens, with the four recent families first,
+and never while it is open so cells do not move under the pointer.
+
+While the panel is open (browsing) the overlay hides the card, raises every
+sign, and applies the hovered family as the main face without saving. The
+chosen family is held separately and restored when the pointer leaves the
+cell. The panel draws its own words in the chosen family for the same reason.
+The leave timer does not start until the pointer has reached the panel, since
+the card is no longer under it. When the panel closes the menu closes.
+
+`graphics/text.c` remembers which face draws each (family, code point,
+weight) and asks a family's own face before asking Fontconfig. Without this
+every glyph cost a Fontconfig lookup on every draw: a page of font names took
+about 940 ms per redraw and a CJK label about 18 ms per frame. The table is
+dropped when a face is evicted, because eviction renumbers faces.
+
+`platform/prefs.c` stores menu choices as tab-separated
+`key, choice, config value at the time` lines and still reads the earlier
+space-separated form. A record applies only while the config value matches
+its third field. `fonts-recent` is a plain list beside it. Both are written
+through a temporary file and rename, mode 0600, opened with O_NOFOLLOW.
+
+## Transcript interruption detection
+
+`core/agent_adapters.c` declares interrupt/error sources (hook, transcript or
+none). Claude uses transcript interruptions; Codex uses Interrupt hooks plus
+transcript abort/error fallback. `core/agent_hook.c` forwards only metadata-event
+paths in `path <key16hex> <absolute-path>` requests, after JSON unescaping with a
+1024-byte decoded limit. The authenticated control receive buffer is 1280 bytes;
+its existing length guard rejects packets of 1280 bytes or more.
+
+`platform/transcript_watch.c` owns fixed session slots, recording descriptors,
+one nonblocking inotify and a continuation eventfd. Both event fds join
+agent_watch's existing epoll alongside focus_watch, with main dispatching tokens;
+the six basic fds and seven-slot external budget stay unchanged. Submissions
+reset offsets to EOF. Only working/waiting sessions retain watches, and ending,
+evicting, disabling or completing sessions releases them. Re-enabling starts at
+EOF. No timer, worker thread or periodic wake is added. Each wake reads at most
+256 KiB total, with round-robin continuations through eventfd only while unread
+bytes remain. The last disarm closes both notification fds.
+
+Path opening walks each component from / using openat/O_NOFOLLOW, rejects ..,
+confines the path to HOME, and checks regular-file type and UID through fstat.
+Inotify attaches to the opened inode via /proc/self/fd. Replacement/truncation or
+read errors fail closed until a new path handoff, leaving timeout fallback.
+
+`core/agent_transcript.c` validates each bounded complete JSON line, then examines
+structural slices without a DOM or allocation. Claude requires top-level user,
+message.role=user and a single text block with the interruption prefix. A
+one-second post-submission guard reduces literal-prompt false positives. Codex
+requires event_msg with turn_aborted or task_complete plus an error object;
+normal completion is ignored. The idempotent session interrupt operation only
+changes working/waiting to idle, preserving unread done and configured timers.
+Neither paths nor transcript contents/error messages are printed by the monitor;
+contents are never persisted or transmitted. These private formats may change:
+unsupported input silently falls back to existing stale deadlines. No new
+runtime dependency is required.

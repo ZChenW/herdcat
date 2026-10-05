@@ -5,6 +5,17 @@
 
 set -euo pipefail
 
+ASSETS=(
+    bongo-both-up.svg
+    bongo-left-down.svg
+    bongo-right-down.svg
+    bongo-both-down.svg
+    bongo-sleeping.svg
+    bongo-agent-working.svg
+    bongo-agent-waiting.svg
+    bongo-agent-done.svg
+)
+
 if ! command -v xxd >/dev/null 2>&1; then
     echo "ERROR: xxd is required but not found." >&2
     echo "Install it with your package manager (e.g. 'pacman -S xxd', 'apt install xxd', 'dnf install vim-common')." >&2
@@ -37,23 +48,14 @@ cat > "$OUTPUT_FILE" << 'EOF'
 #include <stddef.h>
 
 // Embedded SVG asset data
-extern const unsigned char bongo_both_up_svg[];
-extern const size_t bongo_both_up_svg_size;
-
-extern const unsigned char bongo_left_down_svg[];
-extern const size_t bongo_left_down_svg_size;
-
-extern const unsigned char bongo_right_down_svg[];
-extern const size_t bongo_right_down_svg_size;
-
-extern const unsigned char bongo_both_down_svg[];
-extern const size_t bongo_both_down_svg_size;
-
-extern const unsigned char bongo_sleeping_svg[];
-extern const size_t bongo_sleeping_svg_size;
-
-#endif // EMBEDDED_ASSETS_H
 EOF
+for asset in "${ASSETS[@]}"; do
+    c_name=${asset%.svg}
+    c_name=${c_name//[^a-zA-Z0-9]/_}_svg
+    printf 'extern const unsigned char %s[];\n' "$c_name" >> "$OUTPUT_FILE"
+    printf 'extern const size_t %s_size;\n\n' "$c_name" >> "$OUTPUT_FILE"
+done
+echo '#endif  // EMBEDDED_ASSETS_H' >> "$OUTPUT_FILE"
 
 # Create source file with embedded data
 cat > "$OUTPUT_C_FILE" << 'EOF'
@@ -66,7 +68,7 @@ TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 # Convert each SVG to C array
-for asset in "bongo-both-up.svg" "bongo-left-down.svg" "bongo-right-down.svg" "bongo-both-down.svg" "bongo-sleeping.svg"; do
+for asset in "${ASSETS[@]}"; do
     if [ -f "$ASSETS_DIR/$asset" ]; then
         echo "Embedding $asset..."
 
@@ -81,7 +83,8 @@ for asset in "bongo-both-up.svg" "bongo-left-down.svg" "bongo-right-down.svg" "b
         c_name=${c_name//[^a-zA-Z0-9]/_}_svg
 
         # Generate C array using xxd
-        xxd -i "$tmp_file" | sed "s/unsigned char.*\[\]/const unsigned char ${c_name}[]/" >> "$OUTPUT_C_FILE"
+        xxd -i "$tmp_file" | sed "s/unsigned char.*\[\]/const unsigned char ${c_name}[]/" \
+            | sed '/_len = /d' >> "$OUTPUT_C_FILE"
         echo "" >> "$OUTPUT_C_FILE"
 
         # Add size variable

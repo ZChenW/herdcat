@@ -1,6 +1,7 @@
 # Compiler
 .DEFAULT_GOAL := all
 CC = gcc
+PREFIX ?= /usr/local
 
 # Build type (debug or release)
 BUILD_TYPE ?= release
@@ -12,6 +13,9 @@ BASE_CFLAGS += -Wmissing-prototypes -Wold-style-definition -Wredundant-decls
 BASE_CFLAGS += -Wnested-externs -Wmissing-include-dirs -Wlogical-op
 BASE_CFLAGS += -Wjump-misses-init -Wdouble-promotion -Wshadow
 BASE_CFLAGS += -fstack-protector-strong
+TEXT_CFLAGS := $(shell pkg-config --cflags freetype2 fontconfig)
+TEXT_LIBS := $(shell pkg-config --libs freetype2 fontconfig)
+BASE_CFLAGS += $(TEXT_CFLAGS)
 
 # Debug flags
 DEBUG_CFLAGS = $(BASE_CFLAGS) -g3 -O0 -DDEBUG -fsanitize=address -fsanitize=undefined
@@ -28,6 +32,8 @@ else
     CFLAGS = $(RELEASE_CFLAGS)
     LDFLAGS = -lwayland-client -lm -lpthread -flto -pie -Wl,-z,relro,-z,now -Wl,-z,noexecstack
 endif
+
+LDFLAGS += $(TEXT_LIBS)
 
 # Directories
 SRCDIR = src
@@ -46,8 +52,8 @@ EMBEDDED_ASSETS_H = $(INCDIR)/graphics/embedded_assets.h
 EMBEDDED_ASSETS_C = $(SRCDIR)/graphics/embedded_assets.c
 
 # Protocol files
-C_PROTOCOL_SRC = $(PROTOCOLDIR)/zwlr-layer-shell-v1-protocol.c $(PROTOCOLDIR)/xdg-shell-protocol.c $(PROTOCOLDIR)/wlr-foreign-toplevel-management-v1-protocol.c $(PROTOCOLDIR)/xdg-output-unstable-v1-protocol.c $(PROTOCOLDIR)/fractional-scale-v1-protocol.c $(PROTOCOLDIR)/viewporter-protocol.c
-H_PROTOCOL_HDR = $(PROTOCOLDIR)/zwlr-layer-shell-v1-client-protocol.h $(PROTOCOLDIR)/wlr-foreign-toplevel-management-v1-client-protocol.h $(PROTOCOLDIR)/xdg-output-unstable-v1-client-protocol.h $(PROTOCOLDIR)/fractional-scale-v1-client-protocol.h $(PROTOCOLDIR)/viewporter-client-protocol.h
+C_PROTOCOL_SRC = $(PROTOCOLDIR)/zwlr-layer-shell-v1-protocol.c $(PROTOCOLDIR)/xdg-shell-protocol.c $(PROTOCOLDIR)/wlr-foreign-toplevel-management-v1-protocol.c $(PROTOCOLDIR)/xdg-output-unstable-v1-protocol.c $(PROTOCOLDIR)/fractional-scale-v1-protocol.c $(PROTOCOLDIR)/viewporter-protocol.c $(PROTOCOLDIR)/cursor-shape-v1-protocol.c $(PROTOCOLDIR)/tablet-unstable-v2-protocol.c
+H_PROTOCOL_HDR = $(PROTOCOLDIR)/zwlr-layer-shell-v1-client-protocol.h $(PROTOCOLDIR)/wlr-foreign-toplevel-management-v1-client-protocol.h $(PROTOCOLDIR)/xdg-output-unstable-v1-client-protocol.h $(PROTOCOLDIR)/fractional-scale-v1-client-protocol.h $(PROTOCOLDIR)/viewporter-client-protocol.h $(PROTOCOLDIR)/cursor-shape-v1-client-protocol.h $(PROTOCOLDIR)/tablet-unstable-v2-client-protocol.h
 PROTOCOL_OBJECTS = $(C_PROTOCOL_SRC:$(PROTOCOLDIR)/%.c=$(OBJDIR)/%.o)
 
 # Target executable
@@ -109,6 +115,10 @@ protocols:
 	wayland-scanner private-code $(PROTOCOLDIR)/fractional-scale-v1.xml $(PROTOCOLDIR)/fractional-scale-v1-protocol.c
 	wayland-scanner client-header $(PROTOCOLDIR)/viewporter.xml $(PROTOCOLDIR)/viewporter-client-protocol.h
 	wayland-scanner private-code $(PROTOCOLDIR)/viewporter.xml $(PROTOCOLDIR)/viewporter-protocol.c
+	wayland-scanner client-header $(PROTOCOLDIR)/cursor-shape-v1.xml $(PROTOCOLDIR)/cursor-shape-v1-client-protocol.h
+	wayland-scanner private-code $(PROTOCOLDIR)/cursor-shape-v1.xml $(PROTOCOLDIR)/cursor-shape-v1-protocol.c
+	wayland-scanner client-header $(PROTOCOLDIR)/tablet-unstable-v2.xml $(PROTOCOLDIR)/tablet-unstable-v2-client-protocol.h
+	wayland-scanner private-code $(PROTOCOLDIR)/tablet-unstable-v2.xml $(PROTOCOLDIR)/tablet-unstable-v2-protocol.c
 
 clean:
 	rm -rf $(BUILDDIR)
@@ -125,15 +135,17 @@ release:
 	$(MAKE) BUILD_TYPE=release
 
 install: $(TARGET)
-	install -D $(TARGET) $(DESTDIR)/usr/local/bin/bongocat
-	install -D bongocat.conf.example $(DESTDIR)/usr/local/share/bongocat/bongocat.conf.example
-	install -D scripts/find_input_devices.sh $(DESTDIR)/usr/local/bin/bongocat-find-devices
-	install -D man/bongocat.1 $(DESTDIR)/usr/local/share/man/man1/bongocat.1
+	install -Dm755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/bongocat
+	install -Dm644 bongocat.conf.example $(DESTDIR)$(PREFIX)/share/bongocat/bongocat.conf.example
+	install -Dm755 scripts/find_input_devices.sh $(DESTDIR)$(PREFIX)/bin/bongocat-find-devices
+	install -Dm644 man/bongocat.1 $(DESTDIR)$(PREFIX)/share/man/man1/bongocat.1
 
 uninstall:
-	rm -f $(DESTDIR)/usr/local/bin/bongocat
-	rm -f $(DESTDIR)/usr/local/bin/bongocat-find-devices
-	rm -rf $(DESTDIR)/usr/local/share/bongocat
+	rm -f $(DESTDIR)$(PREFIX)/bin/bongocat
+	rm -f $(DESTDIR)$(PREFIX)/bin/bongocat-find-devices
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/bongocat.1
+	rm -f $(DESTDIR)$(PREFIX)/share/bongocat/bongocat.conf.example
+	-rmdir $(DESTDIR)$(PREFIX)/share/bongocat
 
 # Memory check (requires valgrind)
 memcheck: debug
@@ -217,7 +229,55 @@ $(BUILDDIR)/test_fullscreen_state: $(TESTDIR)/test_fullscreen_state.c | $(OBJDIR
 $(BUILDDIR)/test_runtime: $(TESTDIR)/test_runtime.c src/core/control.c src/config/config_watcher.c $(CONFIG_TEST_DEPS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-TEST_BINARIES = $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state
+$(BUILDDIR)/test_focus: tests/test_focus.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_focus_watch: tests/test_focus_watch.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_text: tests/test_text.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+
+$(BUILDDIR)/test_signs: tests/test_signs.c src/graphics/signs.c src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_sign_draw: tests/test_sign_draw.c src/graphics/sign_draw.c src/graphics/signs.c src/core/agent_adapters.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+
+$(BUILDDIR)/test_font_panel: tests/test_font_panel.c src/graphics/font_panel.c src/graphics/sign_draw.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+
+$(BUILDDIR)/test_overlay_signs: tests/test_overlay_signs.c src/config/config.c src/platform/overlay_signs.c src/graphics/signs.c src/graphics/text.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+
+TEST_BINARIES = $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
+
+$(BUILDDIR)/test_drag: tests/test_drag.c src/platform/drag.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_prefs: tests/test_prefs.c src/platform/prefs.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_hook: tests/test_agent_hook.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_watch: tests/test_agent_watch.c src/platform/agent_watch.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_sessions: tests/test_agent_sessions.c src/core/agent_sessions.c src/core/agent_state.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_session_store: tests/test_session_store.c src/platform/session_store.c src/platform/agent_terminal.c src/core/agent_sessions.c src/core/agent_state.c src/core/agent_transcript.c src/platform/transcript_watch.c src/platform/agent_watch.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_discover: tests/test_agent_discover.c src/platform/agent_discover.c src/platform/agent_terminal.c src/core/agent_sessions.c src/core/agent_state.c src/core/agent_adapters.c src/core/agent_hook.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_terminal: tests/test_agent_terminal.c src/platform/agent_terminal.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_state: tests/test_agent_state.c src/core/agent_state.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(TEST_BINARIES): $(PROJECT_HEADERS) tests/test_helpers.h
 
@@ -228,6 +288,9 @@ test: $(TEST_BINARIES)
 		echo "--- $$(basename $$t) ---"; \
 		$$t || failures=$$((failures + 1)); \
 	done; \
+	echo "--- test_kitty_watcher.py ---"; \
+	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_kitty_watcher.py || \
+		failures=$$((failures + 1)); \
 	if [ $$failures -gt 0 ]; then \
 		echo "$$failures test suite(s) failed"; \
 		exit 1; \
@@ -250,18 +313,32 @@ compositor-test-build:
 	wayland-scanner server-header protocols/wlr-foreign-toplevel-management-unstable-v1.xml $(BUILDDIR)/compositor/fullscreen-server.h
 	$(CC) -std=c2x -g -Wall -Wextra -I$(BUILDDIR)/compositor tests/test_compositor.c protocols/zwlr-layer-shell-v1-protocol.c protocols/xdg-shell-protocol.c protocols/viewporter-protocol.c protocols/fractional-scale-v1-protocol.c protocols/wlr-foreign-toplevel-management-v1-protocol.c -o $(BUILDDIR)/compositor/server -lwayland-server
 
-$(BUILDDIR)/test_animation: tests/test_animation.c src/graphics/animation.c src/graphics/embedded_assets.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_animation: tests/test_animation.c src/core/agent_state.c src/graphics/animation.c src/graphics/embedded_assets.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(BUILDDIR)/test_hyprland: tests/test_hyprland.c src/platform/hyprland.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 .PHONY: test-runtime
-test-runtime: all compositor-test-build
+test-runtime: all compositor-test-build $(BUILDDIR)/test_focus
 	python3 scripts/test_runtime.py
+	python3 scripts/test_hook_client.py
+	python3 scripts/test_transcript_runtime.py
+	python3 scripts/test_focus_client.py
+	python3 scripts/test_sign_options.py
+	python3 scripts/test_drag_runtime.py --sign-style fan
+	python3 scripts/test_drag_runtime.py --sign-style post
+	python3 scripts/test_drag_runtime.py --sign-style off
+	python3 scripts/test_font_panel_runtime.py
 
 $(BUILDDIR)/test_input: tests/test_input.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=ioctl,--wrap=stat
 
 $(BUILDDIR)/test_nanosvg: tests/test_nanosvg.c lib/nanosvg.h lib/nanosvgrast.h tests/test_helpers.h | $(OBJDIR)
 	$(CC) -std=c2x -Ilib -Itests $(filter -fsanitize=%,$(TEST_CFLAGS)) $< -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_agent_adapters: tests/test_agent_adapters.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/test_transcript: tests/test_transcript.c src/core/agent_transcript.c src/platform/transcript_watch.c src/platform/agent_watch.c src/core/agent_hook.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_state.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)

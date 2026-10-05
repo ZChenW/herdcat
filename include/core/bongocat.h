@@ -23,7 +23,7 @@
 // VERSION
 // =============================================================================
 
-#define BONGOCAT_VERSION "2.0.2"
+#define BONGOCAT_VERSION "2.0.2-agent"
 
 // =============================================================================
 // COMPILE-TIME CONSTANTS
@@ -36,16 +36,20 @@
 #define MAX_TOPLEVELS        512
 
 // Frame constants
-#define NUM_FRAMES       5
+#define NUM_FRAMES       8
 #define CAT_IMAGE_WIDTH  500
 #define CAT_IMAGE_HEIGHT 277
 
 // Frame indices
-#define BONGOCAT_FRAME_BOTH_UP    0
-#define BONGOCAT_FRAME_LEFT_DOWN  1
-#define BONGOCAT_FRAME_RIGHT_DOWN 2
-#define BONGOCAT_FRAME_BOTH_DOWN  3
-#define BONGOCAT_FRAME_SLEEPING   4
+#define BONGOCAT_FRAME_BOTH_UP       0
+#define BONGOCAT_FRAME_LEFT_DOWN     1
+#define BONGOCAT_FRAME_RIGHT_DOWN    2
+#define BONGOCAT_FRAME_BOTH_DOWN     3
+#define BONGOCAT_FRAME_SLEEPING      4
+#define BONGOCAT_FRAME_AGENT_WORKING 5
+#define BONGOCAT_FRAME_AGENT_WAITING 6
+#define BONGOCAT_FRAME_AGENT_DONE    7
+#define BONGOCAT_FRAME_LAST_USER     BONGOCAT_FRAME_SLEEPING
 
 // Inotify buffer sizing
 #define INOTIFY_EVENT_SIZE (sizeof(struct inotify_event))

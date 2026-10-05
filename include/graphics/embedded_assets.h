@@ -19,4 +19,13 @@ extern const size_t bongo_both_down_svg_size;
 extern const unsigned char bongo_sleeping_svg[];
 extern const size_t bongo_sleeping_svg_size;
 
+extern const unsigned char bongo_agent_working_svg[];
+extern const size_t bongo_agent_working_svg_size;
+
+extern const unsigned char bongo_agent_waiting_svg[];
+extern const size_t bongo_agent_waiting_svg_size;
+
+extern const unsigned char bongo_agent_done_svg[];
+extern const size_t bongo_agent_done_svg_size;
+
 #endif  // EMBEDDED_ASSETS_H

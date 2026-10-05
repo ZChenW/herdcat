@@ -88,6 +88,13 @@ static void test_defaults(void) {
   TEST_ASSERT_EQ(config.cat_y_offset, 10, "default cat_y_offset is 10");
   TEST_ASSERT_EQ(config.keypress_duration, 100,
                  "default keypress_duration is 100");
+  TEST_ASSERT_EQ(config.agent_stale_timeout, 600,
+                 "default agent_stale_timeout is 600 seconds");
+  TEST_ASSERT_EQ(config.agent_done_timeout, 5,
+                 "default agent_done_timeout is 5 seconds");
+  for (int i = 0; i < NUM_FRAMES; i++) {
+    TEST_ASSERT(config.asset_paths[i] != NULL, "all frames have an asset path");
+  }
 
   config_cleanup_full(&config);
   unlink(path);
@@ -303,6 +310,206 @@ static void test_comments_and_whitespace(void) {
   unlink(path);
 }
 
+static void test_agent_config(void) {
+  char path[] = "/tmp/bongocat_test_XXXXXX";
+  int fd = mkstemp(path);
+  assert(fd >= 0);
+  close(fd);
+  const int values[] = {0, 1, 3600, -1, 3601};
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+    char text[64];
+    snprintf(text, sizeof(text), "agent_done_timeout=%d\n", values[i]);
+    write_temp_config(path, text);
+    config_t config = {0};
+    TEST_ASSERT_EQ(load_config(&config, path), BONGOCAT_SUCCESS,
+                   "startup loads agent timeout");
+    bool valid = values[i] >= 0 && values[i] <= 3600;
+    TEST_ASSERT_EQ(config.agent_done_timeout, valid ? values[i] : 5,
+                   "out-of-range timeout resets to default");
+    config_cleanup_full(&config);
+    TEST_ASSERT_EQ(load_config_strict(&config, path),
+                   valid ? BONGOCAT_SUCCESS : BONGOCAT_ERROR_CONFIG,
+                   "strict loading rejects invalid timeout");
+    config_cleanup_full(&config);
+  }
+  const int stale_values[] = {0, 1, 600, 3601, 86400, -1, 86401};
+  for (size_t i = 0; i < sizeof(stale_values) / sizeof(stale_values[0]); i++) {
+    char text[64];
+    snprintf(text, sizeof(text), "agent_stale_timeout=%d\n", stale_values[i]);
+    write_temp_config(path, text);
+    config_t config = {0};
+    bool valid = stale_values[i] >= 0 && stale_values[i] <= 86400;
+    TEST_ASSERT_EQ(load_config(&config, path), BONGOCAT_SUCCESS,
+                   "startup loads stale timeout");
+    TEST_ASSERT_EQ(config.agent_stale_timeout, valid ? stale_values[i] : 600,
+                   "invalid stale timeout resets to default");
+    config_cleanup_full(&config);
+    TEST_ASSERT_EQ(load_config_strict(&config, path),
+                   valid ? BONGOCAT_SUCCESS : BONGOCAT_ERROR_CONFIG,
+                   "strict loading rejects invalid stale timeout");
+    config_cleanup_full(&config);
+  }
+  for (int frame = BONGOCAT_FRAME_SLEEPING; frame < NUM_FRAMES; frame++) {
+    char text[32];
+    snprintf(text, sizeof(text), "idle_frame=%d\n", frame);
+    write_temp_config(path, text);
+    config_t config = {0};
+    TEST_ASSERT_EQ(load_config(&config, path), BONGOCAT_SUCCESS,
+                   "startup validates idle frame");
+    TEST_ASSERT_EQ(config.idle_frame,
+                   frame <= BONGOCAT_FRAME_LAST_USER ? frame : 0,
+                   "agent frames cannot be used as idle_frame");
+    config_cleanup_full(&config);
+  }
+  write_temp_config(path, "[monitor:TEST-1]\nagent_done_timeout=10\n");
+  config_t config = {0};
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+                 "agent timing must remain global");
+  config_cleanup_full(&config);
+  write_temp_config(path, "[monitor:TEST-1]\nagent_stale_timeout=10\n");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+                 "stale timing must remain global");
+  config_cleanup_full(&config);
+  unlink(path);
+}
+
+static void test_drag_config(void) {
+  char path[] = "/tmp/bongocat-drag-config-XXXXXX";
+  int fd = mkstemp(path);
+  TEST_ASSERT(fd >= 0, "temporary config created");
+  close(fd);
+  config_t config = {0}, effective;
+  write_temp_config(path, "");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+                 "default drag config loads");
+  TEST_ASSERT_EQ(config.cat_draggable, 1, "dragging defaults to enabled");
+  config_cleanup_full(&config);
+  write_temp_config(path,
+                    "cat_draggable=0\n[monitor:TEST-1]\ncat_draggable=1\n");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+                 "drag monitor override loads");
+  config_for_monitor(&config, "TEST-1", &effective);
+  TEST_ASSERT_EQ(effective.cat_draggable, 1, "monitor can enable dragging");
+  config_for_monitor(&config, "TEST-2", &effective);
+  TEST_ASSERT_EQ(effective.cat_draggable, 0, "other monitor remains disabled");
+  config_cleanup_full(&config);
+  write_temp_config(path, "cat_draggable=2\n");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+                 "drag flag rejects non-boolean values");
+  config_cleanup_full(&config);
+  unlink(path);
+}
+
+static void test_sign_config(void) {
+  char path[] = "/tmp/bongocat-sign-config-XXXXXX";
+  int fd = mkstemp(path);
+  TEST_ASSERT(fd >= 0, "temporary sign config");
+  close(fd);
+  config_t config = {0};
+  write_temp_config(path, "");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+                 "sign defaults load");
+  TEST_ASSERT(config.sign_style == SIGN_STYLE_FAN && config.sign_max == 5 &&
+                  config.sign_idle == SIGN_IDLE_HOVER && !config.sign_font[0] &&
+                  config.sign_font_size == 13 &&
+                  config.sign_animations == SIGN_ANIM_FULL &&
+                  config.sign_language == SIGN_LANGUAGE_AUTO &&
+                  config.sign_done == SIGN_DONE_STICKY &&
+                  config.sign_typing_desk,
+              "all nine sign defaults");
+  config_cleanup_full(&config);
+  const char *valid[] = {
+      "sign_style=fan",       "sign_style=post",
+      "sign_style=off",       "sign_idle=hover",
+      "sign_idle=always",     "sign_idle=never",
+      "sign_animations=full", "sign_animations=reduced",
+      "sign_animations=off",  "sign_language=auto",
+      "sign_language=en",     "sign_language=zh",
+      "sign_done=sticky",     "sign_done=timeout",
+      "sign_typing_desk=0",   "sign_typing_desk=1",
+      "sign_font=",           "sign_font=Noto Sans",
+  };
+  for (size_t i = 0; i < sizeof(valid) / sizeof(valid[0]); i++) {
+    write_temp_config(path, valid[i]);
+    TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+                   "every sign enum and font value loads");
+    config_cleanup_full(&config);
+  }
+  for (int max = 1; max <= 5; max++) {
+    for (int size = 10; size <= 20; size++) {
+      char line[64];
+      snprintf(line, sizeof(line), "sign_max=%d\nsign_font_size=%d\n", max,
+               size);
+      write_temp_config(path, line);
+      TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_SUCCESS,
+                     "all numeric sign values load");
+      TEST_ASSERT(config.sign_max == max && config.sign_font_size == size,
+                  "numeric sign values preserved");
+      config_cleanup_full(&config);
+    }
+  }
+  const char *invalid[] = {
+      "sign_style=unknown",
+      "sign_idle=unknown",
+      "sign_animations=unknown",
+      "sign_language=unknown",
+      "sign_done=unknown",
+      "sign_typing_desk=2",
+      "sign_typing_desk=-1",
+      "sign_max=0",
+      "sign_max=6",
+      "sign_max=1x",
+      "sign_font_size=9",
+      "sign_font_size=21",
+      "sign_font_size=13.5",
+      "[monitor:TEST-1]\nsign_style=post",
+      "sign_font=bad\tfont",
+  };
+  for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+    write_temp_config(path, invalid[i]);
+    TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+                   "invalid sign values rejected");
+    config_cleanup_full(&config);
+  }
+  char long_font[160] = "sign_font=";
+  memset(long_font + 10, 'a', 128);
+  long_font[138] = '\0';
+  write_temp_config(path, long_font);
+  TEST_ASSERT_EQ(load_config_strict(&config, path), BONGOCAT_ERROR_CONFIG,
+                 "overlong font rejected without truncating");
+  config_cleanup_full(&config);
+  char *lang = getenv("LANG") ? strdup(getenv("LANG")) : NULL;
+  char *messages = getenv("LC_MESSAGES") ? strdup(getenv("LC_MESSAGES")) : NULL;
+  config.sign_language = SIGN_LANGUAGE_AUTO;
+  setenv("LANG", "zh_CN.UTF-8", 1);
+  unsetenv("LC_MESSAGES");
+  TEST_ASSERT(!config_sign_english(&config), "auto uses Chinese LANG");
+  setenv("LC_MESSAGES", "en_US.UTF-8", 1);
+  TEST_ASSERT(config_sign_english(&config), "LC_MESSAGES precedes LANG");
+  setenv("LC_MESSAGES", "zh_TW.UTF-8", 1);
+  TEST_ASSERT(!config_sign_english(&config), "Chinese locale uses zh table");
+  setenv("LC_MESSAGES", "", 1);
+  TEST_ASSERT(!config_sign_english(&config),
+              "empty messages falls back to LANG");
+  unsetenv("LANG");
+  TEST_ASSERT(config_sign_english(&config), "absent locale uses English");
+  config.sign_language = SIGN_LANGUAGE_ZH;
+  TEST_ASSERT(!config_sign_english(&config), "explicit zh overrides locale");
+  config.sign_language = SIGN_LANGUAGE_EN;
+  TEST_ASSERT(config_sign_english(&config), "explicit en overrides locale");
+  if (lang)
+    setenv("LANG", lang, 1);
+  else
+    unsetenv("LANG");
+  if (messages)
+    setenv("LC_MESSAGES", messages, 1);
+  else
+    unsetenv("LC_MESSAGES");
+  free(lang);
+  free(messages);
+  unlink(path);
+}
+
 int main(void) {
   bongocat_error_init(0);  // Suppress debug output
   printf("=== Config Parser Tests ===\n");
@@ -315,6 +522,32 @@ int main(void) {
   test_keyboard_device_validation();
   test_enum_parsing();
   test_comments_and_whitespace();
+  test_agent_config();
+  char path[] = "/tmp/bongocat-interrupt-config-XXXXXX";
+  int fd = mkstemp(path);
+  TEST_ASSERT(fd >= 0, "interrupt config tempfile");
+  close(fd);
+  for (int v = -1; v <= 2; v++) {
+    char text[64];
+    snprintf(text, sizeof(text), "agent_interrupt_detect=%d\n", v);
+    write_temp_config(path, text);
+    config_t cfg;
+    bool valid = v == 0 || v == 1;
+    TEST_ASSERT_EQ(load_config_strict(&cfg, path),
+                   valid ? BONGOCAT_SUCCESS : BONGOCAT_ERROR_CONFIG,
+                   "interrupt boolean is strict");
+    TEST_ASSERT_EQ(cfg.agent_interrupt_detect, valid ? v : 1,
+                   "interrupt default and boolean");
+    config_cleanup_full(&cfg);
+  }
+  write_temp_config(path, "[monitor:TEST-1]\nagent_interrupt_detect=0\n");
+  config_t cfg;
+  TEST_ASSERT_EQ(load_config_strict(&cfg, path), BONGOCAT_ERROR_CONFIG,
+                 "interrupt detect is global only");
+  config_cleanup_full(&cfg);
+  unlink(path);
+  test_drag_config();
+  test_sign_config();
 
   printf("\nResults: %d passed, %d failed\n", tests_passed, tests_failed);
   return tests_failed > 0 ? 1 : 0;

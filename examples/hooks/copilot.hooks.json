@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "bongocat --hook copilot --event sessionStart 2>/dev/null || true",
+        "timeoutSec": 3
+      }
+    ],
+    "userPromptSubmitted": [
+      {
+        "type": "command",
+        "bash": "bongocat --hook copilot --event userPromptSubmitted 2>/dev/null || true",
+        "timeoutSec": 3
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "bongocat --hook copilot --event preToolUse 2>/dev/null || true",
+        "timeoutSec": 3
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "bongocat --hook copilot --event postToolUse 2>/dev/null || true",
+        "timeoutSec": 3
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "type": "command",
+        "bash": "bongocat --hook copilot --event postToolUseFailure 2>/dev/null || true",
+        "timeoutSec": 3
+      }
+    ],
+    "notification": [
+      {
+        "type": "command",
+        "bash": "bongocat --hook copilot --event notification 2>/dev/null || true",
+        "timeoutSec": 3
+      }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "bongocat --hook copilot --event agentStop 2>/dev/null || true",
+        "timeoutSec": 3
+      }
+    ],
+    "errorOccurred": [
+      {
+        "type": "command",
+        "bash": "bongocat --hook copilot --event errorOccurred 2>/dev/null || true",
+        "timeoutSec": 3
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": "bongocat --hook copilot --event sessionEnd 2>/dev/null || true",
+        "timeoutSec": 3
+      }
+    ]
+  }
+}

@@ -59,6 +59,7 @@ void wayland_update_config(config_t *config);
 
 int wayland_list_monitors(bool doctor);
 void wayland_set_hidden(bool value);
+int wayland_reset_position(void);
 void wayland_set_runtime_timeout(int (*callback)(void));
 void wayland_set_runtime_fds(int (*callback)(int *, size_t));
 
@@ -77,5 +78,9 @@ void wayland_set_tick_callback(void (*callback)(void));
 // pixels using the active render scale. Defaults to identity (scale 1.0×) if
 // the compositor has not announced a scale yet.
 BONGOCAT_NODISCARD int wayland_phys_dim(int logical);
+
+// A viewport for this surface, or NULL when viewporter is absent.
+struct wp_viewport;
+struct wp_viewport *wayland_viewport_for(struct wl_surface *target);
 
 #endif  // WAYLAND_H

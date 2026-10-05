@@ -2,6 +2,7 @@
 #define ANIMATION_H
 
 #include "config/config.h"
+#include "core/agent_state.h"
 #include "core/bongocat.h"
 #include "utils/error.h"
 
@@ -39,7 +40,15 @@ void animation_overlay_activate(void *opaque, config_t *config);
 void animation_overlay_cache(int width, int height);
 void animation_overlay_destroy(void *opaque);
 int animation_tick(unsigned paws);
+// Press one paw for duration_ms. This is not a key: no key hook, and the
+// idle-sleep timestamp stays where it is.
+void animation_tap(unsigned paw, int duration_ms);
+// Invoked when a paw arrives. The hook is not told which key it was.
+void animation_set_key_hook(void (*hook)(void));
 void animation_set_paused(bool value);
+void animation_set_agent_state(agent_state_t state);
+void animation_use_agent_frames(bool enabled);
+agent_state_t animation_get_agent_state(void);
 
 // Compatibility lifecycle entrypoint - must be checked
 BONGOCAT_NODISCARD bongocat_error_t animation_start(void);

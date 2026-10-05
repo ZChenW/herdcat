@@ -3,10 +3,12 @@
   stdenv,
   pkg-config,
   wayland,
+  freetype,
+  fontconfig,
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "wayland-bongocat";
-  version = "2.0.2";
+  version = "2.0.2-agent";
   src = ../.;
 
   # Build toolchain and dependencies
@@ -16,6 +18,8 @@ stdenv.mkDerivation (finalAttrs: {
   nativeBuildInputs = [pkg-config];
   buildInputs = [
     wayland
+    freetype
+    fontconfig
   ];
 
   makeFlags = ["release"];

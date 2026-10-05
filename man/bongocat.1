@@ -1,4 +1,4 @@
-.TH BONGOCAT 1 "July 2026" "v2.0.2" "User Commands"
+.TH BONGOCAT 1 "July 2026" "v2.0.2-agent" "User Commands"
 .SH NAME
 bongocat \- Bongo Cat Wayland Overlay
 .SH SYNOPSIS
@@ -75,14 +75,130 @@ Check configuration, protocols, outputs, devices and permissions.
 .B --hide, --show
 Suppress or restore all overlays without resetting animation state.
 .TP
+.B --reset-position
+Remove saved positions on every output and restore configured horizontal alignment and zero vertical margin. Does not change the configuration file.
+.TP
 .B --pause, --resume
 Show the configured idle frame and discard input, or resume with pending paw activity cleared. Hidden and fullscreen visibility still apply.
 .TP
 .B --reload, --status
 Reload configuration or query the running application through a same-UID authenticated Unix socket. Failures return nonzero. Controls never rewrite configuration files; visibility and pause state reset on restart.
+.TP
+.BI --state " NAME"
+Set the manual session to idle, working, waiting or done. Idle removes the manual session. Other sessions resolve by priority: waiting > done > working > idle. Seen done sessions expire after agent_done_timeout seconds; sign_done=sticky preserves unread completions. Scheduled sleep and held paws take priority over agent artwork; agent artwork takes priority over idle sleep. Pause suppresses the artwork while deadlines continue. --status includes agent=NAME and sessions=N.
+.TP
+.B --sessions
+List up to 32 tracked sessions: agent, session key prefix, state, age in seconds, process ID, name and an unread marker. The response is limited to 480 bytes and may be truncated. Process exit removes all sessions associated with that process. A full table evicts the oldest idle session first, otherwise the oldest session.
+.TP
+.BI --hook " AGENT"
+Read a lifecycle JSON event from stdin for an agent named with 1 to 8 lowercase ASCII letters (such as claude or codex). Streams input using fixed storage and a two-second timeout. Stdout remains empty; malformed JSON, unknown events and an absent overlay quietly return success. Invalid arguments return nonzero. BONGOCAT_HOOK_DEBUG=1 prints the outgoing event to stderr.
+.PP
+SessionStart registers the session; UserPromptSubmit, PreToolUse, PostToolUse and PostToolUseFailure set working; PermissionRequest sets waiting; Stop sets done unless stop_hook_active is true; StopFailure and Interrupt set idle; SessionEnd removes the session. Notification maps permission_prompt, elicitation_dialog and agent_needs_input to waiting, and idle_prompt clears working only. SubagentStop is ignored. Missing or invalid session IDs share a fallback session per agent.
+.PP
+Approval does not emit a separate hook: waiting continues until PostToolUse after tool completion. Claude may not emit a hook on Escape, leaving working to expire; watched waiting remains until another event or exit. Codex Interrupt clears the session. Merge examples/hooks into existing agent configuration and renew Codex hook trust through /hooks after changes.
+.TP
+.BI --event " NAME"
+Override the event name in stdin. Valid only after --hook AGENT. Field aliases, conditional event mappings and stdout policy are selected by the agent adapter; unknown agent names retain the Claude mapping.
 .SH MONITOR SECTIONS AND RELOAD
-Use [monitor:NAME] for appearance overrides and [global] to return to global settings. Global settings apply before monitor overrides regardless of section order. Overrides support cat_height, overlay_height, overlay_opacity, cat_x_offset, cat_y_offset, layer, overlay_position, cat_align, mirror_x, mirror_y, enable_antialiasing and disable_fullscreen_hide. Input and timing remain global.
+Use [monitor:NAME] for appearance overrides and [global] to return to global settings. Global settings apply before monitor overrides regardless of section order. Overrides support cat_height, overlay_height, overlay_opacity, cat_x_offset, cat_y_offset, layer, overlay_position, cat_align, cat_draggable, mirror_x, mirror_y, enable_antialiasing and disable_fullscreen_hide. Input and timing remain global.
 .PP
 Startup tolerates invalid entries with warnings. Reloads are transactional: invalid, missing or unreadable files preserve the working configuration. The parent directory is watched to survive atomic replacement and deletion/recreation; reload happens 300 ms after the final relevant event. Monitor selection is reconciled without restarting.
 .PP
 Animation deadlines are monotonic; fps ranges from 1 to 120 and test_animation_interval is in seconds.
+.PP
+agent_done_timeout sets how many seconds the done agent state lasts before returning to idle (default 5, range 0 to 3600). A value of 0 keeps that session done until another event or removal. Values outside the range reset to 5 at startup and are rejected on strict validation or reload. idle_frame accepts only the original frames 0 to 4.
+.PP
+agent_stale_timeout sets the inactivity limit for working sessions (default 600, range 0 to 86400 seconds; 0 disables it). Waiting sessions expire only if no process watch is available. Out-of-range values reset to 600 at startup and fail strict validation or reload. Both agent timeouts are global, not monitor overrides.
+.SH DRAGGING
+cat_draggable is a boolean (default 1). Hold the left button on the cat to drag; motion under four logical pixels leaves its position unchanged. The cat's bounding rectangle intercepts clicks while the remaining bar is click-through. Set cat_draggable=0 for complete click-through. Hidden and fullscreen-hidden cats intercept no clicks. Pause does not disable dragging.
+.PP
+Each output saves its own logical x and vertical margin on release to ${XDG_STATE_HOME:-$HOME/.local/state}/bongocat/position (directory mode 0700, file mode 0600). Writes are atomic and symbolic links are rejected. Saved positions override cat_align and cat_x_offset, survive restart and reload, and are clamped when output dimensions change. overlay_position chooses the margin's anchor edge; cat_y_offset still applies within the bar. Use --reset-position to restore configured positions. Cross-output dragging is not supported. Cursor grab/grabbing shapes are optional; --doctor reports cursor-shape support.
+
+.SH SESSION SIGNS
+All sign options are global and apply on reload. The cat keeps its typing and
+sleep frames when signs are enabled. Click a sign to focus its terminal on niri;
+drag from a sign to move the cat. Labels use the last directory component from
+the hook's cwd, falling back to the agent and a short session key.
+.TP
+.B sign_style=fan|post|off
+Default fan: raised plates with individual hover labels. Post: a pole with
+boards that expand together on hover. Off restores whole-cat state artwork,
+original surface height and cat-only input region.
+.TP
+.B sign_max=1..5
+Maximum displayed signs (default 5); active sessions take precedence, while
+selected sessions retain creation order.
+.TP
+.B sign_idle=hover|always|never
+Show idle signs on hover (default), always, or never, even on hover.
+.TP
+.B sign_font
+Fontconfig family, up to 127 bytes; empty uses system sans-serif and fallback.
+.TP
+.B sign_font_size=10..20
+Name size in design pixels (default 13). Metadata and desk text scale
+proportionally; all sizes also scale with cat_height and output scale.
+.TP
+.B sign_animations=full|reduced|off
+Full (default) includes loops; reduced keeps transitions only; off switches
+instantly. Reduced and off keep the desk caret lit. Visible working-duration
+labels still update once a minute.
+.TP
+.B sign_language=auto|en|zh
+Default auto selects simplified Chinese for a zh locale, otherwise English.
+Uses nonempty LC_MESSAGES before LANG; an unset locale selects English.
+.TP
+.B sign_done=sticky|timeout
+Default sticky preserves unread completion, with a dot and Unread label.
+Focusing the window or clicking starts agent_done_timeout; a new submission
+clears unread and starts working. Timeout applies the timer to every completion.
+Switching to timeout also starts timers for existing unread completions.
+This policy also applies with sign_style=off.
+.TP
+.B sign_typing_desk=0|1
+Default 1. Typing in the focused agent terminal retracts its sign and puts a
+name board under the paws. It leaves after 2.5 seconds without input, on focus
+loss, submission or hiding. It receives no pointer input. No keystroke content
+is read or recorded for this feature.
+.PP
+Focus tracking and terminal jumps require niri. Without its event stream,
+sticky completions are unread until clicked or submitted again, and the desk
+is disabled. Text requires FreeType and Fontconfig; ligatures, right-to-left
+shaping and combining marks are unsupported. Shared terminal processes and tmux
+cannot reliably identify a specific window or pane.
+
+.SS Switch card
+Right-click the cat or a sign to raise a card with three rows: style (fan or
+post), language, and font. The font row steps through the families that cover
+the current language with its arrows or the scroll wheel. Clicking the family
+name opens a panel that lists every family in its own face, with a count, an
+All/Text/Mono filter and the four most recently chosen families first. While
+the panel is open the card steps aside, every sign comes up, and the signs
+take the face under the pointer until a cell is clicked or the pointer leaves
+it. A click chooses and saves; the panel stays open. Moving away or a second
+right click closes the panel and the card. There is no card with
+.BR sign_style=off .
+.PP
+Choices are stored in
+.I $XDG_STATE_HOME/bongocat/prefs
+(default
+.IR ~/.local/state/bongocat/prefs ),
+and recent families in
+.I fonts-recent
+beside it. The configuration file is never rewritten. A stored choice applies
+while the configuration value it replaced is unchanged; editing that option
+afterward makes the file win.
+.SS Interruption detection
+agent_interrupt_detect=1 (default) enables event-driven Claude Code interruption
+and Codex abort/error detection from paths supplied by their hooks. This global
+boolean is reloadable. Setting 0 removes recording watches immediately.
+Only newly appended complete JSONL lines (at most 4096 bytes) are inspected in
+memory; contents and error messages are never logged, saved or transmitted.
+Paths must be absolute, no longer than 1024 decoded bytes, under the user's home,
+regular, same-UID, without symlinks or .. components, and end in .jsonl.
+Working/waiting returns to idle on interruption; done/unread is preserved.
+Normal Codex task_complete is ignored. Claude matches read within one second of
+submission are ignored; literal marker prompts read later can be misclassified.
+Private format changes, missing paths and truncation/rotation silently fall back
+to agent_stale_timeout. Rotation requires a new hook path handoff. There is no
+periodic polling and no recording watch when no eligible session is active.
