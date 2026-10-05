@@ -167,6 +167,27 @@ is disabled. Text requires FreeType and Fontconfig; ligatures, right-to-left
 shaping and combining marks are unsupported. Shared terminal processes and tmux
 cannot reliably identify a specific window or pane.
 
+.SS Switch card
+Right-click the cat or a sign to raise a card with three rows: style (fan or
+post), language, and font. The font row steps through the families that cover
+the current language with its arrows or the scroll wheel. Clicking the family
+name opens a panel that lists every family in its own face, with a count, an
+All/Text/Mono filter and the four most recently chosen families first. While
+the panel is open the card steps aside, every sign comes up, and the signs
+take the face under the pointer until a cell is clicked or the pointer leaves
+it. A click chooses and saves; the panel stays open. Moving away or a second
+right click closes the panel and the card. There is no card with
+.BR sign_style=off .
+.PP
+Choices are stored in
+.I $XDG_STATE_HOME/bongocat/prefs
+(default
+.IR ~/.local/state/bongocat/prefs ),
+and recent families in
+.I fonts-recent
+beside it. The configuration file is never rewritten. A stored choice applies
+while the configuration value it replaced is unchanged; editing that option
+afterward makes the file win.
 .SS Interruption detection
 agent_interrupt_detect=1 (default) enables event-driven Claude Code interruption
 and Codex abort/error detection from paths supplied by their hooks. This global

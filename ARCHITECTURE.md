@@ -199,6 +199,41 @@ or hiding dismisses it. The board never joins the pointer input region. Only
 presence of paw activity is used, never key contents. The confirmed desk top is
 68 design pixels; drag margin calculation remains absolute from button press.
 
+## Switch card, font panel and stored choices
+
+`graphics/signs.c` also lays out the switch card (style, language, font row)
+with the sign model's shapes, texts and hit rectangles. `platform/overlay_signs.c`
+handles the right button, the 800 ms leave and 6 s idle timers, the paw tap
+and the half-second debounce before a font stepped by wheel is saved.
+
+`graphics/font_panel.c` is the panel's pure model and drawing: two columns,
+ten visible rows, a three-way filter, hover and selection. Every box has a
+fixed size; only glyphs change with the face. `platform/font_panel.c` owns a
+separate layer surface that exists only while the panel is open, its two
+buffers, pointer handling and placement beside the card inside the output.
+The always-present overlay surface is not made taller for it. Catalog order
+is rebuilt each time the panel opens, with the four recent families first,
+and never while it is open so cells do not move under the pointer.
+
+While the panel is open (browsing) the overlay hides the card, raises every
+sign, and applies the hovered family as the main face without saving. The
+chosen family is held separately and restored when the pointer leaves the
+cell. The panel draws its own words in the chosen family for the same reason.
+The leave timer does not start until the pointer has reached the panel, since
+the card is no longer under it. When the panel closes the menu closes.
+
+`graphics/text.c` remembers which face draws each (family, code point,
+weight) and asks a family's own face before asking Fontconfig. Without this
+every glyph cost a Fontconfig lookup on every draw: a page of font names took
+about 940 ms per redraw and a CJK label about 18 ms per frame. The table is
+dropped when a face is evicted, because eviction renumbers faces.
+
+`platform/prefs.c` stores menu choices as tab-separated
+`key, choice, config value at the time` lines and still reads the earlier
+space-separated form. A record applies only while the config value matches
+its third field. `fonts-recent` is a plain list beside it. Both are written
+through a temporary file and rename, mode 0600, opened with O_NOFOLLOW.
+
 ## Transcript interruption detection
 
 `core/agent_adapters.c` declares interrupt/error sources (hook, transcript or

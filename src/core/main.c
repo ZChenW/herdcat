@@ -18,6 +18,7 @@
 #include "platform/hyprland.h"
 #include "platform/input.h"
 #include "platform/overlay_signs.h"
+#include "platform/prefs.h"
 #include "platform/session_store.h"
 #include "platform/transcript_watch.h"
 #include "platform/wayland.h"
@@ -132,6 +133,10 @@ static int reload(void) {
                      config.num_names)) != 0;
   config_t old = config;
   config = next;
+  if (prefs_resolve(&config.sign_style, &config.sign_language, config.sign_font,
+                    sizeof(config.sign_font)))
+    bongocat_log_warning("Menu preferences were not updated");
+  overlay_signs_use_config();
   sign_policy();
   if (strcmp(old.sign_font, config.sign_font)) {
     sign_draw_cleanup();
@@ -481,12 +486,39 @@ static void help(const char *program) {
       "  -v, --version        Show version\n",
       program);
 }
+static void menu_style(sign_style_t style) {
+  if (prefs_choose_style(style))
+    bongocat_log_warning("Menu style was not saved");
+  config.sign_style = style;
+  wayland_update_config(&config);
+}
+static void menu_language(sign_language_t language) {
+  if (prefs_choose_language(language))
+    bongocat_log_warning("Menu language was not saved");
+  config.sign_language = language;
+  wayland_update_config(&config);
+}
+static void menu_paw(unsigned paw) {
+  animation_tap(paw, 220);
+}
+static void menu_font(const char *family, bool save) {
+  snprintf(config.sign_font, sizeof(config.sign_font), "%s",
+           family ? family : "");
+  if (text_set_family(config.sign_font))
+    bongocat_log_warning("Sign font was not changed");
+  if (save && prefs_choose_font(config.sign_font))
+    bongocat_log_warning("Menu font was not saved");
+  wayland_update_config(&config);
+}
 static int run_application(bool watch, bongocat_error_t result) {
   int exit_code = 1;
   if (result != BONGOCAT_SUCCESS ||
       force_monitor(&config) != BONGOCAT_SUCCESS) {
     goto cleanup;
   }
+  if (prefs_resolve(&config.sign_style, &config.sign_language, config.sign_font,
+                    sizeof(config.sign_font)))
+    bongocat_log_warning("Menu preferences were ignored");
   if (instance_lock() < 0) {
     bongocat_log_error("Cannot lock instance: %s", strerror(errno));
     goto cleanup;
@@ -502,6 +534,7 @@ static int run_application(bool watch, bongocat_error_t result) {
   session_store_load(monotonic_ms(), config.agent_done_timeout);
   focus_watch_init();
   overlay_signs_on_expand(discover_expanded);
+  overlay_signs_on_menu(menu_style, menu_language, menu_paw, menu_font);
   agent_watch_on_ready(extra_ready);
   if (watch && config_watcher_init(&watcher, config_path, changed) == 0) {
     config_watcher_start(&watcher);

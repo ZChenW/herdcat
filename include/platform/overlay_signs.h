@@ -10,7 +10,8 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-// Cat, up to five boards, and the open hover pad.
+// Cat, up to five boards, and the open hover pad. An open switch card
+// replaces the boards and the pad.
 #define OVERLAY_SIGNS_REGION_LIMIT 7
 
 typedef struct {
@@ -43,9 +44,15 @@ int overlay_signs_regions(size_t index, const config_t *config, int cat_x,
                           int cat_w, int surface_h, overlay_signs_rect_t *out,
                           int capacity);
 
-// Records the pointer. True when it is on a board (pointer cursor).
+// Records the pointer. True on a board or a switch (pointer cursor).
 bool overlay_signs_pointer(size_t index, double x, double y);
 void overlay_signs_leave(void);
+// False for the left button, so the existing press path still runs.
+// Any other button is consumed. A right click on the cat, a sign, or the
+// open card queues the switch card.
+bool overlay_signs_button(uint32_t button, uint32_t state);
+// True when this press landed on the card, so the cat must not be dragged.
+bool overlay_signs_blocks_drag(void);
 // True when the press landed on a board.
 bool overlay_signs_press(size_t index);
 bool overlay_signs_release(bool dragged, size_t *index, pid_t *pid,
@@ -65,5 +72,18 @@ void overlay_signs_note_focus(focus_result_t result, int64_t now_ms);
 void overlay_signs_cleanup(void);
 // Called once when a cat's signs open. NULL does nothing.
 void overlay_signs_on_expand(void (*fn)(void));
+// Menu choices. NULL skips that callback. font is the family, empty for the
+// default face; save is false on each step and true for the one disk write.
+void overlay_signs_on_menu(void (*style)(sign_style_t style),
+                           void (*language)(sign_language_t language),
+                           void (*paw)(unsigned paw),
+                           void (*font)(const char *family, bool save));
+// One vertical detent. Ignored unless the pointer is over the font row.
+// A wheel over the open font panel scrolls that panel instead.
+void overlay_signs_scroll(int32_t discrete);
+// The pointer entered the font panel on this output.
+void overlay_signs_track_panel(size_t index);
+// The next frame follows the config instead of a menu choice.
+void overlay_signs_use_config(void);
 
 #endif

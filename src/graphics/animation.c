@@ -278,6 +278,24 @@ static void (*on_key)(void);
 void animation_set_key_hook(void (*hook)(void)) {
   on_key = hook;
 }
+void animation_tap(unsigned paw, int duration_ms) {
+  animation_overlay_t *ctx = active_animation;
+  if (!ctx || !current_config || paw == 0 || duration_ms <= 0)
+    return;
+  paw = paw_apply_mirror(paw, current_config->mirror_x != 0);
+  int64_t now = anim_get_current_time_us();
+  int64_t duration_us = (int64_t)duration_ms * 1000L;
+  if (paw & PAW_LEFT)
+    anim_press_paw(&ctx->state, BONGOCAT_FRAME_LEFT_DOWN, now, duration_us);
+  if (paw & PAW_RIGHT)
+    anim_press_paw(&ctx->state, BONGOCAT_FRAME_RIGHT_DOWN, now, duration_us);
+  anim_select_frame(&ctx->state, now);
+  ctx->index = anim_index;
+  if (ctx->last_drawn == anim_index)
+    return;
+  wayland_request_current_redraw();
+  ctx->last_drawn = anim_index;
+}
 int animation_tick(unsigned paws) {
   int64_t now = anim_get_current_time_us();
   animation_overlay_t *ctx = active_animation;

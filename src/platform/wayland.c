@@ -28,6 +28,7 @@
 #include "graphics/text.h"
 #include "platform/drag.h"
 #include "platform/focus.h"
+#include "platform/font_panel.h"
 #include "platform/fullscreen.h"
 #include "platform/input.h"
 #include "platform/outputs.h"
@@ -142,9 +143,8 @@ static void update_input_region(overlay_t *overlay, bool invisible) {
   wl_region_destroy(region);
 }
 static void cursor_shape(uint32_t shape) {
-  if (cursor_device && pointer_overlay) {
+  if (cursor_device && (pointer_overlay || font_panel_surface_armed()))
     wp_cursor_shape_device_v1_set_shape(cursor_device, pointer_serial, shape);
-  }
 }
 static void set_margin(overlay_t *overlay) {
   bool top = overlay->config.overlay_position == POSITION_TOP;
@@ -211,11 +211,15 @@ static void pointer_enter(void *data, struct wl_pointer *object,
   (void)data;
   (void)object;
   finish_drag();
-  overlay_signs_leave();
-  pointer_overlay = NULL;
   pointer_serial = serial;
   pointer_x = wl_fixed_to_double(x);
   pointer_y = wl_fixed_to_double(y);
+  pointer_overlay = NULL;
+  if (font_panel_surface_enter(target, pointer_x, pointer_y)) {
+    cursor_shape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER);
+    return;
+  }
+  overlay_signs_leave();
   for (size_t i = 0; i < MAX_OUTPUTS; i++) {
     if (overlays[i].surface == target && overlays[i].accepts_pointer &&
         !hidden) {
@@ -244,6 +248,8 @@ static void pointer_motion(void *data, struct wl_pointer *object, uint32_t time,
   (void)time;
   pointer_x = wl_fixed_to_double(x);
   pointer_y = wl_fixed_to_double(y);
+  if (font_panel_surface_motion(pointer_x, pointer_y))
+    return;
   overlay_t *overlay = pointer_overlay;
   if (overlay && !dragging) {
     size_t index = (size_t)(overlay - overlays);
@@ -282,7 +288,7 @@ static void pointer_button(void *data, struct wl_pointer *object,
   (void)object;
   (void)serial;
   (void)time;
-  if (button != BTN_LEFT) {
+  if (overlay_signs_button(button, state)) {
     return;
   }
   if (state == WL_POINTER_BUTTON_STATE_RELEASED) {
@@ -311,7 +317,7 @@ static void pointer_button(void *data, struct wl_pointer *object,
     bool on_sign = overlay_signs_press((size_t)(pointer_overlay - overlays));
     cursor_shape(on_sign ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER
                          : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
-    dragging = true;
+    dragging = !overlay_signs_blocks_drag();
     origin_x = pointer_x;
     origin_y = pointer_y;
     origin_cat_x = pointer_overlay->cat_x;
@@ -347,8 +353,9 @@ static void pointer_axis_discrete(void *data, struct wl_pointer *object,
                                   uint32_t axis, int32_t discrete) {
   (void)data;
   (void)object;
-  (void)axis;
-  (void)discrete;
+  // Axis 0 is vertical. The font panel keeps pointer_overlay empty.
+  if (!axis && discrete && (pointer_overlay || font_panel_surface_armed()))
+    overlay_signs_scroll(discrete);
 }
 static const struct wl_pointer_listener POINTER_LISTENER = {
     .enter = pointer_enter,
@@ -634,6 +641,7 @@ void wayland_set_hidden(bool value) {
 }
 static void teardown(overlay_t *overlay) {
   size_t index = (size_t)(overlay - overlays);
+  font_panel_surface_output_gone(index);
   if (index < MAX_OUTPUTS && sign_frames[index]) {
     wl_callback_destroy(sign_frames[index]);
     sign_frames[index] = NULL;
@@ -871,12 +879,8 @@ static bool resize_buffers(overlay_t *overlay) {
     wl_surface_set_buffer_scale(overlay->surface, 1);
     wp_viewport_set_destination(overlay->viewport, overlay->width,
                                 overlay->height);
-  } else {
-    {
-      wl_surface_set_buffer_scale(overlay->surface,
-                                  (int)(overlay->scale / 120));
-    }
-  }
+  } else
+    wl_surface_set_buffer_scale(overlay->surface, (int)(overlay->scale / 120));
   overlay->resize = false;
   overlay->damage_all = true;
   return true;
@@ -885,16 +889,12 @@ static void global(void *data, struct wl_registry *object, uint32_t id,
                    const char *interface, uint32_t version) {
   (void)data;
   if (strcmp(interface, wl_compositor_interface.name) == 0 && version >= 4) {
-    {
-      compositor = wl_registry_bind(object, id, &wl_compositor_interface, 4);
-    }
+    compositor = wl_registry_bind(object, id, &wl_compositor_interface, 4);
   } else if (strcmp(interface, wl_shm_interface.name) == 0) {
     { shm = wl_registry_bind(object, id, &wl_shm_interface, 1); }
   } else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
-    {
-      layer_shell = wl_registry_bind(object, id, &zwlr_layer_shell_v1_interface,
-                                     version < 4 ? version : 4);
-    }
+    layer_shell = wl_registry_bind(object, id, &zwlr_layer_shell_v1_interface,
+                                   version < 4 ? version : 4);
   } else if (strcmp(interface, wl_seat_interface.name) == 0 && !seat) {
     seat_id = id;
     seat = wl_registry_bind(object, id, &wl_seat_interface,
@@ -919,10 +919,8 @@ static void global(void *data, struct wl_registry *object, uint32_t id,
     { viewporter = wl_registry_bind(object, id, &wp_viewporter_interface, 1); }
   } else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) ==
              0) {
-    {
-      fractional_manager = wl_registry_bind(
-          object, id, &wp_fractional_scale_manager_v1_interface, 1);
-    }
+    fractional_manager = wl_registry_bind(
+        object, id, &wp_fractional_scale_manager_v1_interface, 1);
   } else if (strcmp(interface,
                     zwlr_foreign_toplevel_manager_v1_interface.name) == 0) {
     struct zwlr_foreign_toplevel_manager_v1 *manager = wl_registry_bind(
@@ -1076,6 +1074,7 @@ bongocat_error_t wayland_run(const volatile sig_atomic_t *running) {
         timeout = next;
       }
       bool concealed = overlay_hidden(overlay) || !overlay->configured;
+      font_panel_surface_margin(overlay->margin_y);
       overlay_signs_step_t sign_step = overlay_signs_step(
           i, &overlay->config, overlay->cat_x, cat_width(overlay),
           overlay->height, concealed, sign_now);
@@ -1120,9 +1119,8 @@ bongocat_error_t wayland_run(const volatile sig_atomic_t *running) {
       if (wl_display_read_events(display) < 0) {
         return BONGOCAT_ERROR_WAYLAND;
       }
-    } else {
-      { wl_display_cancel_read(display); }
-    }
+    } else
+      wl_display_cancel_read(display);
     if (result < 0 && errno != EINTR) {
       return BONGOCAT_ERROR_WAYLAND;
     }
@@ -1157,15 +1155,12 @@ void wayland_cleanup(void) {
   shm_buffers_cleanup();
   fullscreen_cleanup();
   outputs_cleanup();
-  if (xdg_manager) {
+  if (xdg_manager)
     zxdg_output_manager_v1_destroy(xdg_manager);
-  }
-  if (fractional_manager) {
+  if (fractional_manager)
     wp_fractional_scale_manager_v1_destroy(fractional_manager);
-  }
-  if (viewporter) {
+  if (viewporter)
     wp_viewporter_destroy(viewporter);
-  }
   if (layer_shell) {
     zwlr_layer_shell_v1_destroy(layer_shell);
   }
@@ -1192,4 +1187,9 @@ void wayland_cleanup(void) {
   xdg_manager = NULL;
   fractional_manager = NULL;
   viewporter = NULL;
+}
+struct wp_viewport *wayland_viewport_for(struct wl_surface *target) {
+  if (!viewporter || !target)
+    return NULL;
+  return wp_viewporter_get_viewport(viewporter, target);
 }

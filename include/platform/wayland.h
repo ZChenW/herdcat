@@ -79,4 +79,8 @@ void wayland_set_tick_callback(void (*callback)(void));
 // the compositor has not announced a scale yet.
 BONGOCAT_NODISCARD int wayland_phys_dim(int logical);
 
+// A viewport for this surface, or NULL when viewporter is absent.
+struct wp_viewport;
+struct wp_viewport *wayland_viewport_for(struct wl_surface *target);
+
 #endif  // WAYLAND_H

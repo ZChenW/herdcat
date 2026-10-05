@@ -332,19 +332,22 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
 static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
                      double scale, pix_t bounds) {
   double s = text->tag_scale > 0.05 ? text->tag_scale : 1;
-  int name_w = text_measure(text->value, (float)(text->px * s), true);
+  float name_px = (float)(text->px * s);
+  int name_w = text_measure(text->value, name_px, true);
   int meta_w = text_measure(text->meta, (float)(text->meta_px * s), false);
   double gap = text->gap * s;
   double content = name_w + (meta_w > 0 ? gap + meta_w : 0);
-  double border = 2 * s, pad_x = 10 * s, pad_t = 5 * s;
-  double font = text->font_ratio > 0 ? text->font_ratio : 1;
-  double ascent = 10.4 * s * font;
-  double box_h = (4 + 5 + 15.6 * font + 6) * s;
+  double border = 2 * s, pad_x = 10 * s, pad_t = 5 * s, pad_b = 6 * s;
+  // Unitless line-height 1.2. The plate is anchored on the resting bottom
+  // and scales about that plate's center, matching the pop transition.
+  double line_h = text->px * 1.2 * s;
+  double box_h = border * 2 + pad_t + line_h + pad_b;
   double box_w = border * 2 + pad_x * 2 + content;
-  double box_top = text->baseline_y - (2 + 5 + 10.4);
-  double center_y = box_top + (4 + 5 + 15.6 + 6) / 2;
-  box_top = center_y - box_h / 2;
-  double baseline = box_top + border + pad_t + ascent;
+  double box_h1 = 4 + 5 + text->px * 1.2 + 6;
+  double center_y = text->anchor_y - box_h1 / 2;
+  double box_top = center_y - box_h / 2;
+  double line_top = box_top + border + pad_t;
+  double baseline = text_baseline(line_top, line_h, name_px, true);
   double left = text->x - box_w / 2;
   sign_shape_t plate = {.kind = SIGN_RECT,
                         .x = left,
@@ -376,6 +379,31 @@ static void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
     draw_tag(dst, dw, dh, text, scale, bounds);
     return;
   }
+  float name_px = (float)text->px;
+  const char *family = text->family[0] ? text->family : NULL;
+  double baseline =
+      text_baseline_family(family, text->line_top, text->line_h, name_px, true);
+  int base = (int)lround(baseline * scale);
+  if (text->center) {
+    int measured = text->value[0]
+                       ? text_measure_family(family, text->value, name_px, true)
+                       : 0;
+    bool shrink = text->w > 0 && measured > text->w;
+    double name_x = text->x + text->slide;
+    if (!shrink)
+      name_x += (text->w - measured) / 2.0;
+    pix_t clip = intersect(
+        bounds, pix_of(text->x, text->clip_y, text->w, text->clip_h, scale));
+    if (clip.r <= clip.x || clip.b <= clip.y)
+      return;
+    text_clip_t box = {clip.x, clip.y, clip.r - clip.x, clip.b - clip.y};
+    int limit = shrink ? (int)lround(text->w * scale) : 0;
+    if (text->value[0])
+      text_draw_clip_family(dst, dw, dh, (int)lround(name_x * scale), base,
+                            family, text->value, name_px, true, text->color,
+                            limit, box);
+    return;
+  }
   int meta_w = text_measure(text->meta, (float)text->meta_px, false);
   double budget = text->w - text->gap - meta_w;
   if (budget < 0)
@@ -387,20 +415,21 @@ static void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
   if (clip.r <= clip.x || clip.b <= clip.y)
     return;
   text_clip_t box = {clip.x, clip.y, clip.r - clip.x, clip.b - clip.y};
-  int baseline = (int)lround(text->baseline_y * scale);
   if (text->value[0] && budget > 0.5)
-    text_draw_clip(dst, dw, dh, (int)lround(name_x * scale), baseline,
-                   text->value, (float)text->px, true, text->color,
-                   (int)lround(budget * scale), box);
-  if (text->caret && (text->meta_color >> 24) && text->px > 0) {
-    int measured = text_measure(text->value, (float)text->px, true);
+    text_draw_clip(dst, dw, dh, (int)lround(name_x * scale), base, text->value,
+                   name_px, true, text->color, (int)lround(budget * scale),
+                   box);
+  text_metrics_t metrics;
+  if (text->caret && (text->meta_color >> 24) && text->px > 0 &&
+      text_metrics(name_px, true, &metrics)) {
+    int measured = text_measure(text->value, name_px, true);
     double used = measured;
     if (used > budget)
       used = budget;
     double caret_w = text->px * (2.0 / 12.0);
     sign_shape_t bar = {.kind = SIGN_RECT,
                         .x = name_x + used + text->gap,
-                        .y = text->baseline_y - text->px * 0.85,
+                        .y = baseline - metrics.ascent,
                         .w = caret_w,
                         .h = text->px,
                         .radius = caret_w / 2,
@@ -408,9 +437,8 @@ static void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
     draw_shape(dst, dw, dh, &bar, scale, bounds, false);
   }
   if (text->meta[0])
-    text_draw_clip(dst, dw, dh, (int)lround(meta_x * scale), baseline,
-                   text->meta, (float)text->meta_px, false, text->meta_color, 0,
-                   box);
+    text_draw_clip(dst, dw, dh, (int)lround(meta_x * scale), base, text->meta,
+                   (float)text->meta_px, false, text->meta_color, 0, box);
 }
 void sign_draw(uint8_t *dst, int dw, int dh, int scale_120,
                const sign_frame_t *frame, sign_draw_layer_t layer) {
@@ -426,9 +454,12 @@ void sign_draw(uint8_t *dst, int dw, int dh, int scale_120,
   pix_t bounds = pix_of(frame->bounds_x, frame->bounds_y, frame->bounds_w,
                         frame->bounds_h, scale);
   bool store = !frame->transitioning;
-  if (layer == SIGN_DRAW_UNDER)
-    for (int i = 0; i < frame->shape_count; i++)
-      draw_shape(dst, dw, dh, &frame->shapes[i], scale, bounds, store);
+  for (int i = 0; i < frame->shape_count; i++) {
+    const sign_shape_t *shape = &frame->shapes[i];
+    bool over = shape->above;
+    if (over == (layer == SIGN_DRAW_OVER))
+      draw_shape(dst, dw, dh, shape, scale, bounds, store);
+  }
   for (int i = 0; i < frame->text_count; i++) {
     const sign_text_t *text = &frame->texts[i];
     if (text->above == (layer == SIGN_DRAW_OVER))

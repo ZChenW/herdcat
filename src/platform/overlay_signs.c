@@ -3,9 +3,11 @@
 
 #include "config/sign_options.h"
 #include "core/agent_sessions.h"
+#include "graphics/text.h"
 #include "platform/drag.h"
 #include "platform/focus_current.h"
 #include "platform/focus_watch.h"
+#include "platform/font_panel.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -27,6 +29,8 @@ typedef struct {
   bool has_frame, has_prev, presented, was_invisible;
   bool has_hover;
   uint64_t hover_key;
+  int box_x, box_y, box_w, box_h;
+  bool has_box;
 } lane_t;
 
 static lane_t lanes[MAX_OUTPUTS];
@@ -44,6 +48,32 @@ static char desk_name[48];
 static int64_t desk_key_ms;
 static double published_lift;
 static void (*on_expand)(void);
+#define MENU_LEAVE_MS 800
+#define MENU_IDLE_MS  6000
+static bool menu_open, menu_right_down, menu_toggle, block_drag, menu_activity;
+static bool style_override, language_override;
+static size_t menu_index;
+static int menu_segment_down, menu_choice;
+static bool want_toggle;
+static int64_t menu_leave_at, menu_idle_at, menu_tap_at;
+static sign_style_t style_choice;
+static sign_language_t language_choice;
+static unsigned menu_tap;
+static void (*on_style)(sign_style_t);
+static void (*on_language)(sign_language_t);
+static void (*on_paw)(unsigned);
+static void (*on_font)(const char *, bool);
+static bool font_override, font_dirty, font_pending, fonts_ready;
+static bool seen_english;
+static int font_dir;
+static int64_t font_save_at;
+static char font_choice[128], seen_config_font[128];
+// Browsing: the font panel is open. The card steps aside, the real signs come
+// up, and the main face follows the pointer until a face is chosen or the
+// pointer leaves the cell.
+static bool previewing, was_browsing, panel_entered, has_kept_card;
+static char preview_face[128];
+static sign_rect_t kept_card;
 
 static int desk_hang(int cat_height) {
   if (cat_height <= 0)
@@ -162,9 +192,10 @@ static void track_expanded(size_t index, int cat_x, int cat_y, int cat_w,
     lanes[index].hover_key = over_hit ? hit.key : 0;
   }
 }
+static int segment_at(const sign_frame_t *frame, double x, double y);
 static void build_frame(size_t index, const config_t *config, int cat_x,
-                        int cat_y, int64_t now_ms, bool snap,
-                        sign_frame_t *frame) {
+                        int cat_y, int64_t now_ms, bool snap, bool menu,
+                        bool browse, unsigned tap, sign_frame_t *frame) {
   agent_session_view_t all[AGENT_SESSIONS_MAX];
   agent_session_view_t shown[SIGN_MAX_VISIBLE];
   int count = agent_sessions_snapshot(all, AGENT_SESSIONS_MAX);
@@ -188,12 +219,37 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
       .cat_x = cat_x,
       .cat_y = cat_y,
       .cat_height = config->cat_height,
-      .typing = desk_on,
-      .desk_snap = snap,
+      .typing = desk_on && !menu,
+      .desk_snap = snap || (menu && desk_on),
+      .menu = menu,
+      .menu_post = config->sign_style == SIGN_STYLE_POST,
+      .menu_english = config_sign_english(config),
+      .menu_tap = tap,
+      .menu_font_dir = menu ? font_dir : 0,
+      .menu_arrow = menu && menu_segment_down == 5   ? 1
+                    : menu && menu_segment_down == 6 ? 2
+                                                     : 0,
       .typing_key = desk_key,
       .typing_until = desk_on ? desk_key_ms + 2500 : 0,
   };
   snprintf(input.desk_name, sizeof(input.desk_name), "%s", desk_name);
+  if (browse) {
+    // Show every session, and one name tag in the fan, so the face being
+    // tried is seen on real signs.
+    input.open = true;
+    if (!input.has_hover && input.count > 0) {
+      input.has_hover = true;
+      input.hover_key = shown[0].key;
+    }
+  }
+  input.menu_font_hot =
+      menu && (font_panel_surface_is_open() ||
+               (tracking && track_index == index && lanes[index].has_frame &&
+                segment_at(&lanes[index].frame, pointer_x, pointer_y) == 7));
+  const char *face = font_override ? font_choice : config->sign_font;
+  snprintf(input.menu_font, sizeof(input.menu_font), "%s", face);
+  if (menu)
+    font_dir = 0;
   signs_frame(&lanes[index].model, &input, frame);
 }
 static bool same_ink(const sign_frame_t *a, const sign_frame_t *b) {
@@ -256,29 +312,340 @@ static int milliseconds_until(int64_t when, int64_t now) {
     return INT_MAX;
   return (int)delta;
 }
+static void sooner(overlay_signs_step_t *out, int64_t when, int64_t now) {
+  if (when <= now)
+    return;
+  int wait = milliseconds_until(when, now);
+  if (out->timeout_ms < 0 || wait < out->timeout_ms)
+    out->timeout_ms = wait;
+}
+static bool inside_rect(const sign_rect_t *rect, double x, double y) {
+  return rect && inside(rect->x, rect->y, rect->w, rect->h, x, y);
+}
+static bool over_cat(size_t index) {
+  lane_t *lane = &lanes[index];
+  return lane->has_box && inside(lane->box_x, lane->box_y, lane->box_w,
+                                 lane->box_h, pointer_x, pointer_y);
+}
+static bool over_card(size_t index) {
+  lane_t *lane = &lanes[index];
+  return lane->has_frame && lane->frame.menu_open &&
+         inside_rect(&lane->frame.menu_card, pointer_x, pointer_y);
+}
+static bool over_sign(size_t index) {
+  sign_hit_t hit;
+  return lanes[index].has_frame &&
+         top_hit(&lanes[index].frame, pointer_x, pointer_y, &hit);
+}
+static int segment_at(const sign_frame_t *frame, double x, double y) {
+  if (!frame || !frame->menu_open)
+    return 0;
+  for (int i = 0; i < 2; i++) {
+    if (inside_rect(&frame->menu_style[i], x, y))
+      return 1 + i;
+    if (inside_rect(&frame->menu_lang[i], x, y))
+      return 3 + i;
+  }
+  if (inside_rect(&frame->menu_font_prev, x, y))
+    return 5;
+  if (inside_rect(&frame->menu_font_next, x, y))
+    return 6;
+  if (inside_rect(&frame->menu_font, x, y))
+    return 7;
+  return 0;
+}
+static sign_style_t effective_style(const config_t *config) {
+  if (style_override && config->sign_style != SIGN_STYLE_OFF)
+    return style_choice;
+  return config->sign_style;
+}
+static bool effective_english(const config_t *config) {
+  if (language_override)
+    return language_choice == SIGN_LANGUAGE_EN;
+  return config_sign_english(config);
+}
+static void flush_font(void) {
+  if (!font_dirty)
+    return;
+  font_dirty = false;
+  font_pending = false;
+  font_save_at = 0;
+  if (on_font)
+    on_font(font_choice, true);
+}
+static void ensure_fonts(void) {
+  if (fonts_ready)
+    return;
+  if (text_families("en", NULL, 0) >= 0)
+    fonts_ready = true;
+}
+static void step_font(const char *lang, const char *config_font, int dir,
+                      int64_t now_ms) {
+  if (!dir)
+    return;
+  const char *current = font_override ? font_choice : config_font;
+  if (current && !current[0])
+    current = NULL;
+  const char *next = NULL;
+  if (text_family_step(lang, current, dir, &next) < 0)
+    return;
+  font_override = true;
+  snprintf(font_choice, sizeof(font_choice), "%s", next ? next : "");
+  font_dir = dir > 0 ? 1 : -1;
+  font_dirty = true;
+  menu_activity = true;
+  if (now_ms < 0) {
+    font_pending = true;
+    font_save_at = 0;
+  } else {
+    font_pending = false;
+    font_save_at = now_ms + 500;
+  }
+  if (on_font)
+    on_font(font_choice, false);
+}
+static void remember_config(const config_t *config) {
+  seen_english = effective_english(config);
+  snprintf(seen_config_font, sizeof(seen_config_font), "%s", config->sign_font);
+}
+static void menu_close(void) {
+  flush_font();
+  font_panel_surface_close();
+  want_toggle = false;
+  menu_open = false;
+  menu_leave_at = 0;
+  menu_idle_at = 0;
+}
+static void take_toggle(size_t index, const config_t *config, int64_t now_ms) {
+  if (index != track_index || !menu_toggle)
+    return;
+  menu_toggle = false;
+  if (effective_style(config) == SIGN_STYLE_OFF)
+    return;
+  if (menu_open && menu_index == index) {
+    menu_close();
+    return;
+  }
+  menu_open = true;
+  menu_index = index;
+  menu_idle_at = now_ms + MENU_IDLE_MS;
+  menu_leave_at = 0;
+  ensure_fonts();
+}
+static void apply_choice(const config_t *config, int64_t now_ms) {
+  int choice = menu_choice;
+  menu_choice = 0;
+  if (!menu_open || !choice)
+    return;
+  sign_style_t style = effective_style(config);
+  bool english = effective_english(config);
+  if (choice == 1 && style != SIGN_STYLE_FAN) {
+    style_choice = SIGN_STYLE_FAN;
+    style_override = true;
+    menu_close();
+    menu_tap = 1;
+    if (on_style)
+      on_style(SIGN_STYLE_FAN);
+    if (on_paw)
+      on_paw(1);
+  } else if (choice == 2 && style != SIGN_STYLE_POST) {
+    style_choice = SIGN_STYLE_POST;
+    style_override = true;
+    menu_close();
+    menu_tap = 1;
+    if (on_style)
+      on_style(SIGN_STYLE_POST);
+    if (on_paw)
+      on_paw(1);
+  } else if (choice == 3 && english) {
+    language_choice = SIGN_LANGUAGE_ZH;
+    language_override = true;
+    menu_tap = 2;
+    menu_idle_at = now_ms + MENU_IDLE_MS;
+    if (on_language)
+      on_language(SIGN_LANGUAGE_ZH);
+    if (on_paw)
+      on_paw(2);
+  } else if (choice == 4 && !english) {
+    language_choice = SIGN_LANGUAGE_EN;
+    language_override = true;
+    menu_tap = 2;
+    menu_idle_at = now_ms + MENU_IDLE_MS;
+    if (on_language)
+      on_language(SIGN_LANGUAGE_EN);
+    if (on_paw)
+      on_paw(2);
+  } else if (choice == 5 || choice == 6) {
+    step_font(english ? "en" : "zh-cn", config->sign_font, choice == 5 ? -1 : 1,
+              now_ms);
+    menu_idle_at = now_ms + MENU_IDLE_MS;
+  } else if (choice == 7) {
+    want_toggle = true;
+    menu_idle_at = now_ms + MENU_IDLE_MS;
+  }
+}
+static bool over_union(size_t index) {
+  return tracking && track_index == index &&
+         (over_cat(index) || over_card(index) ||
+          font_panel_surface_covers(index));
+}
+static void menu_timers(size_t index, int64_t now_ms) {
+  if (!menu_open || index != menu_index)
+    return;
+  bool panel = font_panel_surface_is_open();
+  if (menu_activity) {
+    menu_idle_at = now_ms + MENU_IDLE_MS;
+    font_panel_surface_activity(now_ms);
+    if (over_union(index))
+      menu_leave_at = 0;
+    menu_activity = false;
+  }
+  if (panel)
+    menu_idle_at = now_ms + MENU_IDLE_MS;
+  if (panel && font_panel_surface_covers(index))
+    panel_entered = true;
+  if (over_union(index))
+    menu_leave_at = 0;
+  else if (!menu_leave_at && (!panel || panel_entered))
+    // The card steps aside when the panel opens, leaving the pointer over
+    // nothing until it reaches the panel. That is not leaving.
+    menu_leave_at = now_ms + MENU_LEAVE_MS;
+  if ((menu_leave_at && now_ms >= menu_leave_at) ||
+      (!panel && menu_idle_at && now_ms >= menu_idle_at))
+    menu_close();
+}
+static void take_panel_choice(void) {
+  char family[128];
+  if (!font_panel_surface_take_choice(family, sizeof(family)))
+    return;
+  font_override = true;
+  snprintf(font_choice, sizeof(font_choice), "%s", family);
+  font_dirty = false;
+  font_pending = false;
+  font_save_at = 0;
+  font_dir = 0;
+  if (on_font)
+    on_font(font_choice, true);
+}
+static void follow_hover(const config_t *config) {
+  const char *want =
+      font_panel_surface_is_open() ? font_panel_surface_hover() : NULL;
+  if (!want) {
+    if (previewing) {
+      previewing = false;
+      if (on_font)
+        on_font(font_choice, false);
+    }
+    return;
+  }
+  if (!previewing) {
+    // Hold the chosen face in font_choice so the card, the panel's selected
+    // cell and the restore below do not follow the face being tried.
+    if (!font_override) {
+      font_override = true;
+      snprintf(font_choice, sizeof(font_choice), "%s", config->sign_font);
+    }
+    previewing = true;
+    preview_face[0] = '\1';
+    preview_face[1] = '\0';
+  }
+  if (!strcmp(preview_face, want))
+    return;
+  snprintf(preview_face, sizeof(preview_face), "%s", want);
+  if (on_font)
+    on_font(want, false);
+}
+static void sync_panel(size_t index, const config_t *config, int surface_h,
+                       int64_t now_ms, overlay_signs_step_t *out) {
+  font_panel_anchor_t card = {0};
+  if (lanes[index].has_frame) {
+    const sign_rect_t *rect = &lanes[index].frame.menu_card;
+    if (rect->w > 0 && rect->h > 0) {
+      kept_card = *rect;
+      has_kept_card = true;
+    } else if (has_kept_card && font_panel_surface_is_open()) {
+      // The card is aside while browsing. The panel stays where it opened.
+      rect = &kept_card;
+    }
+    card = (font_panel_anchor_t){rect->x, rect->y, rect->w, rect->h};
+  }
+  bool toggle = want_toggle && index == track_index;
+  if (toggle || font_panel_surface_is_open()) {
+    const char *face = font_override ? font_choice : config->sign_font;
+    font_panel_surface_select(face);
+    font_panel_surface_language(config_sign_english(config));
+  }
+  font_panel_surface_sync(index, config, card, surface_h, now_ms,
+                          &out->timeout_ms, toggle);
+  if (index == track_index)
+    want_toggle = false;
+}
 overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
                                         int cat_x, int cat_w, int surface_h,
                                         bool invisible, int64_t now_ms) {
   overlay_signs_step_t out = {.timeout_ms = -1};
   if (index >= MAX_OUTPUTS || !config)
     return out;
-  lane_t *lane = &lanes[index];
-  if (lane->style != config->sign_style) {
-    memset(&lane->model, 0, sizeof(lane->model));
-    lane->style = config->sign_style;
+  take_panel_choice();
+  if (font_pending) {
+    font_pending = false;
+    font_save_at = now_ms + 500;
   }
-  int cat_h = config->cat_height > 0 ? config->cat_height : 0;
+  if (font_dirty && font_save_at && now_ms >= font_save_at)
+    flush_font();
+  lane_t *lane = &lanes[index];
+  if (index == menu_index)
+    follow_hover(config);
+  take_toggle(index, config, now_ms);
+  if (index == track_index)
+    apply_choice(config, now_ms);
+  config_t local = *config;
+  if (style_override && local.sign_style != SIGN_STYLE_OFF)
+    local.sign_style = style_choice;
+  if (language_override)
+    local.sign_language = language_choice;
+  if ((invisible || local.sign_style == SIGN_STYLE_OFF) && menu_open &&
+      index == menu_index)
+    menu_close();
+  menu_timers(index, now_ms);
+  remember_config(config);
+  if (lane->style != local.sign_style) {
+    sign_menu_t menu = lane->model.menu;
+    memset(&lane->model, 0, sizeof(lane->model));
+    lane->model.menu = menu;
+    lane->style = local.sign_style;
+  }
+  int cat_h = local.cat_height > 0 ? local.cat_height : 0;
   if (desk_on &&
-      (invisible || !config->sign_typing_desk ||
-       config->sign_style == SIGN_STYLE_OFF || now_ms - desk_key_ms >= 2500))
+      (invisible || !local.sign_typing_desk ||
+       local.sign_style == SIGN_STYLE_OFF || now_ms - desk_key_ms >= 2500))
     desk_on = false;
-  int rest = resting_cat_y(config, surface_h);
+  int rest = resting_cat_y(&local, surface_h);
   int cat_y = rest - (lane->has_frame ? (int)lane->frame.cat_lift : 0);
   if (cat_y < 0)
     cat_y = 0;
   track_expanded(index, cat_x, cat_y, cat_w, cat_h, now_ms);
+  bool browse = false;
+  if (index == menu_index) {
+    browse = menu_open && font_panel_surface_is_open();
+    if (browse && !was_browsing)
+      panel_entered = false;
+    // The card is hidden while browsing, so there is nothing to return to:
+    // when the panel goes, the whole menu goes with it.
+    if (was_browsing && !browse && menu_open)
+      menu_close();
+    was_browsing = browse;
+  }
+  bool menu = menu_open && index == menu_index && !browse;
+  unsigned tap = 0;
+  if (index == menu_index && menu_tap) {
+    tap = menu_tap;
+    menu_tap = 0;
+    menu_tap_at = now_ms + 220;
+  }
   sign_frame_t next;
-  build_frame(index, config, cat_x, rest, now_ms, invisible, &next);
+  build_frame(index, &local, cat_x, rest, now_ms, invisible, menu, browse, tap,
+              &next);
   bool changed = !lane->has_frame || !same_ink(&lane->frame, &next);
   lane->frame = next;
   lane->has_frame = true;
@@ -286,8 +653,14 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
   int drawn = rest - (int)next.cat_lift;
   if (drawn < 0)
     drawn = 0;
+  lane->box_x = cat_x;
+  lane->box_y = drawn;
+  lane->box_w = cat_w;
+  lane->box_h = cat_h;
+  lane->has_box = cat_w > 0 && cat_h > 0;
   if (invisible) {
     lane->was_invisible = true;
+    sooner(&out, font_save_at, now_ms);
     lane->last = out;
     return out;
   }
@@ -319,6 +692,16 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
     if (out.timeout_ms < 0 || wait < out.timeout_ms)
       out.timeout_ms = wait;
   }
+  if (menu_tap_at <= now_ms)
+    menu_tap_at = 0;
+  sooner(&out, font_save_at, now_ms);
+  if (menu_open && index == menu_index) {
+    sooner(&out, menu_leave_at, now_ms);
+    sooner(&out, menu_idle_at, now_ms);
+  }
+  if (index == menu_index)
+    sooner(&out, menu_tap_at, now_ms);
+  sync_panel(index, &local, surface_h, now_ms, &out);
   lane->last = out;
   return out;
 }
@@ -356,6 +739,13 @@ int overlay_signs_regions(size_t index, const config_t *config, int cat_x,
   const sign_frame_t *frame = overlay_signs_frame(index);
   if (!frame)
     return count;
+  if (menu_open && menu_index == index && frame->menu_open) {
+    if (frame->menu_card.w > 0 && frame->menu_card.h > 0 && count < capacity)
+      out[count++] =
+          (overlay_signs_rect_t){frame->menu_card.x, frame->menu_card.y,
+                                 frame->menu_card.w, frame->menu_card.h};
+    return count;
+  }
   for (int i = 0; i < frame->hit_count && count < capacity; i++) {
     if (frame->hits[i].w <= 0 || frame->hits[i].h <= 0)
       continue;
@@ -376,6 +766,9 @@ bool overlay_signs_pointer(size_t index, double x, double y) {
   track_index = index;
   pointer_x = x;
   pointer_y = y;
+  menu_activity = true;
+  if (lanes[index].has_frame && segment_at(&lanes[index].frame, x, y))
+    return true;
   sign_hit_t hit;
   return lanes[index].has_frame && top_hit(&lanes[index].frame, x, y, &hit);
 }
@@ -383,10 +776,58 @@ void overlay_signs_leave(void) {
   tracking = false;
   holding = false;
   pressed = false;
+  menu_right_down = false;
+  menu_segment_down = 0;
+  block_drag = false;
+  font_panel_surface_left();
+}
+void overlay_signs_track_panel(size_t index) {
+  if (index >= MAX_OUTPUTS)
+    return;
+  tracking = true;
+  track_index = index;
+  menu_activity = true;
+}
+bool overlay_signs_button(uint32_t button, uint32_t state) {
+  if (font_panel_surface_button(button, state))
+    return true;
+  if (button == 0x110)
+    return false;
+  if (button != 0x111 || !tracking || track_index >= MAX_OUTPUTS) {
+    menu_right_down = false;
+    return true;
+  }
+  size_t index = track_index;
+  bool hit = lanes[index].style != SIGN_STYLE_OFF && tracking &&
+             (over_cat(index) || over_card(index) || over_sign(index));
+  if (state == 1) {
+    menu_right_down = hit;
+  } else {
+    if (menu_right_down)
+      menu_toggle = true;
+    menu_right_down = false;
+  }
+  if (hit)
+    menu_activity = true;
+  return true;
+}
+bool overlay_signs_blocks_drag(void) {
+  return block_drag;
 }
 bool overlay_signs_press(size_t index) {
   if (index >= MAX_OUTPUTS)
     return false;
+  block_drag = false;
+  menu_segment_down = 0;
+  if (tracking && track_index == index && over_card(index)) {
+    block_drag = true;
+    menu_segment_down = segment_at(&lanes[index].frame, pointer_x, pointer_y);
+    menu_activity = true;
+    hold_index = index;
+    pressed = false;
+    return menu_segment_down != 0;
+  }
+  font_panel_surface_close();
   bool was_open = expanded[index];
   holding = true;
   hold_index = index;
@@ -420,6 +861,21 @@ static void note_split_click(pid_t pid, uint64_t key) {
 }
 bool overlay_signs_release(bool dragged, size_t *index, pid_t *pid,
                            uint64_t *key) {
+  int segment = menu_segment_down;
+  menu_segment_down = 0;
+  block_drag = false;
+  if (segment) {
+    int released = 0;
+    if (!dragged && tracking && track_index == hold_index &&
+        lanes[hold_index].has_frame)
+      released = segment_at(&lanes[hold_index].frame, pointer_x, pointer_y);
+    if (released == segment)
+      menu_choice = segment;
+    menu_activity = true;
+    pressed = false;
+    holding = false;
+    return false;
+  }
   bool click = !dragged && pressed;
   if (click) {
     if (index)
@@ -491,17 +947,77 @@ void overlay_signs_note_focus(focus_result_t result, int64_t now_ms) {
 void overlay_signs_on_expand(void (*fn)(void)) {
   on_expand = fn;
 }
+void overlay_signs_on_menu(void (*style)(sign_style_t),
+                           void (*language)(sign_language_t),
+                           void (*paw)(unsigned),
+                           void (*font)(const char *, bool)) {
+  on_style = style;
+  on_language = language;
+  on_paw = paw;
+  on_font = font;
+}
+void overlay_signs_scroll(int32_t discrete) {
+  if (font_panel_surface_armed()) {
+    font_panel_surface_wheel(discrete);
+    return;
+  }
+  if (!menu_open || !discrete || menu_index >= MAX_OUTPUTS)
+    return;
+  lane_t *lane = &lanes[menu_index];
+  if (!lane->has_frame ||
+      !inside_rect(&lane->frame.menu_font, pointer_x, pointer_y))
+    return;
+  ensure_fonts();
+  int steps = discrete;
+  if (steps > 8)
+    steps = 8;
+  else if (steps < -8)
+    steps = -8;
+  int dir = steps > 0 ? 1 : -1;
+  if (steps < 0)
+    steps = -steps;
+  const char *lang = seen_english ? "en" : "zh-cn";
+  for (int i = 0; i < steps; i++)
+    step_font(lang, seen_config_font, dir, -1);
+}
+void overlay_signs_use_config(void) {
+  style_override = false;
+  language_override = false;
+  font_override = false;
+  font_dirty = false;
+  font_pending = false;
+  font_save_at = 0;
+  font_dir = 0;
+  font_choice[0] = '\0';
+}
 void overlay_signs_cleanup(void) {
+  font_panel_surface_close();
   memset(lanes, 0, sizeof(lanes));
   memset(expanded, 0, sizeof(expanded));
   memset(closing, 0, sizeof(closing));
   memset(close_at, 0, sizeof(close_at));
   tracking = holding = pressed = focus_armed = desk_on = false;
+  menu_open = menu_right_down = menu_toggle = block_drag = false;
+  menu_activity = style_override = language_override = false;
+  font_override = font_dirty = font_pending = fonts_ready = false;
+  previewing = was_browsing = panel_entered = has_kept_card = false;
+  preview_face[0] = '\0';
+  seen_english = false;
+  menu_segment_down = menu_choice = font_dir = 0;
+  want_toggle = false;
+  menu_index = 0;
+  menu_leave_at = menu_idle_at = menu_tap_at = font_save_at = 0;
+  menu_tap = 0;
+  font_choice[0] = seen_config_font[0] = '\0';
   desk_key = 0;
   desk_key_ms = 0;
   desk_name[0] = '\0';
   published_lift = 0;
   on_expand = NULL;
+  on_style = NULL;
+  on_language = NULL;
+  on_paw = NULL;
+  on_font = NULL;
   for (size_t i = 0; i < MAX_OUTPUTS; i++)
     lanes[i].last.timeout_ms = -1;
 }

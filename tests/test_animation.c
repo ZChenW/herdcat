@@ -19,6 +19,10 @@ void wayland_request_redraw(void) {
 int64_t input_timestamp(void) {
   return 0;
 }
+static int key_hooks;
+static void count_key(void) {
+  key_hooks++;
+}
 static void delay(int ms) {
   struct timespec ts = {.tv_sec = ms / 1000, .tv_nsec = (ms % 1000) * 1000000L};
   while (nanosleep(&ts, &ts) < 0 && errno == EINTR) {}
@@ -150,6 +154,15 @@ int main(void) {
   blit_cached_frame(dest, 2, 2, source, 1, 1, 1, 1);
   TEST_ASSERT(dest[14] == 255 && dest[15] == 255);
   agent_tests(&config, first, second);
+  animation_set_key_hook(count_key);
+  config.mirror_x = 1;
+  unsigned drawn = redraws;
+  animation_tap(PAW_LEFT, 220);
+  TEST_ASSERT(anim_index == BONGOCAT_FRAME_RIGHT_DOWN);
+  TEST_ASSERT(key_hooks == 0 && redraws == drawn + 1);
+  animation_tap(PAW_LEFT, 0);
+  TEST_ASSERT(anim_index == BONGOCAT_FRAME_RIGHT_DOWN && key_hooks == 0);
+  config.mirror_x = 0;
   animation_overlay_destroy(first);
   animation_overlay_destroy(second);
   animation_set_agent_state(AGENT_STATE_DONE);

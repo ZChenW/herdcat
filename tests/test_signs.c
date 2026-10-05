@@ -265,7 +265,8 @@ static void test_icons_text_and_loops(void) {
   near(frame.texts[0].px, 13);
   near(frame.texts[0].meta_px, 11.5);
   near(frame.texts[0].gap, 7);
-  near(frame.texts[0].baseline_y, frame.hits[0].y + 17.5);
+  near(frame.texts[0].line_top, frame.hits[0].y + 6.5);
+  near(frame.texts[0].line_h, 13);
   near(frame.texts[0].x, frame.hits[0].x + 33);
   TEST_ASSERT(!frame.texts[0].reverse && !frame.texts[0].above);
   TEST_ASSERT((frame.texts[0].meta_color & 0xffffff) == 0x4a5261);
@@ -423,6 +424,7 @@ static void test_failure_scale_and_clearance(void) {
   TEST_ASSERT(sign_clearance(SIGN_STYLE_POST, 0) == 0);
   int clearance = sign_clearance(SIGN_STYLE_POST, 110);
   TEST_ASSERT(clearance >= 160 && clearance <= 180);
+  TEST_ASSERT(clearance - 136 >= 6);
   signs_t rising = {0};
   agent_session_view_t many[5];
   for (int i = 0; i < 5; i++)
@@ -535,7 +537,8 @@ static void test_fan(void) {
   TEST_ASSERT(frame.pad.x == 56 && frame.pad.y == 86);
   TEST_ASSERT(frame.pad.w == 288 && frame.pad.h == 194);
   int clearance = sign_clearance(SIGN_STYLE_FAN, 110);
-  TEST_ASSERT(clearance >= 90 && clearance <= 130);
+  TEST_ASSERT(clearance == 142);
+  TEST_ASSERT(clearance - 136 >= 6);
   TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 0) == 0);
   signs_t rising = {0};
   agent_session_view_t many[5];
@@ -654,8 +657,178 @@ static void options(void) {
     item.state = AGENT_STATE_WAITING;
   }
 }
+static const sign_shape_t *shape_box(const sign_frame_t *frame, double x,
+                                     double y, double w, double h) {
+  for (int i = 0; i < frame->shape_count; i++) {
+    const sign_shape_t *shape = &frame->shapes[i];
+    if (fabs(shape->x - x) < 0.05 && fabs(shape->y - y) < 0.05 &&
+        fabs(shape->w - w) < 0.05 && fabs(shape->h - h) < 0.05)
+      return shape;
+  }
+  return NULL;
+}
+static const sign_text_t *text_value(const sign_frame_t *frame,
+                                     const char *value) {
+  for (int i = 0; i < frame->text_count; i++)
+    if (!strcmp(frame->texts[i].value, value))
+      return &frame->texts[i];
+  return NULL;
+}
+static void test_menu(void) {
+  signs_t model = {0};
+  sign_frame_t frame;
+  sign_input_t in = base_input(NULL, 0);
+  in.style = SIGN_STYLE_FAN;
+  in.animations = SIGN_ANIM_OFF;
+  in.menu = true;
+  in.now_ms = 1000;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(frame.menu_open && !frame.animating && frame.next_frame_ms == 0);
+  TEST_ASSERT(frame.menu_card.x == 122 && frame.menu_card.y == 34);
+  TEST_ASSERT(frame.menu_card.w == 154 && frame.menu_card.h == 130);
+  TEST_ASSERT(frame.menu_card.y + frame.menu_card.h == 170 - 6);
+  const sign_shape_t *card = shape_box(&frame, 122, 34, 154, 130);
+  TEST_ASSERT(card && card->above && card->radius == 14 && card->stroke == 2);
+  TEST_ASSERT((card->fill & 0xffffff) == 0xf8fafc);
+  TEST_ASSERT((card->outline & 0xffffff) == 0x111827);
+  const sign_shape_t *holder = shape_box(&frame, 197, 164, 5, 54);
+  TEST_ASSERT(holder && !holder->above && holder->stroke == 1.5 &&
+              holder->radius == 2.5);
+  TEST_ASSERT(frame.menu_style[0].x == 134 && frame.menu_style[0].y == 46);
+  TEST_ASSERT(frame.menu_style[0].w == 65 && frame.menu_style[0].h == 30);
+  TEST_ASSERT(frame.menu_style[1].x == 199 && frame.menu_style[1].w == 65);
+  TEST_ASSERT(frame.menu_style_thumb.x == 138 &&
+              frame.menu_style_thumb.y == 50);
+  TEST_ASSERT(frame.menu_style_thumb.w == 61 && frame.menu_style_thumb.h == 22);
+  const sign_shape_t *thumb = shape_box(&frame, 138, 50, 61, 22);
+  TEST_ASSERT(thumb && thumb->above && (thumb->fill & 0xffffff) == 0x111827);
+  TEST_ASSERT(frame.menu_lang_thumb.x == 138 && frame.menu_lang[0].y == 84);
+  TEST_ASSERT(frame.menu_lang_thumb.y == 88);
+  TEST_ASSERT(frame.menu_font.x == 134 && frame.menu_font.y == 122);
+  TEST_ASSERT(frame.menu_font.w == 130 && frame.menu_font.h == 30);
+  TEST_ASSERT(frame.menu_font_prev.x == 134 && frame.menu_font_prev.w == 26);
+  TEST_ASSERT(frame.menu_font_next.x == 238 && frame.menu_font_next.w == 26);
+  TEST_ASSERT(!shape_box(&frame, 160, 124, 78, 26));
+  in.menu_font_hot = true;
+  signs_frame(&model, &in, &frame);
+  const sign_shape_t *hot = shape_box(&frame, 160, 124, 78, 26);
+  TEST_ASSERT(hot && hot->stroke == 0 && (hot->fill & 0xffffff) == 0xe3e8f0);
+  in.menu_font_hot = false;
+  signs_frame(&model, &in, &frame);
+  const sign_text_t *def = text_value(&frame, "默认");
+  TEST_ASSERT(def && def->center && !def->family[0] && def->slide == 0);
+  const sign_text_t *zh = text_value(&frame, "中");
+  const sign_text_t *en = text_value(&frame, "EN");
+  TEST_ASSERT(zh && en && zh->center && zh->above && en->center);
+  TEST_ASSERT((zh->color & 0xffffff) == 0xf8fafc);
+  TEST_ASSERT((en->color & 0xffffff) == 0x111827);
+  TEST_ASSERT(shape_box(&frame, 0, 0, 0, 0) == NULL);
+  int tilted = 0;
+  for (int i = 0; i < frame.shape_count; i++)
+    if (fabs(frame.shapes[i].rotation) == 28)
+      tilted++;
+  TEST_ASSERT(tilted == 2);
+  // Arrows point outward. Rotation is clockwise on screen, so the upper
+  // stroke of the left arrow leans like "/" (positive) and the right one
+  // like "\" (negative). They were mirrored, pointing at the font name.
+  int left_up = 0, right_up = 0;
+  for (int i = 0; i < frame.shape_count; i++) {
+    const sign_shape_t *stroke = &frame.shapes[i];
+    double mid_x = stroke->x + stroke->w / 2, mid_y = stroke->y + stroke->h / 2;
+    if (stroke->w > 3 || mid_y >= 137 || mid_y < 122 || stroke->rotation == 0)
+      continue;
+    if (mid_x < 160 && stroke->rotation > 0)
+      left_up++;
+    if (mid_x > 238 && stroke->rotation < 0)
+      right_up++;
+  }
+  TEST_ASSERT(left_up == 1 && right_up == 1);
+  in.menu_post = true;
+  in.menu_english = true;
+  in.menu_tap = 2;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(frame.menu_style_thumb.x == 199 &&
+              frame.menu_lang_thumb.x == 199);
+  TEST_ASSERT(frame.menu_paw == 2);
+  zh = text_value(&frame, "中");
+  en = text_value(&frame, "EN");
+  TEST_ASSERT((zh->color & 0xffffff) == 0x111827);
+  TEST_ASSERT((en->color & 0xffffff) == 0xf8fafc);
+  in.menu_tap = 0;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(frame.menu_paw == 0);
+
+  signs_t moving = {0};
+  in.menu_post = false;
+  in.menu_english = false;
+  in.animations = SIGN_ANIM_FULL;
+  in.now_ms = 0;
+  signs_frame(&moving, &in, &frame);
+  TEST_ASSERT(frame.animating && frame.next_frame_ms == 0);
+  in.now_ms = 1000;
+  signs_frame(&moving, &in, &frame);
+  TEST_ASSERT(!frame.animating && frame.next_frame_ms == 0);
+  TEST_ASSERT(frame.menu_open && frame.menu_style_thumb.x == 138);
+  in.animations = SIGN_ANIM_REDUCED;
+  in.menu_post = true;
+  in.now_ms = 1000;
+  signs_frame(&moving, &in, &frame);
+  TEST_ASSERT(frame.animating);
+  TEST_ASSERT(frame.menu_style_thumb.x == 138);
+  in.now_ms = 1280;
+  signs_frame(&moving, &in, &frame);
+  TEST_ASSERT(!frame.animating && frame.next_frame_ms == 0);
+  TEST_ASSERT(frame.menu_style_thumb.x == 199);
+  signs_t instant = {0};
+  in.animations = SIGN_ANIM_OFF;
+  in.now_ms = 0;
+  signs_frame(&instant, &in, &frame);
+  TEST_ASSERT(!frame.animating && frame.menu_style_thumb.x == 199);
+
+  agent_session_view_t item;
+  session(&item, 0, AGENT_STATE_WAITING, "claude");
+  sign_input_t posted = base_input(&item, 1);
+  posted.animations = SIGN_ANIM_OFF;
+  posted.menu = true;
+  signs_t hidden = {0};
+  signs_frame(&hidden, &posted, &frame);
+  TEST_ASSERT(frame.hit_count == 0 && frame.menu_open);
+  posted.style = SIGN_STYLE_OFF;
+  signs_frame(&hidden, &posted, &frame);
+  TEST_ASSERT(!frame.menu_open && frame.shape_count == 0);
+
+  signs_t fonts = {0};
+  in = base_input(NULL, 0);
+  in.style = SIGN_STYLE_FAN;
+  in.animations = SIGN_ANIM_OFF;
+  in.menu = true;
+  in.now_ms = 1000;
+  signs_frame(&fonts, &in, &frame);
+  in.animations = SIGN_ANIM_FULL;
+  in.menu_font_dir = 1;
+  snprintf(in.menu_font, sizeof(in.menu_font), "Noto Sans");
+  in.now_ms = 2000;
+  signs_frame(&fonts, &in, &frame);
+  const sign_text_t *named = text_value(&frame, "Noto Sans");
+  TEST_ASSERT(named && !strcmp(named->family, "Noto Sans"));
+  near(named->slide, 14);
+  in.menu_font_dir = -1;
+  snprintf(in.menu_font, sizeof(in.menu_font), "DejaVu Sans");
+  in.now_ms = 3000;
+  signs_frame(&fonts, &in, &frame);
+  named = text_value(&frame, "DejaVu Sans");
+  TEST_ASSERT(named && !strcmp(named->family, "DejaVu Sans"));
+  near(named->slide, -14);
+  in.now_ms = 3200;
+  in.menu_font_dir = 0;
+  signs_frame(&fonts, &in, &frame);
+  named = text_value(&frame, "DejaVu Sans");
+  TEST_ASSERT(named);
+  near(named->slide, 0);
+}
 int main(void) {
   options();
+  test_menu();
   test_lifecycle();
   test_rows_and_direction();
   test_easing_hover_and_press();

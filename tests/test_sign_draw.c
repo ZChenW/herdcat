@@ -118,8 +118,10 @@ static void test_colors_and_cache(void) {
   TEST_ASSERT(check);
   const sign_text_t *text = &frame.texts[0];
   bool ink = false;
-  int x0 = (int)floor(text->x), y1 = (int)ceil(text->baseline_y);
-  for (int y = y1 - 12; y <= y1; y++) {
+  int x0 = (int)floor(text->x);
+  int y0 = (int)floor(text->clip_y);
+  int y1 = (int)ceil(text->clip_y + text->clip_h);
+  for (int y = y0; y < y1; y++) {
     for (int x = x0; x < x0 + 48; x++) {
       uint8_t *p = pixel(a, W, x, y);
       if (p[3] > 180 && p[2] < 60 && p[1] < 60 && p[0] < 70)
@@ -267,8 +269,79 @@ static void test_agent_shapes(const char *snapshot) {
   }
 }
 
+static void plate_padding(const char *name, const char *meta, int *top,
+                          int *bottom) {
+  static uint8_t buf[W * H * 4];
+  memset(buf, 0, sizeof(buf));
+  sign_frame_t frame = {.bounds_w = W, .bounds_h = H, .text_count = 1};
+  frame.texts[0] = (sign_text_t){.x = 320,
+                                 .anchor_y = 180,
+                                 .px = 13,
+                                 .meta_px = 11.5,
+                                 .gap = 8,
+                                 .color = 0xff111827,
+                                 .meta_color = 0xff111827,
+                                 .tag_scale = 1,
+                                 .font_ratio = 1,
+                                 .back = 0xffffe4a3};
+  snprintf(frame.texts[0].value, sizeof(frame.texts[0].value), "%s", name);
+  snprintf(frame.texts[0].meta, sizeof(frame.texts[0].meta), "%s", meta);
+  sign_draw(buf, W, H, 120, &frame, SIGN_DRAW_UNDER);
+  int y0 = H, y1 = -1, x0 = W, x1 = -1;
+  for (int y = 0; y < H; y++) {
+    for (int x = 0; x < W; x++) {
+      uint8_t *p = pixel(buf, W, x, y);
+      if (p[3] > 200 && p[2] > 200 && p[1] > 180 && p[0] > 120) {
+        if (y < y0)
+          y0 = y;
+        if (y > y1)
+          y1 = y;
+        if (x < x0)
+          x0 = x;
+        if (x > x1)
+          x1 = x;
+      }
+    }
+  }
+  TEST_ASSERT(y1 > y0 && x1 > x0);
+  // Stay off the rounded border. Ink in the middle is the label.
+  int inset = 14;
+  int ink0 = H, ink1 = -1;
+  for (int y = y0; y <= y1; y++) {
+    for (int x = x0 + inset; x <= x1 - inset; x++) {
+      uint8_t *p = pixel(buf, W, x, y);
+      if (p[3] > 160 && p[2] < 80 && p[1] < 90 && p[0] < 90) {
+        if (y < ink0)
+          ink0 = y;
+        if (y > ink1)
+          ink1 = y;
+      }
+    }
+  }
+  TEST_ASSERT(ink1 >= ink0);
+  *top = ink0 - y0;
+  *bottom = y1 - ink1;
+}
+static void test_nameplate_padding(void) {
+  const char *names[] = {"Wayland", "项目名称", "Wayland项目"};
+  const char *metas[] = {"2 min", "等你批准", "2 分钟"};
+  for (int i = 0; i < 3; i++) {
+    if (i > 0 && !text_has_glyph(0x9879, true)) {
+      puts("SKIP CJK nameplate padding: no system Chinese font");
+      break;
+    }
+    int top = 0, bottom = 0;
+    plate_padding(names[i], metas[i], &top, &bottom);
+    if (abs(top - bottom) > 1) {
+      fprintf(stderr, "nameplate %s padding top %d bottom %d\n", names[i], top,
+              bottom);
+      TEST_ASSERT(0);
+    }
+  }
+}
 int main(int argc, char **argv) {
   TEST_ASSERT(text_init(NULL) == 0);
+  test_nameplate_padding();
   test_colors_and_cache();
   test_transition_and_scale();
   test_orbit();

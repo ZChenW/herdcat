@@ -40,6 +40,9 @@ void animation_overlay_activate(void *opaque, config_t *config);
 void animation_overlay_cache(int width, int height);
 void animation_overlay_destroy(void *opaque);
 int animation_tick(unsigned paws);
+// Press one paw for duration_ms. This is not a key: no key hook, and the
+// idle-sleep timestamp stays where it is.
+void animation_tap(unsigned paw, int duration_ms);
 // Invoked when a paw arrives. The hook is not told which key it was.
 void animation_set_key_hook(void (*hook)(void));
 void animation_set_paused(bool value);

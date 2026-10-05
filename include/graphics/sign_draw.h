@@ -3,8 +3,8 @@
 
 #include "graphics/signs.h"
 
-// UNDER is the pole, boards, icons, and labels that sit behind the cat.
-// OVER is reserved for nameplates painted after the cat. Post leaves it empty.
+// UNDER is the pole, boards, icons, labels, and the card holder behind the
+// cat. OVER is nameplates and the switch card, painted after the cat.
 typedef enum {
   SIGN_DRAW_UNDER,
   SIGN_DRAW_OVER

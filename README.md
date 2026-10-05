@@ -250,16 +250,20 @@ A kitty split is focused too when that session's process has both
 yourself; this program does not edit that file:
 
 ```
-allow_remote_control socket-only
-listen_on unix:${XDG_RUNTIME_DIR}/kitty
+allow_remote_control password
+remote_control_password "" focus-window
+listen_on unix:${XDG_RUNTIME_DIR}/kitty-{kitty_pid}
 ```
 
-`socket-only` accepts commands from the socket and refuses them from the
-terminal. `listen_on` is that socket. Kitty expands the path and adds its
-process id. Any local program that can open the socket can control kitty,
-including typing into its windows and reading them. Restart kitty after the
-edit. Reloading the config does not apply `listen_on`. Without the socket, a
-click still focuses the kitty window and leaves the split alone.
+`listen_on` is the socket bongocat talks to. The empty password with one
+listed action lets a program on that socket move focus between kitty windows
+and nothing else: it cannot type into a window, read one, or open and close
+them. This is all the jump needs. The broader `allow_remote_control
+socket-only` also works, but then any local program that can open the socket
+can type into and read every kitty window. Restart kitty after the edit;
+reloading the config does not apply `listen_on`, and only agents started
+afterward carry the socket address. Without the socket, a click still focuses
+the kitty window and leaves the split alone.
 
 The typing desk follows one session and stops at the first answer. A reported
 kitty split selects the session in that split. A click selects that sign until
@@ -288,6 +292,44 @@ process and does not use `kitten @`, so it needs no extra remote-control
 permission. It gives up within a few tens of milliseconds when the cat is
 not running, and it writes nothing to the terminal.
 
+### Switch card
+
+Right-click the cat or a sign. The signs step down and the cat holds up a
+card with three rows. Nothing on it is labelled; each row shows its choices
+and an ink thumb marks the current one.
+
+- **Style**: fan or post. The card closes and the signs come back up in the
+  new style.
+- **Language**: 中 or EN. Every label changes at once and the card stays.
+- **Font**: the family name, drawn in that family, between two arrows. The
+  arrows and the scroll wheel step through the families that cover the
+  current language. The first entry is the system default.
+
+A paw taps when a row changes. The card closes after 800 ms off the cat and
+card, on a second right click, or after 6 seconds idle. Clicks elsewhere on
+the screen never reach an overlay, so they cannot close it. There is no card
+with `sign_style=off`.
+
+Click the font name to open the **font panel** beside the card. It lists
+every family at once, two per row, each drawn in its own face, with a count
+and an All / Text / Mono filter. Mono is Fontconfig spacing of 90 or more
+(dual, mono, charcell); names are not inspected. The four most recently
+chosen families lead the list. More than ten rows scroll with the wheel.
+
+While the panel is open the card steps aside and every session's sign comes
+up. The signs take the face under the pointer, so a face is judged on real
+signs before it is chosen; moving off the cell puts the chosen face back.
+Clicking a cell chooses and saves it and leaves the panel open for another
+try. Move the pointer away, or right-click the cat, to finish: the panel and
+the card close together. The panel is a separate surface that exists only
+while it is open.
+
+Choices live in `${XDG_STATE_HOME:-~/.local/state}/bongocat/prefs`, and the
+recent families in `fonts-recent` beside it. The config file is never
+rewritten. A choice applies while the config value it replaced is unchanged;
+editing that option in the config file afterward makes the file win and
+drops the stored choice.
+
 **Fan** (default) raises plates behind the cat. Hover a plate for its name;
 waiting plates rise higher, sway and show their names automatically.
 
@@ -304,6 +346,7 @@ These captures use the production renderer and synthetic sessions on a plain
 background; they contain no desktop content. The four archived
 [design sources](docs/design/session-signs/) define appearance. Their external
 blob images and support.js are not included; post tilt is intentionally omitted.
+`Menu.dc.html` is the switch card and font panel.
 
 Unread completions stay green with a dot until you visit their window, click
 the sign, submit again or end the session. Visiting/clicking starts the normal

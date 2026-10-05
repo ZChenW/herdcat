@@ -31,12 +31,17 @@ typedef struct {
   uint32_t fill, outline;
   double clip_x, clip_y, clip_w, clip_h;
   bool clipped, orbit;
+  // Painted after the cat. The switch-card holder leaves this false.
+  bool above;
 } sign_shape_t;
 // Name is bold, metadata is medium. Measure metadata, keep `gap`, and
 // ellipsize the name into what remains. reverse puts metadata on the left.
 // above is painted after the cat; post labels stay on the board.
+// line_top and line_h are the CSS line box. Drawing derives the baseline
+// from the primary face. Fan nameplates leave the line box at 0 and set
+// anchor_y to the plate bottom at tag_scale 1.
 typedef struct {
-  double x, baseline_y, w, clip_y, clip_h;
+  double x, line_top, line_h, w, clip_y, clip_h;
   double px, meta_px, gap;
   uint32_t color, meta_color;
   bool reverse, above;
@@ -46,8 +51,12 @@ typedef struct {
   // after the name; meta_color is that bar's color.
   double tag_scale, font_ratio;
   uint32_t back;
-  bool caret;
-  char value[48], meta[64];
+  bool caret, center;
+  double anchor_y, slide;
+  char value[128], meta[64];
+  // Empty draws with the main face. A name here draws this one line in
+  // that family and leaves the main face unchanged.
+  char family[128];
 } sign_text_t;
 typedef struct {
   int x, y, w, h;
@@ -76,6 +85,17 @@ typedef struct {
   int64_t next_frame_ms;
   // Logical pixels the cat and sign pivot move up while the desk is out.
   double cat_lift;
+  // Switch card. Rects match the drawn card, each switch half, and the
+  // thumbs. menu_paw is 1 for the left paw and 2 for the right, on the
+  // frame that starts a tap.
+  bool menu_open;
+  sign_rect_t menu_card;
+  sign_rect_t menu_style[2];
+  sign_rect_t menu_lang[2];
+  sign_rect_t menu_style_thumb, menu_lang_thumb;
+  // Font row, and the left and right arrow buttons inside it.
+  sign_rect_t menu_font, menu_font_prev, menu_font_next;
+  unsigned menu_paw;
 } sign_frame_t;
 typedef struct {
   double from, target;
@@ -93,9 +113,19 @@ typedef struct {
   int64_t failure_ms;
 } sign_slot_t;
 typedef struct {
+  sign_scalar_t open, fade, holder, holder_fade;
+  sign_scalar_t style, language, style_color, language_color;
+  // font_in moves from 0 to 1 as the name settles. arrow is 0.8 while an
+  // arrow is held and returns to 1. arrow_id is 1 for the left arrow.
+  sign_scalar_t font_in, arrow;
+  int arrow_id, font_dir;
+  char font_label[128];
+} sign_menu_t;
+typedef struct {
   bool initialized;
   sign_scalar_t pole, desk_lift, desk_fade;
   sign_slot_t slots[AGENT_SESSIONS_MAX];
+  sign_menu_t menu;
 } signs_t;
 // sessions is top-to-bottom display order, already limited to the visible set.
 typedef struct {
@@ -116,6 +146,17 @@ typedef struct {
   uint64_t typing_key;
   int64_t typing_until;
   char desk_name[48];
+  // menu raises the switch card and retracts signs. menu_post and
+  // menu_english select the right-hand segment. menu_tap is 1 or 2.
+  // menu_font empty is the default face. menu_font_dir is +1 or -1 on the
+  // frame the name changes. menu_arrow is 1 or 2 while that arrow is down.
+  // menu_font_hot fills the name while the pointer is on it or the panel
+  // is open.
+  bool menu, menu_post, menu_english;
+  unsigned menu_tap;
+  int menu_font_dir, menu_arrow;
+  bool menu_font_hot;
+  char menu_font[128];
 } sign_input_t;
 
 void signs_frame(signs_t *model, const sign_input_t *input,
