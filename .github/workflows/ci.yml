@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make libwayland-dev wayland-protocols \
+            clang-format clang-tidy clang-tools shellcheck
+
+      - name: Check formatting
+        run: make format-check
+
+      - name: Build release
+        run: make release
+
+      - name: Build debug (ASan + UBSan)
+        run: make clean && make debug
+
+      - name: Run tests
+        run: make test-sanitize
+
+      - name: Run clang-tidy
+        run: make lint
+
+      - name: Run ShellCheck
+        run: shellcheck scripts/*.sh
+
+      - name: Run scan-build
+        run: scan-build --status-bugs --exclude lib make clean release
+
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: cachix/install-nix-action@a49548c11d9846ad46ecc0115273879b045f001c # v31
+      - name: Check flake and package
+        run: ./scripts/test_nix_build.sh

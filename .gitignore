@@ -1,0 +1,38 @@
+# Build output from both `make` and `nix build`
+build
+result
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Generated protocol files are now committed to git so that building
+# from source does not require wayland-scanner or wayland-protocols.
+# Regenerate with: make protocols
+
+# IDE files
+.vscode/
+*.swp
+*.swo
+*~
+.idea/
+.agent/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+*.log
