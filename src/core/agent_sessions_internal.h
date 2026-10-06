@@ -12,6 +12,9 @@ typedef struct {
   bool used;
   bool watched;
   uint64_t key, order;
+  uint64_t parent_order, parent_key;
+  pid_t candidate_pid;
+  bool ancestry_checked;
   char name[48];
   char title[AGENT_TITLE_MAX + 1];
   bool title_temporary;
@@ -41,6 +44,7 @@ void touch_sessions(void);
 agent_session_t *find_session(uint64_t key);
 agent_session_t *find_alias(uint64_t key);
 agent_session_t *available_slot(void);
+void remove_session(agent_session_t *s);
 void drop_same_process(const agent_session_t *keep);
 
 static inline bool finished(agent_state_t state) {

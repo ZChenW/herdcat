@@ -32,6 +32,9 @@ static bool hidden, paused;
 #include <time.h>
 #include <unistd.h>
 void agent_refresh(void) {
+  pid_t pids[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_pids(pids, AGENT_SESSIONS_MAX);
+  agent_watch_retain(pids, (size_t)count);
   transcript_watch_sync(config.agent_interrupt_detect, monotonic_ms());
   agent_state_t state = agent_sessions_resolve();
   if (state != animation_get_agent_state()) {
@@ -140,7 +143,7 @@ static bool request_wezterm_current(bool typing) {
   pid_t pid = 0;
   int matches = 0;
   for (int i = 0; i < count; i++) {
-    if (views[i].terminal.kind != TERMINAL_WEZTERM)
+    if (views[i].parent || views[i].terminal.kind != TERMINAL_WEZTERM)
       continue;
     uint64_t window = 0;
     for (size_t w = 0; w < n; w++) {
@@ -186,12 +189,13 @@ static void capture_kitty(uint64_t key, pid_t pid) {
 }
 
 static int agent_apply(uint64_t key, const char *agent, agent_event_t event,
-                       pid_t pid) {
+                       pid_t pid, pid_t candidate, bool metadata) {
   pid_t before[AGENT_SESSIONS_MAX], after[AGENT_SESSIONS_MAX];
   int before_count = agent_sessions_pids(before, AGENT_SESSIONS_MAX);
   pid_t previous = agent_sessions_pid(key);
-  if (agent_sessions_apply(key, agent, event, pid, monotonic_ms(),
-                           config.agent_done_timeout, NULL) < 0) {
+  if (agent_sessions_apply_process(key, agent, event, pid, candidate, metadata,
+                                   "/proc", monotonic_ms(),
+                                   config.agent_done_timeout) < 0) {
     return 1;
   }
   if (event == AGENT_EVENT_DONE || event == AGENT_EVENT_REST ||
@@ -208,33 +212,26 @@ static int agent_apply(uint64_t key, const char *agent, agent_event_t event,
   pid_t current = agent_sessions_pid(key);
   if (current > 0 && current != previous)
     capture_kitty(key, current);
-  if (current > 0)
-    agent_sessions_set_watched(key, agent_watch_add(current) == 0);
+  if (current > 0) {
+    int watched = agent_watch_add(current);
+    agent_sessions_set_watched(key, watched == 0);
+    if (watched < 0 && errno == ESRCH)
+      agent_sessions_remove_pid(current);
+  }
   agent_refresh();
   return 0;
 }
 
 static int agent_command(const char *request) {
-  char agent[AGENT_NAME_MAX + 1], event_name[10], key_text[17], pid_text[8];
-  int agent_end = 0, event_end = 0, key_end = 0, end = 0;
-  if (sscanf(request, "ev %8[a-z]%n %9[a-z]%n %16[0-9a-fA-F]%n %7[0-9]%n",
-             agent, &agent_end, event_name, &event_end, key_text, &key_end,
-             pid_text, &end) != 4 ||
-      request[agent_end] != ' ' || request[event_end] != ' ' ||
-      request[key_end] != ' ' || request[end] != '\0' ||
-      strlen(key_text) != 16) {
-    return 1;
-  }
+  char agent[AGENT_NAME_MAX + 1];
   agent_event_t event;
-  if (agent_event_parse(event_name, &event) < 0) {
+  uint64_t key;
+  pid_t pid, candidate;
+  bool metadata;
+  if (!agent_event_request(request, &key, agent, &event, &pid, &candidate,
+                           &metadata))
     return 1;
-  }
-  uint64_t key = strtoull(key_text, NULL, 16);
-  unsigned long pid = strtoul(pid_text, NULL, 10);
-  if (!key || pid > 4194304UL) {
-    return 1;
-  }
-  return agent_apply(key, agent, event, (pid_t)pid);
+  return agent_apply(key, agent, event, pid, candidate, metadata);
 }
 
 static int focus_command(const char *key) {
@@ -290,9 +287,10 @@ int command(const char *request, char *response, size_t capacity) {
       agent_event_parse(request + 6, &event);
       // An error only replaces a turn in progress, so start one first.
       if (state == AGENT_STATE_ERROR)
-        agent_apply(0, "manual", AGENT_EVENT_WORKING, 0);
-      result = agent_apply(
-          0, "manual", state == AGENT_STATE_IDLE ? AGENT_EVENT_END : event, 0);
+        agent_apply(0, "manual", AGENT_EVENT_WORKING, 0, 0, false);
+      result = agent_apply(0, "manual",
+                           state == AGENT_STATE_IDLE ? AGENT_EVENT_END : event,
+                           0, 0, false);
     } else {
       result = 1;
     }
@@ -385,6 +383,29 @@ int command(const char *request, char *response, size_t capacity) {
   } else {
     { result = 1; }
   }
+  // Metadata handoffs retry an unmerged candidate after a late parent arrives.
+  if (!result &&
+      (!strncmp(request, "sid ", 4) || !strncmp(request, "name ", 5) ||
+       !strncmp(request, "path ", 5) || !strncmp(request, "ttl ", 4) ||
+       !strncmp(request, "ask ", 4))) {
+    const char *space = strchr(request, ' ');
+    uint64_t key = strtoull(space + 1, NULL, 16);
+    pid_t before[AGENT_SESSIONS_MAX], after[AGENT_SESSIONS_MAX];
+    int n = agent_sessions_pids(before, AGENT_SESSIONS_MAX);
+    agent_sessions_process(key, 0, true, "/proc");
+    int m = agent_sessions_pids(after, AGENT_SESSIONS_MAX);
+    for (int i = 0; i < n; i++)
+      if (!has_pid(after, m, before[i]))
+        agent_watch_remove(before[i]);
+    pid_t pid = agent_sessions_pid(key);
+    if (pid > 0) {
+      int watched = agent_watch_add(pid);
+      agent_sessions_set_watched(key, watched == 0);
+      if (watched < 0 && errno == ESRCH)
+        agent_sessions_remove_pid(pid);
+    }
+    agent_refresh();
+  }
   snprintf(response, capacity, "%s", result ? "request failed" : "ok");
   return result;
 }
@@ -421,7 +442,7 @@ void note_key(void) {
   size_t n = focus_watch_windows(windows, FOCUS_WATCH_WINDOW_MAX);
   for (int i = 0; i < count; i++) {
     uint64_t window = 0;
-    if (views[i].terminal.kind == TERMINAL_WEZTERM &&
+    if (!views[i].parent && views[i].terminal.kind == TERMINAL_WEZTERM &&
         !views[i].terminal.current_known &&
         focus_terminal_window(views[i].pid, &views[i].terminal, views[i].name,
                               windows, n, &window) &&

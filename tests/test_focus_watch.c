@@ -362,6 +362,20 @@ static void test_query_ancestry(void) {
   TEST_ASSERT(keys[0] == 1 && chosen == 1);
   printf("joint focus query: %u ancestry reads\n", focus_stat_reads());
   TEST_ASSERT(focus_stat_reads() == 1);
+  // A child cannot take focus acknowledgement or the typing desk, even
+  // though its PID belongs to the same terminal and its update is newer.
+  agent_session_view_t pair[2] = {session, session};
+  pair[1].key = 2;
+  pair[1].parent = 1;
+  pair[1].updated_ms = 99999;
+  uint64_t seen[2];
+  TEST_ASSERT(focus_current_query(4, &window, 1, pair, 2, NULL, 0, 0, 2, seen,
+                                  2, &chosen) == 1);
+  TEST_ASSERT(seen[0] == 1 && chosen == 1);
+  pair[0].parent = 3;
+  TEST_ASSERT(focus_current_query(4, &window, 1, pair, 2, NULL, 0, 0, 0, seen,
+                                  2, &chosen) == 0);
+  TEST_ASSERT(chosen == 0);
   // The next query must observe the new window list, including no match.
   window.pid = getpid();
   window.id = 9;

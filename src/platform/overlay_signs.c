@@ -114,6 +114,19 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
   agent_session_view_t all[AGENT_SESSIONS_MAX];
   agent_session_view_t shown[SIGN_MAX_VISIBLE];
   int count = agent_sessions_snapshot(all, AGENT_SESSIONS_MAX);
+  for (int i = 0; i < count; i++) {
+    if (!all[i].parent)
+      continue;
+    for (size_t output = 0; output < MAX_OUTPUTS; output++)
+      for (int slot = 0; slot < AGENT_SESSIONS_MAX; slot++)
+        if (lanes[output].model.slots[slot].used &&
+            lanes[output].model.slots[slot].session.key == all[i].key)
+          memset(&lanes[output].model.slots[slot], 0,
+                 sizeof(lanes[output].model.slots[slot]));
+    if (desk_on && desk_key == all[i].key)
+      desk_on = false;
+  }
+
   int selected = count > 0 ? agent_sessions_select(all, (size_t)count, shown,
                                                    (size_t)config->sign_max)
                            : 0;
@@ -568,7 +581,7 @@ void overlay_signs_type_at(uint64_t key, int64_t now_ms) {
   int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
   const char *name = NULL;
   for (int i = 0; i < count; i++) {
-    if (views[i].key == key)
+    if (views[i].key == key && !views[i].parent)
       name = views[i].name;
   }
   if (!name)

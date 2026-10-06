@@ -418,6 +418,7 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
       pid = 0;
     }
   }
+  pid_t candidate = pid;
   // A daemon with no controlling terminal must not keep a sign forever.
   if (pid > 0 && agent_process_tty(pid) == 0) {
     pid = 0;
@@ -429,12 +430,17 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
         decode_path(scanner.cwd, cwd, sizeof(cwd)))
       pid = agent_hook_front_process("/proc", adapter->process_name, cwd);
   }
-  char request[64];
+  char request[96];
   static const char *const EVENTS[] = {"idle", "working",   "waiting",
                                        "done", "start",     "rest",
                                        "end",  "interrupt", "fail"};
   snprintf(request, sizeof(request), "ev %s %s %016" PRIx64 " %jd", agent,
            EVENTS[event], agent_hook_key(agent, &scanner), (intmax_t)pid);
+  if (candidate > 1 && candidate != pid) {
+    size_t used = strlen(request);
+    snprintf(request + used, sizeof(request) - used, " %jd %d",
+             (intmax_t)candidate, metadata ? 1 : 0);
+  }
   const char *debug = getenv("HERDCAT_HOOK_DEBUG");
   if (debug && strcmp(debug, "1") == 0) {
     fprintf(stderr, "%s\n", request);

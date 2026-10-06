@@ -1,9 +1,14 @@
+#define _GNU_SOURCE
 #include "agent_sessions_internal.h"
 #include "utils/utf8.h"
 
+#include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 uint64_t next_order;
 static uint64_t generation;
@@ -99,6 +104,126 @@ agent_session_t *find_alias(uint64_t key) {
   return NULL;
 }
 
+// Orders survive provisional-key adoption and slot reuse.
+void remove_session(agent_session_t *s) {
+  memset(s, 0, sizeof(*s));
+}
+
+static pid_t process_parent(int root, pid_t pid) {
+  char path[32], line[1024];
+  snprintf(path, sizeof(path), "%jd", (intmax_t)pid);
+  int dir = openat(root, path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (dir < 0)
+    return 0;
+  int fd = openat(dir, "stat", O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+  close(dir);
+  if (fd < 0)
+    return 0;
+  ssize_t n;
+  do {
+    n = read(fd, line, sizeof(line) - 1);
+  } while (n < 0 && errno == EINTR);
+  close(fd);
+  if (n <= 0 || n == (ssize_t)sizeof(line) - 1)
+    return 0;
+  line[n] = 0;
+  char *end = strrchr(line, ')');
+  long parent = 0;
+  if (!end || end[1] != ' ' || !end[2] || end[3] != ' ')
+    return 0;
+  errno = 0;
+  char *tail;
+  parent = strtol(end + 4, &tail, 10);
+  if (errno || tail == end + 4 || (*tail != ' ' && *tail != '\n') ||
+      parent <= 1 || parent > 4194304 || parent == pid)
+    return 0;
+  return (pid_t)parent;
+}
+
+static agent_session_t *process_owner(const agent_session_t *s, pid_t candidate,
+                                      const char *proc_root) {
+  int root = open(proc_root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (root < 0)
+    return NULL;
+  pid_t seen[33] = {candidate};
+  pid_t pid = candidate;
+  agent_session_t *parent = NULL;
+  for (int depth = 0; depth < 32; depth++) {
+    pid = process_parent(root, pid);
+    if (pid <= 1)
+      break;
+    bool cycle = false;
+    for (int j = 0; j <= depth; j++)
+      cycle |= seen[j] == pid;
+    if (cycle)
+      break;
+    seen[depth + 1] = pid;
+    for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+      agent_session_t *other = &sessions[i];
+      if (other->used && other != s && other->key && other->pid == pid)
+        parent = other;
+    }
+  }
+  close(root);
+  return parent;
+}
+
+static void merge_child(agent_session_t *s, const agent_session_t *parent) {
+  if (!s || s == parent)
+    return;
+  uint64_t order = parent->parent_order ? parent->parent_order : parent->order;
+  if (order == s->order)
+    return;
+  s->parent_order = order;
+  s->parent_key = parent->parent_order ? parent->parent_key : parent->key;
+  s->pid = s->candidate_pid;
+  s->watched = false;
+  s->unread = false;
+  s->answered_until_ms = 0;
+  s->title[0] = 0;
+  s->title_temporary = false;
+  if (finished(s->state))
+    s->done_until_ms = applied_done_timeout > 0
+                           ? deadline(s->updated_ms, applied_done_timeout)
+                           : 0;
+  // Previously tracked grandchildren also belong to the new top level.
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
+    if (sessions[i].used && sessions[i].parent_order == s->order) {
+      sessions[i].parent_order = order;
+      sessions[i].parent_key = s->parent_key;
+    }
+  touch_sessions();
+}
+
+void agent_sessions_process(uint64_t key, pid_t candidate, bool metadata,
+                            const char *proc_root) {
+  agent_session_t *s = find_session(key);
+  if (!s)
+    s = find_alias(key);
+  if (!s || !s->key || !proc_root || *proc_root != '/')
+    return;
+  if (candidate > 1 && candidate != s->candidate_pid) {
+    s->candidate_pid = candidate;
+    s->parent_order = 0;
+    s->parent_key = 0;
+  }
+  if (!s->candidate_pid)
+    s->candidate_pid = s->pid;
+  if (s->parent_order) {
+    if (s->pid != s->candidate_pid) {
+      s->pid = s->candidate_pid;
+      s->watched = false;
+    }
+    return;
+  }
+  if ((s->ancestry_checked && !metadata) || s->candidate_pid <= 1)
+    return;
+  s->ancestry_checked = true;
+  agent_session_t *parent = process_owner(s, s->candidate_pid, proc_root);
+  if (parent)
+    merge_child(s, parent);
+}
+
 static agent_session_t *find_process(const char *agent, pid_t pid) {
   for (int i = 0; pid > 0 && i < AGENT_SESSIONS_MAX; i++) {
     if (sessions[i].used && sessions[i].pid == pid &&
@@ -114,6 +239,9 @@ static void promote(agent_session_t *s, uint64_t key) {
   s->alias = s->provisional ? 0 : s->key;
   s->provisional = false;
   s->key = key;
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
+    if (sessions[i].used && sessions[i].parent_order == s->order)
+      sessions[i].parent_key = key;
   touch_sessions();
 }
 
@@ -205,7 +333,7 @@ void drop_same_process(const agent_session_t *keep) {
     if (strcmp(other->agent, keep->agent) != 0) {
       continue;
     }
-    memset(other, 0, sizeof(*other));
+    remove_session(other);
   }
 }
 
@@ -243,7 +371,7 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   }
   if (event == AGENT_EVENT_END) {
     if (s) {
-      memset(s, 0, sizeof(*s));
+      remove_session(s);
       touch_sessions();
     }
     return 0;
@@ -257,6 +385,8 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
       return 0;
     }
     s = available_slot();
+    if (s->used)
+      remove_session(s);
     *s = (agent_session_t){.used = true,
                            .key = key,
                            .order = ++next_order,
@@ -292,7 +422,7 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
     break;
   case AGENT_EVENT_FAIL:
   case AGENT_EVENT_DONE: {
-    bool seen = !done_sticky || key_is_focused(key);
+    bool seen = s->parent_order || !done_sticky || key_is_focused(key);
     s->state = event == AGENT_EVENT_FAIL ? AGENT_STATE_ERROR : AGENT_STATE_DONE;
     s->unread = !seen;
     s->done_until_ms =
@@ -320,6 +450,42 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   return 0;
 }
 
+int agent_sessions_apply_process(uint64_t key, const char *agent,
+                                 agent_event_t event, pid_t pid,
+                                 pid_t candidate, bool metadata,
+                                 const char *proc_root, int64_t now_ms,
+                                 int done_timeout_s) {
+  // A headless worker may have the same directory as a terminal agent of
+  // its own type. Classify before the fallback PID can alias the parent's
+  // row. This preflight is only needed for a new session key.
+  if (proc_root && *proc_root == '/' && candidate > 1 && candidate != pid &&
+      !find_session(key) && !find_alias(key) && event != AGENT_EVENT_END) {
+    agent_session_t *parent = process_owner(NULL, candidate, proc_root);
+    uint64_t order = parent ? parent->order : 0;
+    int result =
+        agent_sessions_apply(key, agent, event, parent ? candidate : pid,
+                             now_ms, done_timeout_s, NULL);
+    agent_session_t *s = find_session(key);
+    if (result < 0 || !s)
+      return result;
+    s->candidate_pid = candidate;
+    s->ancestry_checked = true;
+    if (parent && parent->used && parent->order == order)
+      merge_child(s, parent);
+    return result;
+  }
+  agent_session_t *s = find_session(key);
+  // Existing children keep the real PID even when a hook finds a different
+  // terminal process as its fallback.
+  pid_t effective = s && s->parent_order ? s->pid : pid;
+  int result = agent_sessions_apply(key, agent, event, effective, now_ms,
+                                    done_timeout_s, NULL);
+  if (!result)
+    agent_sessions_process(key, candidate > 1 ? candidate : pid,
+                           metadata || event == AGENT_EVENT_START, proc_root);
+  return result;
+}
+
 static int64_t session_deadline(const agent_session_t *s, int stale_timeout_s) {
   if (!s->used) {
     return 0;
@@ -345,7 +511,8 @@ static int64_t session_deadline(const agent_session_t *s, int stale_timeout_s) {
 
 bool agent_sessions_answer(uint64_t key, int64_t now_ms, int revert_s) {
   agent_session_t *s = find_session(key);
-  if (!s || s->state != AGENT_STATE_WAITING || now_ms < 0 || revert_s <= 0)
+  if (!s || s->parent_order || s->state != AGENT_STATE_WAITING || now_ms < 0 ||
+      revert_s <= 0)
     return false;
   s->state = AGENT_STATE_WORKING;
   s->state_since_ms = now_ms;
@@ -370,14 +537,16 @@ bool agent_sessions_expire(int64_t now_ms, int stale_timeout_s) {
     }
     int64_t until = session_deadline(&sessions[i], stale_timeout_s);
     if (until > 0 && now_ms >= until) {
-      if (finished(sessions[i].state) && sessions[i].unread) {
+      if (sessions[i].parent_order) {
+        remove_session(&sessions[i]);
+      } else if (finished(sessions[i].state) && sessions[i].unread) {
         sessions[i].unread = false;
         sessions[i].done_until_ms = applied_done_timeout > 0
                                         ? deadline(now_ms, applied_done_timeout)
                                         : 0;
       } else if (sessions[i].pid <= 0 &&
                  sessions[i].state == AGENT_STATE_IDLE) {
-        memset(&sessions[i], 0, sizeof(sessions[i]));
+        remove_session(&sessions[i]);
       } else {
         bool was_finished = finished(sessions[i].state);
         sessions[i].state = AGENT_STATE_IDLE;
@@ -388,7 +557,7 @@ bool agent_sessions_expire(int64_t now_ms, int stale_timeout_s) {
         // instant the no-pid idle lifetime is already over.
         if (!was_finished && sessions[i].pid <= 0 && stale_timeout_s > 0 &&
             now_ms >= deadline(sessions[i].updated_ms, stale_timeout_s)) {
-          memset(&sessions[i], 0, sizeof(sessions[i]));
+          remove_session(&sessions[i]);
         }
       }
       changed = true;
@@ -406,7 +575,7 @@ void agent_sessions_remove_pid(pid_t pid) {
   bool removed = false;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     if (sessions[i].used && sessions[i].pid == pid) {
-      memset(&sessions[i], 0, sizeof(sessions[i]));
+      remove_session(&sessions[i]);
       removed = true;
     }
   }
@@ -472,7 +641,8 @@ agent_state_t agent_sessions_resolve(void) {
   static const int PRIORITY[AGENT_STATE_COUNT] = {0, 1, 4, 2, 3};
   agent_state_t result = AGENT_STATE_IDLE;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
-    if (sessions[i].used && PRIORITY[sessions[i].state] > PRIORITY[result]) {
+    if (sessions[i].used && !sessions[i].parent_order &&
+        PRIORITY[sessions[i].state] > PRIORITY[result]) {
       result = sessions[i].state;
     }
   }

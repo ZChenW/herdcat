@@ -11,9 +11,9 @@ void sign_nameplate(sign_text_t *text, const sign_input_t *in,
   text->templated = true;
   bool title_main;
   sign_session_name(in, session, text->value, &title_main);
-  char title[AGENT_TITLE_MAX + 4], fallback[9], state[64];
+  char title[AGENT_TITLE_MAX + 4], who[64], state[64];
   sign_title_truncate(session->title, in->title_length, title);
-  const char *who = agent_adapter_display(session->agent, fallback);
+  sign_agent_label(session, false, who);
   if (session->state == AGENT_STATE_WORKING) {
     int64_t elapsed = in->now_ms - session->state_since_ms;
     if (elapsed < 0)
@@ -39,7 +39,10 @@ void sign_nameplate(sign_text_t *text, const sign_input_t *in,
              in->english ? "Detached" : "已断开");
   }
   // Keep the legacy text fields as a readable frame snapshot.
-  snprintf(text->meta, sizeof(text->meta), "%.8s · %.50s", who, state);
+  if (session->child_count)
+    snprintf(text->meta, sizeof(text->meta), "%.40s · %.18s", who, state);
+  else
+    snprintf(text->meta, sizeof(text->meta), "%.8s · %.50s", who, state);
   const char *source = in->nameplate[0]
                            ? in->nameplate
                            : nameplate_builtin(in->name_extra, title_main);

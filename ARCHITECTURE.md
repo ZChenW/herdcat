@@ -143,6 +143,19 @@ socket. It never emits stdout and has a two-second alarm. The caller discovers
 the agent PID by walking at most eight process ancestors, skipping shell wrappers.
 `--state` controls the reserved manual session; `--sessions` lists the table.
 
+Child ownership uses the top session's creation order, surviving provisional
+key adoption. The renderer reads at most 32 `/proc/<pid>/stat` parent links
+on first registration and unmerged metadata handoffs. Headless hooks append
+an actual-PID candidate and metadata flag to the existing `ev` request; the
+authenticated transport and its buffer stay unchanged. Confirmed children
+keep their own process watches and table rows but are excluded from state
+resolution, sign selection, focus acknowledgement, titles and typing desks.
+Creation-ordered snapshots aggregate only working/waiting child types for
+fan templates and a total count for post labels. Child completion timers do
+not wait for acknowledgement; children retain their hidden association when
+the parent row is removed until their own END, exit or existing timeout.
+No thread, full process scan, periodic ancestry refresh or new poll fd is added.
+
 ## Input and privilege boundaries
 
 Dragging adds compositor-delivered `wl_pointer` input in the unprivileged

@@ -7,6 +7,8 @@ int agent_sessions_set_title(uint64_t key, const char *title) {
   agent_session_t *s = find_session(key);
   if (!s || !title || (*title && !utf8_label_valid(title, AGENT_TITLE_MAX)))
     return -1;
+  if (s->parent_order)
+    return 0;
   if (!*title ||
       (!strcmp(s->agent, "opencode") && !strncmp(title, "New session - ", 14)))
     return 0;
@@ -21,6 +23,8 @@ int agent_sessions_set_prompt(uint64_t key, const char *prompt) {
   agent_session_t *s = find_session(key);
   if (!s || !utf8_label_valid(prompt, AGENT_TITLE_MAX))
     return -1;
+  if (s->parent_order)
+    return 0;
   const char *first = prompt;
   while (*first == ' ')
     first++;
@@ -78,7 +82,7 @@ int agent_sessions_id_command(const char *request) {
 }
 void agent_sessions_refresh_title(uint64_t key) {
   agent_session_t *s = find_session(key);
-  if (!s)
+  if (!s || s->parent_order)
     return;
   char title[AGENT_TITLE_MAX + 1];
   if (!strcmp(s->agent, "claude") || !strcmp(s->agent, "codex") ||
@@ -95,7 +99,7 @@ bool agent_sessions_title(pid_t pid, char *out, size_t capacity) {
   out[0] = 0;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     const agent_session_t *s = &sessions[i];
-    if (s->used && s->pid == pid && s->title[0]) {
+    if (s->used && !s->parent_order && s->pid == pid && s->title[0]) {
       snprintf(out, capacity, "%s", s->title);
       return true;
     }

@@ -426,3 +426,29 @@ misclassified if the record is read after the one-second guard. Very early real
 Claude interruptions inside that guard can be missed. No file-based detection
 is enabled for other agents. Copilot's observed Ctrl+C remains without a reliable
 interrupt event; opencode still lacks terminal focus and process-liveness mapping.
+
+## Agents launched by another session
+
+An agent process descending from the agent PID of a tracked session belongs
+to that session. For example, Claude running `codex exec` produces a child
+Codex row rather than a second sign. The renderer follows at most 32 parent
+links, only at first registration and metadata events for an unmerged session.
+There is no additional full `/proc` scan on tool events. The hook preserves the
+actual PID of a headless agent as a candidate alongside its existing terminal
+PID fallback. Confirmed children use their actual PID and the shared pidfd loop.
+
+Nested agents all belong to the top tracked session. An absent parent or one
+without a PID leaves the child independent; a later metadata event can merge
+it after the parent registers. A child remains in the fixed 32-row session
+table and `herdcat --sessions` appends `parent=<eight-character parent key>`.
+It has no sign, priority, unread completion, waiting/error alert, title or
+typing desk of its own. Only working/waiting children contribute to the parent's
+agent label. Parent state, icon, colour and elapsed time stay independent.
+
+END, process exit or a configured timeout removes a child. Child done/error
+uses `agent_done_timeout` without waiting for acknowledgement; otherwise
+the existing working/stale and unwatched waiting deadlines apply. Watched
+waiting and PID-bound idle rows remain tied to process exit. Removing or
+evicting the top session leaves child rows hidden with their recorded parent
+key until their own END, exit or timeout. Relationships are kept in memory and use creation order so a
+provisional parent adopting its real session key preserves its children.

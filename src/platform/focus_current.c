@@ -273,6 +273,8 @@ int focus_current_query(uint64_t focused, const focus_window_t *windows,
   bool split_found = false;
   for (size_t i = 0; i < count; i++) {
     const agent_session_view_t *s = &sessions[i];
+    if (s->parent)
+      continue;
     const agent_terminal_t *t = &s->terminal;
     if (t->kind == TERMINAL_TMUX) {
       const tmux_slot_t *best = NULL;

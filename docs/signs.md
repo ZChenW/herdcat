@@ -324,3 +324,30 @@ Titles
 are capped at 96 UTF-8 bytes, never logged, echoed or uploaded, and stored only
 in memory and the private runtime session file; `--sessions` may show them.
 All options hot-reload and are intentionally absent from the four-row switch card.
+
+## Child agent labels
+
+Agents launched underneath a tracked agent process share that parent's sign.
+Only working or waiting children contribute to `{agent}`, in order of their
+agent type's first appearance. Children have no individual sign or typing desk.
+
+| Active children of Claude | Fan `{agent}` | Post metadata prefix |
+| --- | --- | --- |
+| One Codex | Claude + Codex | Claude +1 |
+| Codex and Kimi | Claude + Codex + Kimi | Claude +2 |
+| Two Codex | Claude + Codex ×2 | Claude +2 |
+| Two Codex and one Kimi | Claude + Codex ×2 + Kimi | Claude +3 |
+| Codex, Kimi and Pi | Claude + Codex + 2 | Claude +3 |
+
+With more than two active types, only the first type is named (with `×N` if
+needed); the number after it counts all sessions of the remaining types.
+Custom fan templates expand the existing `{agent}` the same way. Post boards
+show only the active child count, for example `Claude +2 · 3 分钟`.
+No placeholder is added. A child's done/error/idle/END or process exit removes
+it from the label; no active children restores `Claude`. Existing layout and
+width transitions handle the text change. The parent's state, colours, icon,
+name/title and elapsed minutes always remain its own.
+
+The five table rows rendered by the production rasterizer are shown in
+[light](design/children/light.png) and [dark](design/children/dark.png).
+Rebuild both sheets with `python3 scripts/render_stage24_designs.py`.

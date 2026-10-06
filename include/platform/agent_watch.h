@@ -1,6 +1,7 @@
 #ifndef AGENT_WATCH_H
 #define AGENT_WATCH_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -10,6 +11,8 @@ int agent_watch_fd(void);
 // Duplicate pids share a watch. Failure leaves the caller in stale fallback.
 int agent_watch_add(pid_t pid);
 void agent_watch_remove(pid_t pid);
+// Prune watches after row expiry, eviction or removal of a parent.
+void agent_watch_retain(const pid_t *pids, size_t count);
 // Share the epoll the event loop already polls. The caller owns fd and must
 // read it to EAGAIN inside ready. events are epoll flags.
 int agent_watch_listen(int fd, uint32_t token, uint32_t events);

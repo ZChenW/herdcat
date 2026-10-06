@@ -147,7 +147,7 @@ uint64_t focus_watch_match(uint64_t focused, const focus_window_t *wins,
   int64_t updated = -1;
   for (size_t i = 0; i < count; i++) {
     uint64_t id = 0;
-    if (sessions[i].pid <= 1 ||
+    if (sessions[i].parent || sessions[i].pid <= 1 ||
         !focus_terminal_window(sessions[i].pid, &sessions[i].terminal,
                                sessions[i].name, wins, windows_count, &id) ||
         id != focused) {
@@ -170,7 +170,7 @@ int focus_watch_matching(uint64_t focused, const focus_window_t *wins,
   size_t written = 0;
   for (size_t i = 0; i < count && written < capacity; i++) {
     uint64_t id = 0;
-    if (sessions[i].pid <= 1 ||
+    if (sessions[i].parent || sessions[i].pid <= 1 ||
         !focus_terminal_window(sessions[i].pid, &sessions[i].terminal,
                                sessions[i].name, wins, windows_count, &id) ||
         id != focused) {

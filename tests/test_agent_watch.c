@@ -41,6 +41,12 @@ int main(void) {
     TEST_ASSERT(agent_watch_add(getpid()) == 0);
   }
   TEST_ASSERT(fd_count() == before + 2);
+  pid_t retained = getpid();
+  agent_watch_retain(&retained, 1);
+  TEST_ASSERT(fd_count() == before + 2);
+  agent_watch_retain(NULL, 0);
+  TEST_ASSERT(fd_count() == before + 1);
+  TEST_ASSERT(agent_watch_add(getpid()) == 0);
   struct pollfd pfd = {.fd = agent_watch_fd(), .events = POLLIN};
   TEST_ASSERT(poll(&pfd, 1, 0) == 0);
   agent_watch_process(process_exited);

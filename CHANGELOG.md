@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Child agents** - Agents launched by a tracked agent share its sign. Fan
+  labels expand as `Claude + Codex` (including repeated types and bounded
+  summaries); post boards show `Claude +2`. Children remain in `--sessions`
+  with `parent=`, use pidfd exit tracking, and raise no independent alerts.
+
 - **`herdcat setup`** - Connects the installed agents, tmux and kitty with one
   command. Shows the changes first, backs up every file, can be repeated and
   undone with `--remove`. Needs Python 3.

@@ -1,6 +1,7 @@
 #include "agent_sessions_internal.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 int agent_sessions_format(char *buffer, size_t capacity, int64_t now_ms) {
   if (!capacity) {
@@ -16,17 +17,20 @@ int agent_sessions_format(char *buffer, size_t capacity, int64_t now_ms) {
   for (int i = 0; i < count && used < capacity - 1; i++) {
     const agent_session_view_t *s = &view[i];
     int64_t age = now_ms > s->updated_ms ? (now_ms - s->updated_ms) / 1000 : 0;
-    char pid[24] = "-";
+    char pid[24] = "-", parent[24] = "";
+    if (s->parent)
+      snprintf(parent, sizeof(parent), " parent=%08" PRIx32,
+               (uint32_t)(s->parent >> 32));
     if (s->pid > 0) {
       snprintf(pid, sizeof(pid), "%jd", (intmax_t)s->pid);
     }
     int n = snprintf(
         buffer + used, capacity - used,
-        "%s %08" PRIx32 " %s %" PRId64 "s pid=%s %s%s%s%s\n", s->agent,
+        "%s %08" PRIx32 " %s %" PRId64 "s pid=%s %s%s%s%s%s\n", s->agent,
         (uint32_t)(s->key >> 32), agent_state_name(s->state), age, pid, s->name,
         s->unread ? " unread" : "",
         s->title[0] ? (s->title_temporary ? " title~=" : " title=") : "",
-        s->title);
+        s->title, parent);
     if (n < 0) {
       break;
     }
@@ -187,6 +191,7 @@ int agent_sessions_snapshot(agent_session_view_t *out, size_t capacity) {
     agent_session_view_t v = {
         .key = s->key,
         .order = s->order,
+        .parent = s->parent_key,
         .state = s->state,
         .pid = s->pid,
         .created_ms = s->created_ms,
@@ -195,6 +200,10 @@ int agent_sessions_snapshot(agent_session_view_t *out, size_t capacity) {
         .unread = s->unread,
         .kitty_pid = s->terminals[0].socket[0] ? s->terminals[0].client_pid : 0,
         .kitty_window = s->terminals[0].socket[0] ? s->terminals[0].pane : 0};
+    for (int j = 0; j < AGENT_SESSIONS_MAX; j++)
+      if (s->parent_order && sessions[j].used &&
+          sessions[j].order == s->parent_order)
+        v.parent = sessions[j].key;
     v.terminal = s->terminals[1];
     if (!v.terminal.socket[0] && v.terminal.kind != TERMINAL_GHOSTTY)
       v.terminal.kind = TERMINAL_NONE;
@@ -210,6 +219,42 @@ int agent_sessions_snapshot(agent_session_view_t *out, size_t capacity) {
     }
     sorted[j] = v;
   }
+  for (size_t i = 0; i < count; i++) {
+    agent_session_view_t *v = &sorted[i];
+    if (v->parent)
+      continue;
+    char types[AGENT_SESSIONS_MAX][AGENT_NAME_MAX + 1] = {0};
+    unsigned totals[AGENT_SESSIONS_MAX] = {0};
+    size_t kinds = 0;
+    for (size_t j = 0; j < count; j++) {
+      const agent_session_view_t *child = &sorted[j];
+      if (child->parent != v->key || !child->parent)
+        continue;
+      size_t type = 0;
+      while (type < kinds && strcmp(types[type], child->agent))
+        type++;
+      if (type == kinds) {
+        memcpy(types[kinds++], child->agent, sizeof(child->agent));
+      }
+      if (child->state == AGENT_STATE_WORKING ||
+          child->state == AGENT_STATE_WAITING) {
+        totals[type]++;
+        v->child_count++;
+      }
+    }
+    unsigned active = 0;
+    for (size_t j = 0; j < kinds; j++) {
+      if (!totals[j])
+        continue;
+      if (active < 2) {
+        memcpy(v->child_agents[active], types[j], sizeof(types[j]));
+        v->child_counts[active] = totals[j];
+      }
+      active++;
+    }
+    if (active > 2)
+      v->child_other = v->child_count - v->child_counts[0];
+  }
   if (count > capacity)
     count = capacity;
   memcpy(out, sorted, count * sizeof(*out));
@@ -224,7 +269,7 @@ int agent_sessions_select(const agent_session_view_t *input, size_t count,
   for (size_t i = 0; i < n; i++) {
     size_t best = count;
     for (size_t j = 0; j < count; j++) {
-      if (selected[j])
+      if (selected[j] || input[j].parent)
         continue;
       bool active = input[j].state != AGENT_STATE_IDLE;
       bool best_active = best < count && input[best].state != AGENT_STATE_IDLE;
@@ -233,6 +278,8 @@ int agent_sessions_select(const agent_session_view_t *input, size_t count,
            input[j].updated_ms > input[best].updated_ms))
         best = j;
     }
+    if (best == count)
+      break;
     selected[best] = true;
   }
   size_t written = 0;
@@ -331,4 +378,41 @@ int agent_sessions_tmux_pids(const char *socket, pid_t *pids, size_t capacity) {
       pids[count++] = s->pid;
   }
   return (int)count;
+}
+
+bool agent_event_request(const char *request, uint64_t *key, char agent[9],
+                         agent_event_t *event, pid_t *pid, pid_t *candidate,
+                         bool *metadata) {
+  char event_name[10], key_text[17], pid_text[8], candidate_text[8];
+  int agent_end = 0, event_end = 0, key_end = 0, end = 0;
+  if (!request || !key || !agent || !event || !pid || !candidate || !metadata ||
+      sscanf(request, "ev %8[a-z]%n %9[a-z]%n %16[0-9a-fA-F]%n %7[0-9]%n",
+             agent, &agent_end, event_name, &event_end, key_text, &key_end,
+             pid_text, &end) != 4 ||
+      request[agent_end] != ' ' || request[event_end] != ' ' ||
+      request[key_end] != ' ' || strlen(key_text) != 16 ||
+      agent_event_parse(event_name, event) < 0)
+    return false;
+  unsigned long actual = 0;
+  int flag = 0, extra_end = 0;
+  if (request[end]) {
+    if (request[end] != ' ' ||
+        sscanf(request + end, " %7[0-9] %1[01]%n", candidate_text, event_name,
+               &extra_end) != 2 ||
+        request[end + extra_end])
+      return false;
+    flag = event_name[0] == '1';
+    actual = strtoul(candidate_text, NULL, 10);
+    if (actual <= 1 || actual > 4194304UL)
+      return false;
+  }
+  uint64_t parsed = strtoull(key_text, NULL, 16);
+  unsigned long process = strtoul(pid_text, NULL, 10);
+  if (!parsed || process > 4194304UL)
+    return false;
+  *key = parsed;
+  *pid = (pid_t)process;
+  *candidate = (pid_t)actual;
+  *metadata = flag != 0;
+  return true;
 }

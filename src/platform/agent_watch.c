@@ -107,6 +107,17 @@ void agent_watch_remove(pid_t pid) {
   }
 }
 
+void agent_watch_retain(const pid_t *pids, size_t count) {
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+    pid_t pid = watches[i].pid;
+    bool keep = false;
+    for (size_t j = 0; pids && j < count; j++)
+      keep |= pids[j] == pid;
+    if (pid > 0 && !keep)
+      agent_watch_remove(pid);
+  }
+}
+
 int agent_watch_listen(int fd, uint32_t token, uint32_t events) {
   if (epoll_fd < 0 || fd < 0) {
     errno = EINVAL;

@@ -30,6 +30,10 @@ typedef enum {
 
 typedef struct {
   uint64_t key, order;
+  uint64_t parent;
+  unsigned child_count;
+  char child_agents[2][AGENT_NAME_MAX + 1];
+  unsigned child_counts[2], child_other;
   char agent[AGENT_NAME_MAX + 1];
   char name[48];
   char title[AGENT_TITLE_MAX + 1];
@@ -60,11 +64,20 @@ void agent_sessions_adopt(uint64_t key);
 // A row made by process discovery. Any real id from that process replaces
 // its key at once and keeps its name until the session names itself.
 void agent_sessions_set_provisional(uint64_t key);
+// Resolve at first registration or metadata only; proc_root is injectable.
+// candidate keeps the real agent pid even when the hook has no tty.
+void agent_sessions_process(uint64_t key, pid_t candidate, bool metadata,
+                            const char *proc_root);
 int agent_sessions_snapshot(agent_session_view_t *out, size_t capacity);
 // Input is a creation-ordered snapshot. Choose active then recent, retain
 // order.
 int agent_sessions_select(const agent_session_view_t *input, size_t count,
                           agent_session_view_t *out, size_t capacity);
+// Existing ev request, optionally followed by the headless candidate and
+// metadata flag. Parsing is shared with the isolated runtime fixture.
+bool agent_event_request(const char *request, uint64_t *key, char agent[9],
+                         agent_event_t *event, pid_t *pid, pid_t *candidate,
+                         bool *metadata);
 int agent_event_parse(const char *name, agent_event_t *out);
 void agent_sessions_reset(void);
 void agent_sessions_interrupt(uint64_t key, int64_t now_ms);
@@ -76,6 +89,12 @@ bool agent_sessions_answer(uint64_t key, int64_t now_ms, int revert_s);
 int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
                          pid_t pid, int64_t now_ms, int done_timeout_s,
                          bool *is_new);
+// Hook application classifies headless candidates before PID aliasing.
+int agent_sessions_apply_process(uint64_t key, const char *agent,
+                                 agent_event_t event, pid_t pid,
+                                 pid_t candidate, bool metadata,
+                                 const char *proc_root, int64_t now_ms,
+                                 int done_timeout_s);
 // Default is sticky: a done sign the focused window did not see stays up.
 // False arms done_timeout_s on every completion.
 void agent_sessions_set_done_sticky(bool sticky);

@@ -350,6 +350,29 @@ static void build_frame(signs_t *model, const sign_input_t *in,
     model->pole.from = model->pole.target = 50;
   }
 
+  agent_session_view_t roots[SIGN_MAX_VISIBLE];
+  sign_input_t filtered = *in;
+  size_t n = 0;
+  bool children = false;
+  for (size_t i = 0; in->sessions && i < in->count && i < AGENT_SESSIONS_MAX;
+       i++) {
+    const agent_session_view_t *s = &in->sessions[i];
+    if (s->parent) {
+      children = true;
+      for (int j = 0; j < AGENT_SESSIONS_MAX; j++)
+        if (model->slots[j].used && model->slots[j].session.key == s->key)
+          memset(&model->slots[j], 0, sizeof(model->slots[j]));
+      if (filtered.typing && filtered.typing_key == s->key)
+        filtered.typing = false;
+    } else if (n < SIGN_MAX_VISIBLE) {
+      roots[n++] = *s;
+    }
+  }
+  if (children) {
+    filtered.sessions = roots;
+    filtered.count = n;
+    in = &filtered;
+  }
   const sign_palette_t *palette = sign_palette(in->theme);
   double scale = in->cat_height / 110.0;
   int move_ms = in->desk_snap ? 0 : DESK_MOVE_MS;

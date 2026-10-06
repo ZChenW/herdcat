@@ -22,8 +22,8 @@ static void board_label(const sign_slot_t *slot, const sign_input_t *in,
     if (!strcmp(text->value, text->extra))
       text->extra[0] = 0;
   }
-  char fallback[9];
-  const char *who = agent_adapter_display(slot->session.agent, fallback);
+  char who[64];
+  sign_agent_label(&slot->session, true, who);
   if (slot->session.state == AGENT_STATE_WORKING) {
     int64_t elapsed = in->now_ms - slot->session.state_since_ms;
     if (elapsed < 0)
@@ -31,7 +31,7 @@ static void board_label(const sign_slot_t *slot, const sign_input_t *in,
     int64_t minutes = elapsed / 60000;
     if (minutes > 99999)
       minutes = 99999;
-    snprintf(text->meta, sizeof(text->meta), "%s · %lld %s", who,
+    snprintf(text->meta, sizeof(text->meta), "%.20s · %lld %s", who,
              (long long)minutes, WORDS[in->english ? 1 : 0].minute);
   } else {
     const char *label = WORDS[in->english ? 1 : 0].idle;
@@ -39,7 +39,7 @@ static void board_label(const sign_slot_t *slot, const sign_input_t *in,
       label = WORDS[in->english ? 1 : 0].waiting;
     else if (finished(slot->session.state))
       label = done_label(in, false, &slot->session);
-    snprintf(text->meta, sizeof(text->meta), "%s · %s", who, label);
+    snprintf(text->meta, sizeof(text->meta), "%.20s · %.36s", who, label);
   }
   if (slot->session.terminal.kind == TERMINAL_TMUX &&
       slot->session.terminal.detached) {

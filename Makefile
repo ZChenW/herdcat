@@ -296,7 +296,12 @@ $(BUILDDIR)/test_compositor_backends: tests/test_compositor_backends.c $(COMPOSI
 $(BUILDDIR)/test_theme_auto: tests/test_theme_auto.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
 
-TEST_BINARIES = $(BUILDDIR)/test_stage23 $(BUILDDIR)/test_stage22_names $(BUILDDIR)/test_title_hooks $(BUILDDIR)/test_title_focus $(BUILDDIR)/test_agent_title $(BUILDDIR)/test_sign_names $(BUILDDIR)/test_nameplate $(BUILDDIR)/test_name_config $(BUILDDIR)/test_signs_desk_clear $(BUILDDIR)/test_signs_detached $(BUILDDIR)/test_overlay_below $(BUILDDIR)/test_overlay_vertical $(BUILDDIR)/test_signs_below $(BUILDDIR)/test_theme_auto $(BUILDDIR)/test_compositor_backends $(BUILDDIR)/test_theme_watch $(BUILDDIR)/test_overlay_pixels $(BUILDDIR)/test_overlay_geometry $(BUILDDIR)/test_font_panel_memory $(BUILDDIR)/test_terminal_focus $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
+STAGE24_SESSION_DEPS = src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/core/agent_state.c src/platform/transcript_path.c src/utils/json.c
+
+$(BUILDDIR)/test_stage24: tests/test_stage24.c $(STAGE24_SESSION_DEPS) $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/platform/agent_watch.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS) -Wl,--wrap=openat
+
+TEST_BINARIES = $(BUILDDIR)/test_stage24 $(BUILDDIR)/test_stage23 $(BUILDDIR)/test_stage22_names $(BUILDDIR)/test_title_hooks $(BUILDDIR)/test_title_focus $(BUILDDIR)/test_agent_title $(BUILDDIR)/test_sign_names $(BUILDDIR)/test_nameplate $(BUILDDIR)/test_name_config $(BUILDDIR)/test_signs_desk_clear $(BUILDDIR)/test_signs_detached $(BUILDDIR)/test_overlay_below $(BUILDDIR)/test_overlay_vertical $(BUILDDIR)/test_signs_below $(BUILDDIR)/test_theme_auto $(BUILDDIR)/test_compositor_backends $(BUILDDIR)/test_theme_watch $(BUILDDIR)/test_overlay_pixels $(BUILDDIR)/test_overlay_geometry $(BUILDDIR)/test_font_panel_memory $(BUILDDIR)/test_terminal_focus $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
 
 $(BUILDDIR)/test_overlay_pixels: tests/test_overlay_pixels.c src/platform/overlay_geometry.c src/graphics/font_panel.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c src/graphics/animation.c src/graphics/embedded_assets.c src/core/agent_state.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
@@ -391,7 +396,9 @@ $(BUILDDIR)/test_hyprland: tests/test_hyprland.c src/platform/hyprland.c src/uti
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
 
 .PHONY: test-runtime
-test-runtime: all compositor-test-build $(BUILDDIR)/test_focus
+test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/stage24_runtime_fixture
+	python3 scripts/test_stage24_runtime.py
+	python3 scripts/test_stage24_hook.py
 	python3 scripts/test_runtime.py
 	python3 scripts/test_hook_client.py
 	python3 scripts/test_transcript_runtime.py
@@ -454,3 +461,6 @@ $(BUILDDIR)/test_stage22_names: tests/test_stage22_names.c $(CONFIG_TEST_DEPS) $
 
 $(BUILDDIR)/test_stage23: tests/test_stage23.c src/graphics/post_text_layout.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=FT_Get_Sfnt_Table,--wrap=FT_Get_Char_Index
+
+$(BUILDDIR)/stage24_runtime_fixture: tests/stage24_runtime_fixture.c $(STAGE24_SESSION_DEPS) src/platform/agent_watch.c src/graphics/sign_names.c src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)

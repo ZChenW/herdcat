@@ -220,6 +220,7 @@ int agent_discover_scan(const char *proc_root, const focus_window_t *windows,
                            done_timeout_s, NULL);
       continue;
     }
+    agent_sessions_process(key, pid, true, proc_root);
     agent_sessions_set_provisional(key);
     uint64_t window = 0;
     char listen[AGENT_TERMINAL_LISTEN_MAX + 1];
