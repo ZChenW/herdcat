@@ -58,6 +58,17 @@ assert [c['tool'] for c in commands] == ['tmux', 'tmux', 'niri', 'niri', 'kitten
 assert commands[-2]['args'] == ['@', '--to', 'unix:/tmp/kitty-fixture', 'focus-window', '--match', 'id:7']
 result, commands, _, _ = run('tmux', 'detached')
 assert result == '2' and len(commands) == 2
+result, commands, _, _ = run('tmux', 'detached', operation='background')
+assert result.split() == ['0', '1'] and len(commands) == 2
+# Both client hooks use the same bounded server-notification request. Exercise
+# both replies, all matching rows, and isolation from another server.
+for mode in ('ok', 'detached'):
+    result, commands, socket, _ = run('tmux', mode, operation='notification')
+    assert result == '0 2' and len(commands) == 4, (result, commands)
+    assert all(c['tool'] == 'tmux' and c['args'][:2] == ['-S', socket]
+               for c in commands)
+    assert [c['args'][2] for c in commands] == [
+        'display-message', 'list-clients', 'display-message', 'list-clients']
 result, commands, socket, _ = run('wezterm')
 assert result == '1'
 assert [(c['tool'], c['args']) for c in commands] == [
@@ -83,7 +94,7 @@ assert result.split()[0] == '0' and len(commands) == 1
 for terminal in ('tmux', 'wezterm'):
     for mode in ('error', 'overflow', 'malformed', 'timeout'):
         result, commands, _, elapsed = run(terminal, mode)
-        expected = '2' if terminal == 'tmux' and mode == 'malformed' else '3'
+        expected = '3'
         assert result == expected, (terminal, mode, result)
         assert elapsed < 1.7 and (mode != 'timeout' or elapsed >= .9), elapsed
     result, commands, _, _ = run(terminal, operation='background')

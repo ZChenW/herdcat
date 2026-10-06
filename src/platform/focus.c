@@ -484,6 +484,13 @@ static void job_completed(int done) {
     bool found =
         focus_tmux_client(job.buffer, tmux_session, &terminal.client_pid,
                           tmux_tty, sizeof(tmux_tty));
+    // An empty successful reply means no clients. Malformed output is not
+    // evidence of detachment and must not change the last known state.
+    if (!found && job.used && strspn(job.buffer, "\r\n \t") != job.used) {
+      finish(FOCUS_UNAVAILABLE);
+      return;
+    }
+    terminal.detached = !found;
     char kitty_socket[AGENT_TERMINAL_LISTEN_MAX + 1];
     terminal.outer_kitty_pid = 0;
     terminal.outer_kitty_pane = 0;

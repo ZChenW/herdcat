@@ -11,6 +11,8 @@ import tempfile
 import threading
 import time
 
+from runtime_test_helpers import runtime_env, wait_settled, wait_until
+
 sys.dont_write_bytecode = True
 from runtime_test_helpers import run_on_pty
 
@@ -18,7 +20,7 @@ run_on_pty()
 
 binary = str(Path('build/herdcat').resolve())
 with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
-    env = dict(os.environ, XDG_RUNTIME_DIR=directory)
+    env = runtime_env(XDG_RUNTIME_DIR=directory)
     env.pop('HERDCAT_HOOK_DEBUG', None)
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as server:
         server.bind(str(Path(directory) / 'herdcat.sock'))

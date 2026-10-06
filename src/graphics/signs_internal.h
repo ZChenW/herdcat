@@ -25,9 +25,10 @@
 #define FAN_TAG_MS    220
 #define DESK_MOVE_MS  320
 #define DESK_FADE_MS  180
-#define DESK_TOP      68
+#define DESK_TOP      67
 #define DESK_LIFT     8
 #define DESK_SLIDE    22
+#define DESK_CLEAR    22
 
 typedef struct {
   double x1, y1, x2, y2;
@@ -70,15 +71,16 @@ double nudge_phase(const sign_input_t *in, const sign_slot_t *slot,
                    sign_frame_t *frame);
 void snap_from(sign_frame_t *frame, int first, bool snap);
 sign_rect_t cover(double x, double y, double w, double h);
+void upright_from(sign_frame_t *frame, int first, double cx, double cy);
 void add_icon(sign_frame_t *frame, agent_state_t state, double cx, double cy,
               double scale, double opacity, const sign_input_t *in);
 sign_slot_t *claim_slot(signs_t *model, const agent_session_view_t *session,
                         double rest_bottom);
 void layout_board(sign_slot_t *slot, const sign_input_t *in,
                   sign_frame_t *frame, double pole_x, double cat_bottom,
-                  double scale);
+                  double scale, double desk_clear);
 void layout_fan(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
-                size_t count);
+                size_t count, double desk_clear);
 void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
                double scale);
 

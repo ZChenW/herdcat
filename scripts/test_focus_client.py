@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 import time
 
+from runtime_test_helpers import runtime_env, wait_settled, wait_until
+
 binary = str(Path('build/test_focus').resolve())
 with tempfile.TemporaryDirectory(prefix='herdcat-focus-') as tmp:
     root = Path(tmp)
@@ -29,7 +31,7 @@ else:
     (root/'action').write_text(' '.join(sys.argv[1:]))
 ''')
         fake.chmod(0o700)
-        env = dict(os.environ, NIRI_SOCKET=str(root / 'niri.sock'),
+        env = runtime_env(NIRI_SOCKET=str(root / 'niri.sock'),
                    PATH=tmp + ':' + os.environ['PATH'], FOCUS_FIXTURE=tmp,
                    FOCUS_PID=str(os.getpid()))
         for mode, expected in [('ok', 1), ('missing', 2), ('truncated', 3),

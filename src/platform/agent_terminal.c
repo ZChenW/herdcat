@@ -436,3 +436,32 @@ bool agent_terminal_pane_request(const char *request, agent_terminal_t *t) {
   t->client_pid = pid;
   return true;
 }
+
+bool agent_terminal_tmux_message(char *out, size_t capacity) {
+  const char *value = getenv("TMUX");
+  if (!value || strlen(value) > 256)
+    return false;
+  char data[320], metadata[384];
+  int n = snprintf(data, sizeof(data), "TMUX=%s%cTMUX_PANE=%%0%c", value, 0, 0);
+  agent_terminal_t terminal;
+  if (n < 0 || (size_t)n >= sizeof(data) ||
+      !agent_terminal_parse_all(data, (size_t)n, &terminal) ||
+      terminal.kind != TERMINAL_TMUX ||
+      !agent_terminal_message(metadata, sizeof(metadata), 1, &terminal))
+    return false;
+  n = snprintf(out, capacity, "tmux %s", strrchr(metadata, ' ') + 1);
+  return n > 0 && (size_t)n < capacity;
+}
+bool agent_terminal_tmux_request(const char *request, agent_terminal_t *t) {
+  char encoded[255], metadata[384];
+  int end = 0;
+  if (!request || !t ||
+      sscanf(request, "tmux %254[0-9a-f]%n", encoded, &end) != 1 ||
+      request[end])
+    return false;
+  int n = snprintf(metadata, sizeof(metadata),
+                   "term 0000000000000001 tmux 0 %s", encoded);
+  uint64_t key;
+  return n > 0 && (size_t)n < sizeof(metadata) &&
+         agent_terminal_request(metadata, &key, t);
+}

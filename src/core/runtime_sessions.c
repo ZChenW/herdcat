@@ -312,6 +312,17 @@ int command(const char *request, char *response, size_t capacity) {
       if (terminal.kind == TERMINAL_WEZTERM)
         try_deferred_wezterm_focus();
     }
+  } else if (strncmp(request, "tmux ", 5) == 0) {
+    agent_terminal_t terminal;
+    if (!agent_terminal_tmux_request(request, &terminal)) {
+      result = 1;
+    } else {
+      pid_t pids[AGENT_SESSIONS_MAX];
+      int count =
+          agent_sessions_tmux_pids(terminal.socket, pids, AGENT_SESSIONS_MAX);
+      for (int i = 0; i < count; i++)
+        focus_terminal_resolve(pids[i]);
+    }
   } else if (strncmp(request, "path ", 5) == 0) {
     result = transcript_watch_command(request, monotonic_ms());
   } else if (strncmp(request, "name ", 5) == 0) {
@@ -331,6 +342,8 @@ int command(const char *request, char *response, size_t capacity) {
     if (agent_terminal_pane_request(request, &report)) {
       result = !focus_tmux_pane_set_socket(report.client_pid, report.pane,
                                            report.socket);
+      if (!result)
+        agent_sessions_tmux_attached(report.socket);
     } else {
       pid_t pane_pid = 0;
       uint64_t pane_split = 0;

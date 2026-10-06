@@ -5,15 +5,17 @@ import socket
 import subprocess
 import tempfile
 import time
+
+from runtime_test_helpers import runtime_env, wait_settled, wait_until
 from pathlib import Path
 temporary = tempfile.TemporaryDirectory(prefix='herdcat-sign-options-')
 r = Path(temporary.name)
-env = dict(os.environ, XDG_RUNTIME_DIR=str(r), XDG_STATE_HOME=str(r),
+env = runtime_env(XDG_RUNTIME_DIR=str(r), XDG_STATE_HOME=str(r),
            WAYLAND_DISPLAY='wayland-test', HERDCAT_TEST_DRAG='1',
            ASAN_OPTIONS='detect_leaks=1:halt_on_error=1')
 env.pop('NIRI_SOCKET', None)
 binary = str(Path('build/herdcat').resolve())
-base = ('monitor=TEST-1\noverlay_position=bottom\ncat_height=110\n'
+base = ('keyboard_device=/dev/input/herdcat-runtime-nonexistent\nmonitor=TEST-1\noverlay_position=bottom\ncat_height=110\n'
         'overlay_height=120\ndisable_fullscreen_hide=1\n'
         'hotplug_scan_interval=0\nagent_stale_timeout=0\n')
 config = r / 'test.conf'
@@ -25,13 +27,10 @@ server = subprocess.Popen(['build/compositor/server'], env=env,
                           stderr=server_log)
 app = None
 
-def wait(fn, seconds=4):
-    until = time.monotonic() + seconds
-    while time.monotonic() < until:
-        if fn():
-            return
-        time.sleep(0.03)
-    raise AssertionError('wait expired')
+def wait(condition, seconds=6):
+    return wait_until(condition, seconds, description='test_sign_options.py condition',
+                      diagnostics=lambda: (r / "server.log").read_text()[-4000:] + (r / "app.log").read_text()[-2000:])
+
 
 def wire(text, ok=True):
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as s:
@@ -41,6 +40,25 @@ def wire(text, ok=True):
         out = s.recv(512).decode()
     assert out.startswith('0 ') == ok, (text, out)
     return out
+def geometry():
+    latest = {}
+    for line in (r / 'server.log').read_text().splitlines():
+        fields = line.split()
+        if fields and fields[0] in ('placement', 'input'):
+            key = (fields[0], fields[1], fields[2] if fields[0] == 'placement' else '')
+            latest[key] = tuple(fields[2:])
+    return latest
+
+
+def settled():
+    # A waiting sign sways for as long as it waits, so its input region never
+    # rests. The surface placement does; that is what a reload can change.
+    def placement():
+        return {key: value for key, value in geometry().items()
+                if key[0] == 'placement'}
+    return wait_settled(placement, ready=bool, description='sign geometry',
+                        diagnostics=lambda: (r / 'server.log').read_text()[-4000:])
+
 try:
     wait(lambda: (r / 'wayland-test').exists())
     app = subprocess.Popen([binary, '-c', str(config), '-w'], env=env,
@@ -64,7 +82,7 @@ try:
         for value in choices:
             config.write_text(base + f'{key}={value}\n')
             wire('reload')
-            time.sleep(0.1)
+            settled()
             assert 'waiting' in wire('sessions')
         print('live reload', key, choices, flush=True)
     config.write_text(base + 'sign_done=sticky\nagent_done_timeout=1\n')
@@ -104,7 +122,7 @@ try:
     for style in ['fan', 'post', 'off']:
         config.write_text(base + f'sign_style={style}\n')
         wire('reload')
-        time.sleep(0.8)
+        settled()
         before = counters()
         time.sleep(1.2)
         after = counters()

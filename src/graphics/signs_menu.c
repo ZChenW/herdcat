@@ -59,23 +59,28 @@ static void glyph_rect(sign_frame_t *frame, double ox, double oy, double scale,
 
 static void glyph_fan(sign_frame_t *frame, double ox, double oy, double scale,
                       uint32_t color) {
+  int first = frame->shape_count;
   glyph_line(frame, ox, oy, scale, 13, 17, 6.5, 8, color);
   glyph_line(frame, ox, oy, scale, 13, 17, 13, 7, color);
   glyph_line(frame, ox, oy, scale, 13, 17, 19.5, 8, color);
   glyph_rect(frame, ox, oy, scale, 1.5, 3, 7, 5.5, 1.6, -28, color);
   glyph_rect(frame, ox, oy, scale, 9.5, 1, 7, 5.5, 1.6, 0, color);
   glyph_rect(frame, ox, oy, scale, 17.5, 3, 7, 5.5, 1.6, 28, color);
+  upright_from(frame, first, ox + 13 * scale, oy + 9 * scale);
 }
 
 static void glyph_post(sign_frame_t *frame, double ox, double oy, double scale,
                        uint32_t color) {
+  int first = frame->shape_count;
   glyph_line(frame, ox, oy, scale, 13, 17, 13, 2, color);
   glyph_rect(frame, ox, oy, scale, 14.5, 2.5, 9, 5, 1.6, 0, color);
   glyph_rect(frame, ox, oy, scale, 2.5, 9.5, 9, 5, 1.6, 0, color);
+  upright_from(frame, first, ox + 13 * scale, oy + 9 * scale);
 }
 
 static void glyph_sun(sign_frame_t *frame, double ox, double oy, double scale,
                       uint32_t color) {
+  int first = frame->shape_count;
   add_shape(frame, SIGN_RECT, ox + 9 * scale, oy + 5 * scale, 8 * scale,
             8 * scale, 4 * scale, 1.8 * scale, 0, color);
   for (int i = 0; i < 8; i++) {
@@ -84,9 +89,11 @@ static void glyph_sun(sign_frame_t *frame, double ox, double oy, double scale,
                9 + sin(angle) * 6.5, 13 + cos(angle) * 8, 9 + sin(angle) * 8,
                color);
   }
+  upright_from(frame, first, ox + 13 * scale, oy + 9 * scale);
 }
 static void glyph_moon(sign_frame_t *frame, double ox, double oy, double scale,
                        uint32_t color) {
+  int first = frame->shape_count;
   // Rounded segments trace a crescent without painting over the moving thumb.
   for (int i = 0; i < 12; i++) {
     double t1 = i / 12.0, t2 = (i + 1) / 12.0;
@@ -97,19 +104,26 @@ static void glyph_moon(sign_frame_t *frame, double ox, double oy, double scale,
     glyph_line(frame, ox, oy, scale, 13 - 8 * t1 * (1 - t1), 2 + 14 * t1,
                13 - 8 * t2 * (1 - t2), 2 + 14 * t2, color);
   }
+  upright_from(frame, first, ox + 13 * scale, oy + 9 * scale);
 }
 static void glyph_auto(sign_frame_t *frame, double ox, double oy, double scale,
                        uint32_t color) {
+  int first = frame->shape_count;
   // A desktop display uses the same rounded strokes as the sun and moon.
   add_shape(frame, SIGN_RECT, ox + 5 * scale, oy + 2 * scale, 16 * scale,
             11 * scale, 2 * scale, 1.8 * scale, 0, color);
   glyph_line(frame, ox, oy, scale, 13, 14, 13, 17, color);
   glyph_line(frame, ox, oy, scale, 9, 17, 17, 17, color);
+  upright_from(frame, first, ox + 13 * scale, oy + 9 * scale);
 }
 static void place_card(sign_shape_t *shape, double ox, double oy, double appear,
                        double cat_scale) {
   double fitted = 0.88 + 0.12 * appear;
   double drop = (1 - appear) * 12 * cat_scale;
+  if (shape->upright) {
+    shape->icon_center_x = ox + (shape->icon_center_x - ox) * fitted;
+    shape->icon_center_y = oy + (shape->icon_center_y - oy) * fitted + drop;
+  }
   shape->x = ox + (shape->x - ox) * fitted;
   shape->y = oy + (shape->y - oy) * fitted + drop;
   shape->w *= fitted;

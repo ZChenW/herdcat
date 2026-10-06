@@ -172,13 +172,16 @@ static void frame(struct wl_client *client, struct wl_resource *resource,
   wl_callback_send_done(callback, 0);
   wl_resource_destroy(callback);
 }
+struct test_region {
+  struct test_rect first, last;
+};
 static void input_region(struct wl_client *client, struct wl_resource *resource,
                          struct wl_resource *region) {
   (void)client;
   struct test_surface *surface = wl_resource_get_user_data(resource);
-  surface->input = region
-                       ? *(struct test_rect *)wl_resource_get_user_data(region)
-                       : (struct test_rect){0};
+  struct test_region *rects = region ? wl_resource_get_user_data(region) : NULL;
+  surface->input = rects ? rects->last : (struct test_rect){0};
+  surface->cat_input = rects ? rects->first : (struct test_rect){0};
 }
 static void region_request(struct wl_client *client,
                            struct wl_resource *resource,
@@ -200,6 +203,15 @@ static void commit(struct wl_client *client, struct wl_resource *resource) {
   if (drag_mode && surface->monitor) {
     printf("input %s %d %d %d %d\n", surface->monitor->name, surface->input.x,
            surface->input.y, surface->input.width, surface->input.height);
+    if (!strcmp(surface->ns, "herdcat-overlay") && surface->buffer) {
+      printf("snapshot %s %d %d %d %u %u %d %d %d %d %d %d %d %d\n",
+             surface->monitor->name, surface->margin_top,
+             surface->margin_bottom, surface->margin_left, surface->width,
+             surface->height, surface->cat_input.x, surface->cat_input.y,
+             surface->cat_input.width, surface->cat_input.height,
+             surface->input.x, surface->input.y, surface->input.width,
+             surface->input.height);
+    }
     fflush(stdout);
   }
   if (surface->buffer) {
@@ -256,8 +268,10 @@ static void create_surface(struct wl_client *client,
 static void add_region(struct wl_client *client, struct wl_resource *resource,
                        int32_t x, int32_t y, int32_t width, int32_t height) {
   (void)client;
-  *(struct test_rect *)wl_resource_get_user_data(resource) =
-      (struct test_rect){x, y, width, height};
+  struct test_region *rects = wl_resource_get_user_data(resource);
+  if (!rects->first.width)
+    rects->first = (struct test_rect){x, y, width, height};
+  rects->last = (struct test_rect){x, y, width, height};
 }
 static void region_destroyed(struct wl_resource *resource) {
   free(wl_resource_get_user_data(resource));
@@ -269,7 +283,7 @@ static void create_region(struct wl_client *client,
   (void)resource;
   struct wl_resource *region =
       wl_resource_create(client, &wl_region_interface, 1, id);
-  struct test_rect *rect = calloc(1, sizeof(*rect));
+  struct test_region *rect = calloc(1, sizeof(*rect));
   assert(rect);
   wl_resource_set_implementation(region, &region_impl, rect, region_destroyed);
 }
@@ -338,6 +352,9 @@ static void margin(struct wl_client *client, struct wl_resource *resource,
                    int32_t top, int32_t right, int32_t bottom, int32_t left) {
   (void)client;
   struct test_surface *surface = wl_resource_get_user_data(resource);
+  surface->margin_top = top;
+  surface->margin_bottom = bottom;
+  surface->margin_left = left;
   if (drag_mode) {
     printf("margin %s %d %d\n", surface->monitor->name, top, bottom);
     printf("placement %s %s %d %d %d %d %u %u\n", surface->monitor->name,
@@ -582,7 +599,16 @@ int main(void) {
   }
   server = wl_display_create();
   assert(server);
+  // Added in libwayland 1.23. Older libraries keep their fixed 4096-byte
+  // buffer, which the queue pressure phase also fills.
+#if WAYLAND_VERSION_MAJOR > 1 || \
+    (WAYLAND_VERSION_MAJOR == 1 && WAYLAND_VERSION_MINOR >= 23)
   wl_display_set_default_max_buffer_size(server, 4 * 1024 * 1024);
+#else
+  // The runtime test skips its queue pressure phase when it sees this: a
+  // stopped server with the fixed buffer simply drops the client.
+  printf("small-buffers\n");
+#endif
   loop = wl_display_get_event_loop(server);
   assert(wl_display_add_socket(server, "wayland-test") == 0);
   assert(wl_display_init_shm(server) == 0);

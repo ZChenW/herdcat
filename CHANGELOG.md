@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **`herdcat setup`** - Connects the installed agents, tmux and kitty with one
+  command. Shows the changes first, backs up every file, can be repeated and
+  undone with `--remove`. Needs Python 3.
+- **Dark theme** - `sign_theme=light|dark|auto`, also on a new row of the
+  switch card. `auto` follows the desktop's colour scheme through the XDG
+  settings portal.
+- **More terminals** - Clicking a sign reaches the pane in tmux and WezTerm,
+  not only in kitty, and picks the right window in Ghostty and other
+  terminals that run several windows in one process.
+- **Signs below the cat** - The cat can be dragged to the top of the screen;
+  with no room above, the signs hang below it.
+- **Compositor interface** - niri sits behind a small interface. Hyprland and
+  Sway backends exist but are experimental, off by default and untested on a
+  real compositor (`compositor_experimental=1`).
+
+### Changed
+
+- The overlay surface is only as wide as the cat and its signs instead of the
+  whole output: about 1.5 MB of buffers instead of 6 MB on a 2560 pixel output.
+
+### Fixed
+
+- **Font panel memory** - Closing the panel releases the faces it loaded for
+  previews. A cat that had shown it once stayed near 45 MB instead of 10.
+
 ## [0.1.0] - 2026-10-05
 
 First release of herdcat, based on wayland-bongocat 2.0.2.

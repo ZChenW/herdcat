@@ -14,6 +14,11 @@
 #define SIGN_MAX_VISIBLE 5
 
 typedef enum {
+  SIGN_ABOVE,
+  SIGN_BELOW
+} sign_orientation_t;
+
+typedef enum {
   SIGN_RECT,
   SIGN_CUT,  // radius is the 45-degree corner cut; stroke is inset.
   SIGN_CHECK,
@@ -36,6 +41,12 @@ typedef struct {
   bool pixel_snap;
   // Painted after the cat. The switch-card holder leaves this false.
   bool above;
+  // Upright glyphs move with their group without reflecting its contents.
+  // Reflected base geometry rasterizes from its original side for symmetric
+  // antialiasing; upright groups never set this flag.
+  bool reflected;
+  bool upright;
+  double icon_center_x, icon_center_y;
 } sign_shape_t;
 // Name is bold, metadata is medium. Measure metadata, keep `gap`, and
 // ellipsize the name into what remains. reverse puts metadata on the left.
@@ -139,6 +150,7 @@ typedef struct {
   size_t count;
   sign_style_t style;
   sign_theme_t theme;
+  sign_orientation_t orientation;
   bool theme_auto;
   sign_animations_t animations;
   sign_idle_t idle;
@@ -148,6 +160,8 @@ typedef struct {
   uint64_t hover_key, pressed_key;
   int64_t now_ms;
   double cat_x, cat_y, cat_height;
+  // Zero means an unbounded model canvas. Runtime supplies its surface height.
+  double surface_height;
   // typing retracts that sign but keeps its slot. desk_snap skips the slide.
   // typing_until is the absolute time the desk should start leaving.
   bool typing, desk_snap;
@@ -169,6 +183,12 @@ typedef struct {
 
 void signs_frame(signs_t *model, const sign_input_t *input,
                  sign_frame_t *frame);
+// Reflect geometry about a horizontal axis; text and icon ink stay upright.
+void signs_reflect(sign_frame_t *frame, double center_y);
+// Resting height; nameplates scale about this box's center.
+static inline double sign_tag_height(const sign_text_t *text) {
+  return 4 + 5 + text->px * 1.2 + 6;
+}
 void signs_focus_failed(signs_t *model, uint64_t key, int64_t now_ms);
 // Logical pixels the surface needs above the cat's top. Zero when off.
 int sign_clearance(sign_style_t style, int cat_height);

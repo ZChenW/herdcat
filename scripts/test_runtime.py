@@ -9,25 +9,23 @@ import subprocess
 import tempfile
 import time
 
+from runtime_test_helpers import runtime_env, wait_settled, wait_until
+
 binary = str(Path("build/herdcat").resolve())
 fixture = str(Path("build/compositor/server").resolve())
 
 
 def wait_for(condition, seconds=4):
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        if condition():
-            return
-        time.sleep(0.03)
-    raise AssertionError("condition did not become true")
+    return wait_until(condition, seconds, description='test_runtime.py condition',
+                      diagnostics=lambda: (root / "compositor.log").read_text()[-4000:] + (root / "app.log").read_text()[-2000:])
 
 
 with tempfile.TemporaryDirectory(prefix="herdcat-integration-") as directory:
     root = Path(directory)
-    env = dict(os.environ, XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
+    env = runtime_env(XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
                WAYLAND_DISPLAY="wayland-test")
     config = root / "cat.conf"
-    config.write_text("monitor=TEST-1,TEST-2\noverlay_opacity=0\nfps=1\n"
+    config.write_text("keyboard_device=/dev/input/herdcat-runtime-nonexistent\nhotplug_scan_interval=3600\nmonitor=TEST-1,TEST-2\noverlay_opacity=0\nfps=1\n"
                       "sign_done=timeout\nagent_done_timeout=1\ntest_animation_interval=1\n[monitor:TEST-2]\ncat_height=60\n"
                       "[global]\ncat_height=40\n")
     compositor_log = (root / "compositor.log").open("w+")
@@ -122,7 +120,7 @@ with tempfile.TemporaryDirectory(prefix="herdcat-integration-") as directory:
         config.unlink()
         command("reload", success=False)
         replacement = root / "replacement"
-        replacement.write_text("monitor=TEST-1,TEST-2\ncat_height=45\nfps=60\n")
+        replacement.write_text("keyboard_device=/dev/input/herdcat-runtime-nonexistent\nhotplug_scan_interval=3600\nmonitor=TEST-1,TEST-2\ncat_height=45\nfps=60\n")
         replacement.replace(config)
         command("reload")
         # Kill only the input helper owned by this test instance.
@@ -133,31 +131,39 @@ with tempfile.TemporaryDirectory(prefix="herdcat-integration-") as directory:
         wait_for(lambda: children_path.read_text().strip() and
                  int(children_path.read_text().split()[0]) != helper, seconds=7)
         # Fixture: resolution/scale change, unplug/replug, output queue pressure.
-        time.sleep(3)
+        wait_for(lambda: 'phase 4' in (root / 'compositor.log').read_text(), seconds=8)
+        wait_settled(lambda: (root / 'compositor.log').read_text().splitlines()[-1:],
+                     diagnostics=lambda: (root / 'compositor.log').read_text()[-4000:])
         assert server.poll() is None and app.poll() is None
         command("status")
         # Stop server reads and fill the renderer's outgoing Wayland socket.
         # Controls must continue responding while flush waits for POLLOUT.
-        os.kill(server.pid, signal.SIGSTOP)
-        resume_server = threading.Timer(2, lambda: os.kill(server.pid, signal.SIGCONT))
-        resume_server.start()
-        try:
-            for _ in range(2500):
-                with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
-                    control.settimeout(1.5)
-                    control.connect(str(root / "herdcat.sock"))
-                    control.sendall(b"reload")
-                    assert control.recv(512).startswith(b"0 ")
-        finally:
-            os.kill(server.pid, signal.SIGCONT)
-            resume_server.cancel()
-        time.sleep(0.2)
+        # Before libwayland 1.23 the fixture cannot enlarge its buffers, and a
+        # stopped server overflows and disconnects the client instead.
+        if 'small-buffers' in (root / 'compositor.log').read_text():
+            print('SKIP queue pressure: libwayland-server < 1.23 has fixed 4 KiB buffers')
+        else:
+            os.kill(server.pid, signal.SIGSTOP)
+            resume_server = threading.Timer(2, lambda: os.kill(server.pid, signal.SIGCONT))
+            resume_server.start()
+            try:
+                for _ in range(2500):
+                    with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
+                        control.settimeout(1.5)
+                        control.connect(str(root / "herdcat.sock"))
+                        control.sendall(b"reload")
+                        assert control.recv(512).startswith(b"0 ")
+            finally:
+                os.kill(server.pid, signal.SIGCONT)
+                resume_server.cancel()
+        wait_settled(lambda: command('status'), description='flush recovery',
+                     diagnostics=lambda: (root / 'app.log').read_text()[-4000:])
         assert app.poll() is None
         # Reconcile output list and wait for an explicitly missing monitor.
         config.write_text("monitor=MISSING\nfps=1\n")
         command("reload")
         assert app.poll() is None
-        config.write_text("monitor=TEST-1\nfps=1\ncat_x_offset=-2147483648\n"
+        config.write_text("keyboard_device=/dev/input/herdcat-runtime-nonexistent\nhotplug_scan_interval=3600\nmonitor=TEST-1\nfps=1\ncat_x_offset=-2147483648\n"
                           "cat_y_offset=2147483647\n")
         command("reload")
         # Direct signals must exit cleanly, preserve the lock inode, and reap helper.

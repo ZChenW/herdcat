@@ -5,6 +5,7 @@
 #include "graphics/sign_palette.h"
 #include "signs_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -209,6 +210,7 @@ void add_icon(sign_frame_t *frame, agent_state_t state, double cx, double cy,
               double scale, double opacity, const sign_input_t *in) {
   const sign_palette_t *palette = sign_palette(in->theme);
   uint32_t color = with_alpha(palette->icons[state], opacity);
+  int first = frame->shape_count;
   if (state == AGENT_STATE_WORKING) {
     int64_t now = 0;
     if (in->animations == SIGN_ANIM_FULL) {
@@ -242,6 +244,7 @@ void add_icon(sign_frame_t *frame, agent_state_t state, double cx, double cy,
     add_shape(frame, SIGN_RECT, cx - 5 * scale, cy - 1.5 * scale, 10 * scale,
               3 * scale, 2 * scale, 0, color, 0);
   }
+  upright_from(frame, first, cx, cy);
 }
 sign_slot_t *claim_slot(signs_t *model, const agent_session_view_t *session,
                         double rest_bottom) {
@@ -269,7 +272,8 @@ int sign_clearance(sign_style_t style, int cat_height) {
     design = FAN_CLEARANCE;
   if (design <= 0 || cat_height <= 0)
     return 0;
-  return (cat_height * design + 109) / 110;
+  int64_t value = ((int64_t)cat_height * design + 109) / 110;
+  return value > INT_MAX ? INT_MAX : (int)value;
 }
 void signs_focus_failed(signs_t *model, uint64_t key, int64_t now) {
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
@@ -334,7 +338,8 @@ static void finish_motion(sign_frame_t *frame, const sign_input_t *in,
   if (in->typing && in->typing_until > in->now_ms)
     wake_at(frame, in->typing_until);
 }
-void signs_frame(signs_t *model, const sign_input_t *in, sign_frame_t *frame) {
+static void build_frame(signs_t *model, const sign_input_t *in,
+                        sign_frame_t *frame, double desk_clear) {
   memset(frame, 0, sizeof(*frame));
   if (!in || in->style == SIGN_STYLE_OFF || in->cat_height <= 0) {
     memset(model, 0, sizeof(*model));
@@ -353,6 +358,12 @@ void signs_frame(signs_t *model, const sign_input_t *in, sign_frame_t *frame) {
                     move_ms, &BEZIER_MOVE, in, frame);
   double fade = clamp_unit(aim(&model->desk_fade, in->typing ? 1 : 0, fade_ms,
                                &BEZIER_EASE, in, frame));
+  // At the output edge the available lift can be smaller than DESK_LIFT.
+  // The desk keeps its place under the paws: it is positioned from how far
+  // the lift animation has run, not from how far the cat could actually rise.
+  double travel = lift;
+  if (in->orientation == SIGN_BELOW)
+    lift = fmin(lift, in->cat_y);
   int shift = (int)lround(lift);
   frame->cat_lift = shift;
   sign_input_t placed = *in;
@@ -366,7 +377,7 @@ void signs_frame(signs_t *model, const sign_input_t *in, sign_frame_t *frame) {
   if (count > SIGN_MAX_VISIBLE)
     count = SIGN_MAX_VISIBLE;
   if (in->style == SIGN_STYLE_FAN) {
-    layout_fan(model, in, frame, count);
+    layout_fan(model, in, frame, count, desk_clear);
   } else {
     int shown = 0;
     for (size_t i = 0; i < count; i++)
@@ -390,6 +401,7 @@ void signs_frame(signs_t *model, const sign_input_t *in, sign_frame_t *frame) {
     double pole = aim(&model->pole, shown ? 106 + 30.0 * shown : 50, MOVE_MS,
                       &BEZIER_MOVE, in, frame) *
                   scale;
+    pole += desk_clear * scale;
     // Outer width 6, centered on the same axis. The cap sits 6px above the
     // pole top: its padding edge is 2px in, and CSS top is -8.
     add_shape(frame, SIGN_RECT, pole_x - 3 * scale, cat_bottom - pole,
@@ -406,7 +418,7 @@ void signs_frame(signs_t *model, const sign_input_t *in, sign_frame_t *frame) {
         bool hovered = in->has_hover && in->hover_key == slot->session.key;
         if (hovered != (pass == 1))
           continue;
-        layout_board(slot, in, frame, pole_x, cat_bottom, scale);
+        layout_board(slot, in, frame, pole_x, cat_bottom, scale, desk_clear);
       }
     }
     frame->pad = cover(in->cat_x - 70 * scale, in->cat_y - 160 * scale,
@@ -414,7 +426,31 @@ void signs_frame(signs_t *model, const sign_input_t *in, sign_frame_t *frame) {
     frame->has_pad = true;
   }
   // The desk stays on the unshifted cat. The pivot above already moved.
-  emit_desk(frame, &placed, scale, lift, fade);
-  emit_menu(model, &placed, frame, scale);
+  if (in->orientation == SIGN_BELOW) {
+    emit_menu(model, &placed, frame, scale);
+    signs_reflect(frame, in->cat_y + in->cat_height / 2);
+    emit_desk(frame, &placed, scale, travel, fade);
+  } else {
+    emit_desk(frame, &placed, scale, travel, fade);
+    emit_menu(model, &placed, frame, scale);
+  }
   finish_motion(frame, &placed, fade);
+}
+
+void signs_frame(signs_t *model, const sign_input_t *in, sign_frame_t *frame) {
+  build_frame(model, in, frame, 0);
+  if (!in || in->orientation != SIGN_BELOW || in->style == SIGN_STYLE_OFF ||
+      in->cat_height <= 0 || in->menu)
+    return;
+  double scale = in->cat_height / 110.0;
+  double clear =
+      DESK_CLEAR * scale * clamp_unit(sample(&model->desk_fade, in->now_ms));
+  // Measure the unextended frame first, including animated nameplates and
+  // damage outsets. Extending a fan rod moves its ink by at most this amount;
+  // post rows move by exactly it. Menu and desk geometry remain unchanged.
+  if (in->surface_height > 0)
+    clear = fmin(clear, fmax(0, in->surface_height -
+                                    (frame->bounds_y + frame->bounds_h)));
+  if (clear > 0)
+    build_frame(model, in, frame, clear / scale);
 }

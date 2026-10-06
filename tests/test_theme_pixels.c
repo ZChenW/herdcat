@@ -86,7 +86,7 @@ int main(void) {
       {UINT64_C(0x30ec85e190618dc8), UINT64_C(0xb4324404ffb2f4fb)},
       {UINT64_C(0x2b28efc8d9b12e9c), UINT64_C(0x0849ce61f21f96f8)},
       {UINT64_C(0x559466fb69fe25c8), UINT64_C(0x59be1c10b5127a0c)},
-      {UINT64_C(0x7a0932425afb84ba), UINT64_C(0x5ed26da107b2ddb0)}
+      {UINT64_C(0x11f0e3c6d0287cba), UINT64_C(0x02ad31635d7780f0)}
   };
   for (int scene_id = 0; scene_id < 4; scene_id++) {
     for (int s = 0; s < 2; s++) {

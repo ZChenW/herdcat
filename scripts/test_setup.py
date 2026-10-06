@@ -234,6 +234,22 @@ class SetupTests(unittest.TestCase):
                     finally:
                         child.tearDown()
 
+    def test_tmux_template_update(self):
+        path = self.home / '.config/tmux/tmux.conf'
+        body = 'source-file ' + json.dumps(str(ROOT / 'integrations/tmux/herdcat.conf')) + '\n'
+        old, _, _ = setup.terminal_text(b'# user config\n', body, False)
+        self.write(path, old)
+        self.assertIn(b'outdated', self.run_setup('tmux', '--status'))
+        self.run_setup('tmux', '--yes')
+        self.assertIn(b'# herdcat tmux template ', path.read_bytes())
+        self.assertNotIn(b'outdated', self.run_setup('tmux', '--status'))
+        self.run_setup('tmux', '--remove', '--yes')
+        self.assertEqual(path.read_bytes(), b'# user config\n')
+        template = (ROOT / 'integrations/tmux/herdcat.conf').read_text()
+        for hook in ('client-detached', 'client-attached'):
+            self.assertIn("set-hook -g " + hook + "[7313]", template)
+            self.assertIn('herdcat --tmux', template)
+
     def test_tmux_legacy_path_and_new_configs(self):
         legacy = self.home / '.tmux.conf'
         self.write(legacy, b'set -g status off\n')
@@ -397,6 +413,8 @@ class SetupTests(unittest.TestCase):
         script = prefix / 'bin/herdcat-setup'
         script.parent.mkdir(parents=True)
         shutil.copyfile(SCRIPT, script)
+        shutil.copyfile(ROOT / "scripts/herdcat_setup_json.py",
+                        script.parent / "herdcat_setup_json.py")
         templates = prefix / 'share/herdcat/integrations'
         shutil.copytree(ROOT / 'integrations', templates)
         def run(*args):
@@ -500,6 +518,8 @@ class SetupTests(unittest.TestCase):
         script = prefix / 'bin/herdcat-setup'
         script.parent.mkdir(parents=True)
         shutil.copyfile(SCRIPT, script)
+        shutil.copyfile(ROOT / "scripts/herdcat_setup_json.py",
+                        script.parent / "herdcat_setup_json.py")
         shutil.copytree(ROOT / 'integrations', prefix / 'share/herdcat/integrations')
         result = subprocess.run([sys.executable, str(script), 'codex', '--yes'],
                                 env=self.env, capture_output=True, timeout=10)

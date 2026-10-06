@@ -28,6 +28,7 @@ typedef struct {
   uint64_t window;
   uint64_t native_window;
   bool native_window_known;
+  bool detached;  // tmux server has no attached clients; never persisted.
   bool current_known;
   uint64_t current_pane;
   char title[AGENT_TERMINAL_TITLE_MAX + 1];
@@ -45,6 +46,11 @@ bool agent_terminal_message(char *out, size_t capacity, uint64_t key,
                             const agent_terminal_t *terminal);
 bool agent_terminal_request(const char *request, uint64_t *key,
                             agent_terminal_t *terminal);
+
+// Server notifications do not require a pane or a client PID.
+bool agent_terminal_tmux_message(char *out, size_t capacity);
+bool agent_terminal_tmux_request(const char *request,
+                                 agent_terminal_t *terminal);
 
 bool agent_terminal_pane_message(char *out, size_t capacity, pid_t pid,
                                  uint64_t pane,

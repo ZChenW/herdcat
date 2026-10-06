@@ -7,6 +7,7 @@ import select
 import signal
 import subprocess
 import sys
+import time
 
 
 def run_on_pty():
@@ -85,3 +86,59 @@ class HookParent:
                 process.wait(timeout=3)
             process.stdout.close()
             process.stderr.close()
+
+
+def runtime_env(**overrides):
+    """Ignore host terminal/compositor metadata and confine all state to fixtures."""
+    env = dict(os.environ)
+    for key in ('NIRI_SOCKET', 'HYPRLAND_INSTANCE_SIGNATURE', 'SWAYSOCK',
+                'KITTY_PID', 'KITTY_WINDOW_ID', 'KITTY_LISTEN_ON', 'TMUX',
+                'TMUX_PANE', 'WEZTERM_PANE', 'WEZTERM_UNIX_SOCKET',
+                'TERM_PROGRAM', 'WAYLAND_DEBUG', 'HERDCAT_HOOK_DEBUG',
+                'HERDCAT_TEST_DRAG', 'HERDCAT_TEST_MEASURE',
+                'HERDCAT_TEST_RELEASE_MS'):
+        env.pop(key, None)
+    env.update(overrides)
+    env['PYTHONDONTWRITEBYTECODE'] = '1'
+    return env
+
+
+def wait_until(sample, seconds=6, *, description='fixture condition',
+               diagnostics=None):
+    """Poll a bounded condition and report its last value plus fixture logs."""
+    deadline = time.monotonic() + seconds
+    last = None
+    while time.monotonic() < deadline:
+        last = sample()
+        if last:
+            return last
+        time.sleep(.03)
+    detail = diagnostics() if diagnostics else None
+    raise AssertionError(f'{description} timed out after {seconds}s; '
+                         f'last={last!r};diagnostics={detail!r}')
+
+
+def wait_settled(sample, seconds=8, *, ready=None, quiet=.3, minimum=.65,
+                 description='fixture geometry', diagnostics=None):
+    """Sample only after transitions and a continuous quiet geometry interval.
+
+    The minimum covers the longest model transition (500ms), even when an
+    old committed frame remains unchanged before the next callback arrives.
+    ready can require a fresh commit or the expected lifecycle phase.
+    """
+    started = stable_since = time.monotonic()
+    deadline = started + seconds
+    previous = last = None
+    while time.monotonic() < deadline:
+        last = sample()
+        now = time.monotonic()
+        if last != previous:
+            previous, stable_since = last, now
+        if last is None or (ready is not None and not ready(last)):
+            stable_since = now
+        elif now - started >= minimum and now - stable_since >= quiet:
+            return last
+        time.sleep(.03)
+    detail = diagnostics() if diagnostics else None
+    raise AssertionError(f'{description} did not settle after {seconds}s; '
+                         f'last={last!r};previous={previous!r};diagnostics={detail!r}')

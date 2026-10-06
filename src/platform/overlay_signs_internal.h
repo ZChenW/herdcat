@@ -10,6 +10,9 @@ typedef struct {
 typedef struct {
   signs_t model;
   sign_style_t style;
+  sign_orientation_t orientation;
+  int resting_y;
+  bool placed;
   sign_frame_t frame;
   overlay_signs_step_t last;
   box_t prev;
@@ -21,6 +24,7 @@ typedef struct {
 } lane_t;
 
 extern lane_t lanes[MAX_OUTPUTS];
+extern double published_lift;
 extern bool tracking, holding, pressed, focus_armed;
 extern size_t track_index, hold_index, focus_index;
 extern double pointer_x, pointer_y;
@@ -47,6 +51,7 @@ extern char font_choice[128], seen_config_font[128];
 extern bool previewing, was_browsing, panel_entered, has_kept_card;
 extern char preview_face[128];
 
+int lane_resting_y(size_t index, const config_t *config, int surface_height);
 bool inside(int x, int y, int w, int h, double px, double py);
 bool over_cat(size_t index);
 bool over_card(size_t index);

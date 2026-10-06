@@ -415,6 +415,8 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
     return;
   uint64_t key = shape_key(shape, x, y, w, h, radius, stroke);
   key = mix(key, (uint64_t)cache_scale);
+  if (shape->reflected)
+    key = mix(key, UINT64_C(0x62656c6f77));
   if (orbit) {
     key = mix(key, quantize(rot_x - x));
     key = mix(key, quantize(rot_y - y));
@@ -436,8 +438,15 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
   uint8_t *pixels = slot ? slot->pixels : NULL;
   if (!pixels) {
     char svg[SVG_BYTES];
-    if (build_svg(svg, bw, bh, shape, x - left, y - top, w, h, radius, stroke,
-                  rot_x - left, rot_y - top))
+    sign_shape_t source = *shape;
+    double sy = y - top, oy = rot_y - top;
+    if (shape->reflected) {
+      source.rotation = -source.rotation;
+      sy = bh - (sy + h);
+      oy = bh - oy;
+    }
+    if (build_svg(svg, bw, bh, &source, x - left, sy, w, h, radius, stroke,
+                  rot_x - left, oy))
       return;
     NSVGrasterizer *r = raster();
     NSVGimage *image = nsvgParse(svg, "px", 96);
@@ -452,6 +461,19 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
     }
     nsvgRasterize(r, image, 0, 0, 1, pixels, bw, bh, bw * 4);
     nsvgDelete(image);
+    // NanoSVG's scanline samples are asymmetric about pixel centers. Reflect
+    // the original bitmap so both sides retain precisely the same edge ink.
+    if (shape->reflected) {
+      for (int row = 0; row < bh / 2; row++) {
+        for (int column = 0; column < bw * 4; column++) {
+          size_t one = (size_t)row * bw * 4 + column;
+          size_t two = (size_t)(bh - 1 - row) * bw * 4 + column;
+          uint8_t byte = pixels[one];
+          pixels[one] = pixels[two];
+          pixels[two] = byte;
+        }
+      }
+    }
     premultiply(pixels, bw * bh);
     if (cacheable)
       cache_store(key, pixels, bw, bh, shape->pixel_snap);
@@ -474,7 +496,7 @@ static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
   double line_h = text->px * 1.2 * s;
   double box_h = border * 2 + pad_t + line_h + pad_b;
   double box_w = border * 2 + pad_x * 2 + content;
-  double box_h1 = 4 + 5 + text->px * 1.2 + 6;
+  double box_h1 = sign_tag_height(text);
   double center_y = text->anchor_y - box_h1 / 2;
   double box_top = center_y - box_h / 2;
   double line_top = box_top + border + pad_t;

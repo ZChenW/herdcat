@@ -8,30 +8,32 @@ import subprocess
 import tempfile
 import time
 
+from runtime_test_helpers import runtime_env, wait_settled, wait_until
+
+from runtime_test_helpers import run_on_pty
+
+run_on_pty()
+
 binary = str(Path("build/herdcat").resolve())
 fixture = str(Path("build/compositor/server").resolve())
 marker = {"type": "user", "message": {"role": "user", "content": [
     {"type": "text", "text": "[Request interrupted by user]"}]}}
 
 
-def wait_for(predicate):
-    until = time.monotonic() + 3
-    while time.monotonic() < until:
-        if predicate():
-            return
-        time.sleep(0.01)
-    raise AssertionError("runtime condition timed out")
+def wait_for(condition, seconds=3):
+    return wait_until(condition, seconds, description='test_transcript_runtime.py condition',
+                      diagnostics=lambda: (root / "runtime.log").read_text()[-4000:])
 
 
 with tempfile.TemporaryDirectory(prefix="bongo-transcript-runtime-") as directory:
     root = Path(directory)
-    env = dict(os.environ, HOME=directory, XDG_RUNTIME_DIR=directory,
+    env = runtime_env(HOME=directory, XDG_RUNTIME_DIR=directory,
                XDG_STATE_HOME=directory, XDG_CONFIG_HOME=directory,
                WAYLAND_DISPLAY="wayland-test", XDG_CURRENT_DESKTOP="test")
     env.pop("NIRI_SOCKET", None)
     env.pop("HERDCAT_HOOK_DEBUG", None)
     config = root / "cat.conf"
-    base = "monitor=TEST-1\nfps=1\nhotplug_scan_interval=0\nagent_stale_timeout=0\n"
+    base = "keyboard_device=/dev/input/herdcat-runtime-nonexistent\nmonitor=TEST-1\nfps=1\nhotplug_scan_interval=0\nagent_stale_timeout=0\n"
     config.write_text(base)
     # Longer than the old transport buffer; spaces and Unicode survive wire I/O.
     nested = root / ("a" * 150)

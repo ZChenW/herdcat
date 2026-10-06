@@ -70,6 +70,16 @@ the surface stops moving and the cat moves inside it. Origins align to the
 physical pixel grid for fractional scales. Nonzero overlay opacity retains
 the output-wide background bar.
 
+`platform/overlay_vertical.c` selects above/below signs from the cat's output
+height, with a 24px return hysteresis. `platform/overlay_position.c` maps the
+saved displacement to the surface margins and per-surface cat coordinates.
+Transparent sign overlays clamp the cat rather than the whole surface, and
+keep the surface inside the output by changing its origin at either edge.
+The desk's lift is limited by available space at the top. Background bars and
+signs-off retain their old placement. Bottom position records retain their old
+anchor-relative displacement; transparent signs at the top use the cat's top
+as their saved displacement.
+
 After four logical pixels of left-button motion, both axes follow layer
 margins, with at most one combined margin submission per surface frame
 callback. A changed surface-local cat coordinate rebuilds pixels and input
@@ -183,6 +193,11 @@ No shell commands are constructed.
 `graphics/signs.c` is a pure model: supplied time, selected session views,
 configuration and pointer state produce shared shape/text/hit lists for fan and
 post.
+`graphics/signs_transform.c` reflects a frame about the cat's horizontal
+center before the typing desk is emitted. Text and grouped icons stay upright;
+reflected bases rasterize from their original side and flip their bitmap to
+preserve NanoSVG edge sampling. Orientation changes reset sign transitions
+while retaining the menu and desk scalar state.
 `graphics/signs_fan.c` holds the existing fan orbit and plate-layout functions.
 `graphics/signs_post.c` holds post-board layout, while pole/slot assembly stays
 inside the shared `signs_frame` function.
@@ -244,6 +259,8 @@ with the sign model's shapes, texts and hit rectangles.
 `graphics/sign_palette.c` supplies the shared light/dark palette to signs and
 the font panel. Theme travels with each frame input and panel model; bitmap
 keys already include colours, so switching needs no cache reset.
+`platform/overlay_signs_geometry.c` holds surface clearance, resting placement
+and the per-output placement handoff to the sign model.
 `platform/overlay_menu.c` holds existing menu choices, preview restoration, save
 and close deadlines, font-panel anchors and switch-card button/scroll handling.
 `src/platform/overlay_signs_internal.h` privately shares the existing per-output

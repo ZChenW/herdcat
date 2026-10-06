@@ -69,29 +69,6 @@ static bool reconcile_pending;
 overlay_t overlays[MAX_OUTPUTS];
 overlay_t *active;
 
-void clamp_position(overlay_t *overlay) {
-  if (!overlay->has_position) {
-    overlay->output_x = drag_default_x(
-        &overlay->config, overlay->config.screen_width, cat_width(overlay));
-    overlay->margin_y = 0;
-  } else {
-    drag_clamp(&overlay->output_x, &overlay->margin_y,
-               overlay->config.screen_width, cat_width(overlay),
-               overlay->output_height, overlay->height);
-  }
-  overlay_placement_t place =
-      overlay_place(overlay->output_x, cat_width(overlay), overlay->width,
-                    overlay->config.screen_width, overlay->scale);
-  overlay->cat_x = place.cat_x_in_surface;
-  overlay->margin_x = place.margin_x;
-}
-void set_margin(overlay_t *overlay) {
-  bool top = overlay->config.overlay_position == POSITION_TOP;
-  zwlr_layer_surface_v1_set_margin(overlay->layer, top ? overlay->margin_y : 0,
-                                   0, top ? 0 : overlay->margin_y,
-                                   overlay->margin_x);
-}
-
 static void activate(overlay_t *overlay) {
   active = overlay;
   output = overlay->output;
@@ -100,22 +77,6 @@ static void activate(overlay_t *overlay) {
   atomic_store(&configured, overlay->configured);
   animation_overlay_activate(overlay->animation, &overlay->config);
   fullscreen_recompute();
-}
-int wayland_reset_position(void) {
-  finish_drag();
-  if (drag_position_reset(NULL) < 0) {
-    return 1;
-  }
-  for (size_t i = 0; i < MAX_OUTPUTS; i++) {
-    overlay_t *overlay = &overlays[i];
-    if (overlay->surface) {
-      overlay->has_position = false;
-      clamp_position(overlay);
-      set_margin(overlay);
-      overlay->redraw = true;
-    }
-  }
-  return 0;
 }
 static void teardown(overlay_t *overlay) {
   size_t index = (size_t)(overlay - overlays);
@@ -237,8 +198,8 @@ static bool create(overlay_t *overlay, output_ref_t *ref) {
       overlay_extent(&overlay->config, ref->screen_width).width,
       ref->screen_width, overlay->scale);
   overlay->height = overlay_signs_height(&overlay->config);
-  int position =
-      drag_position_load(overlay->name, &overlay->output_x, &overlay->margin_y);
+  int position = drag_position_load(overlay->name, &overlay->output_x,
+                                    &overlay->position_y);
   overlay->has_position = position == 0;
   if (position < 0) {
     herdcat_log_warning("Cannot load drag position for %s", overlay->name);
@@ -348,7 +309,7 @@ static void reconcile(void) {
     properties(overlay);
     overlay->damage_all = true;
     overlay->redraw = true;
-    wl_surface_commit(overlay->surface);
+    // Presentation commits the new placement with its pixels and input.
   }
   reconcile_pending = false;
 }

@@ -21,7 +21,7 @@ jobs:
           sudo apt-get install -y gcc make libwayland-dev wayland-protocols \
             libfreetype-dev libfontconfig1-dev fonts-dejavu-core fonts-noto-core \
             fonts-noto-cjk fonts-liberation \
-            clang-format clang-tidy clang-tools shellcheck
+            python3 clang-format clang-tidy clang-tools shellcheck
 
       - name: Check formatting
         run: make format-check
@@ -43,6 +43,27 @@ jobs:
 
       - name: Run scan-build
         run: scan-build --status-bugs --exclude lib make clean release
+
+  # The runtime tests drive a small test compositor. It needs libwayland
+  # 1.23 or newer, which the Ubuntu runner does not have, so they run in an
+  # Arch container, as an ordinary user like the program itself.
+  runtime:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git wayland \
+            wayland-protocols freetype2 fontconfig python \
+            noto-fonts noto-fonts-cjk ttf-dejavu ttf-liberation
+
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Run runtime tests
+        run: |
+          useradd -m tester
+          chown -R tester .
+          su tester -c 'XDG_RUNTIME_DIR=$(mktemp -d) make test-runtime'
 
   nix:
     runs-on: ubuntu-latest

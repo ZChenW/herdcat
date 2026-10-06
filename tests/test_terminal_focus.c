@@ -17,8 +17,11 @@ static agent_terminal_t record;
 static unsigned notes;
 static bool kitty_mode;
 static bool deferred_current;
+static bool server_notification;
 static bool lookup(pid_t pid, agent_terminal_t *out, char *name,
                    size_t capacity) {
+  if (server_notification)
+    return agent_sessions_terminal(pid, out, name, capacity);
   (void)pid;
   *out = record;
   if (kitty_mode)
@@ -29,7 +32,12 @@ static bool lookup(pid_t pid, agent_terminal_t *out, char *name,
 }
 static void note(pid_t pid, const agent_terminal_t *out) {
   (void)pid;
+  TEST_ASSERT(out->detached ==
+              (out->kind == TERMINAL_TMUX &&
+               !strcmp(getenv("TERMINAL_TEST_MODE"), "detached")));
   record = *out;
+  if (server_notification)
+    agent_sessions_terminal_resolved(pid, out);
   notes++;
   if (deferred_current && out->kind == TERMINAL_WEZTERM && out->title[0] &&
       !out->window) {
@@ -158,6 +166,17 @@ static void test_identifiers(void) {
   TEST_ASSERT(!agent_terminal_pane_request("pane 2 0 tmux -1", &restored));
   TEST_ASSERT(!agent_terminal_request("term 0000000000000001 tmux 0 -1", &key,
                                       &restored));
+  snprintf(env, sizeof(env), "%s,1234,0", path);
+  setenv("TMUX", env, 1);
+  unsetenv("TMUX_PANE");
+  TEST_ASSERT(agent_terminal_tmux_message(message, sizeof(message)));
+  TEST_ASSERT(agent_terminal_tmux_request(message, &restored));
+  TEST_ASSERT(!strcmp(restored.socket, path));
+  TEST_ASSERT(!agent_terminal_tmux_request("tmux 00", &restored));
+  TEST_ASSERT(!agent_terminal_tmux_request("tmux 2f trailing", &restored));
+  TEST_ASSERT(!agent_terminal_tmux_message(message, 5));
+  unsetenv("TMUX");
+  TEST_ASSERT(!agent_terminal_tmux_message(message, sizeof(message)));
   n = snprintf(env, sizeof(env), "WEZTERM_PANE=0%cWEZTERM_UNIX_SOCKET=%s%c", 0,
                path, 0);
   TEST_ASSERT(agent_terminal_parse_all(env, (size_t)n, &t));
@@ -371,6 +390,34 @@ static void test_session_records(void) {
   TEST_ASSERT(agent_sessions_terminal(getpid(), &t, NULL, 0));
   TEST_ASSERT(t.kind == TERMINAL_TMUX && !strcmp(t.title, "memory only"));
   TEST_ASSERT(agent_sessions_generation() == generation);
+  t.detached = true;
+  agent_sessions_terminal_resolved(getpid(), &t);
+  TEST_ASSERT(agent_sessions_terminal(getpid(), &t, NULL, 0) && t.detached);
+  pid_t pids[AGENT_SESSIONS_MAX];
+  TEST_ASSERT(agent_sessions_tmux_pids("/fixture", pids, AGENT_SESSIONS_MAX) ==
+              1);
+  TEST_ASSERT(pids[0] == getpid());
+  TEST_ASSERT(agent_sessions_tmux_pids("/other", pids, AGENT_SESSIONS_MAX) ==
+              0);
+  agent_sessions_tmux_attached("/other");
+  TEST_ASSERT(agent_sessions_terminal(getpid(), &t, NULL, 0) && t.detached);
+  agent_sessions_tmux_attached("/fixture");
+  TEST_ASSERT(agent_sessions_terminal(getpid(), &t, NULL, 0) && !t.detached);
+  TEST_ASSERT(agent_sessions_generation() == generation);
+  agent_sessions_adopt(2);
+  agent_session_record_t rows[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_export(rows, AGENT_SESSIONS_MAX);
+  agent_sessions_reset();
+  for (int i = 0; i < count; i++)
+    TEST_ASSERT(agent_sessions_restore(&rows[i], 1000, 5) == 0);
+  TEST_ASSERT(!agent_sessions_terminal(getpid(), &t, NULL, 0));
+  t = (agent_terminal_t){
+      .kind = TERMINAL_WEZTERM, .socket = "/fixture", .detached = true};
+  agent_sessions_set_terminal(2, &t);
+  TEST_ASSERT(agent_sessions_terminal(getpid(), &t, NULL, 0) && !t.detached);
+  t = (agent_terminal_t){.kind = TERMINAL_TMUX, .socket = "/fixture"};
+  agent_sessions_set_terminal(2, &t);
+  agent_sessions_set_kitty(2, 123, 7, "unix:/fixture");
   uint64_t window;
   char socket[128];
   TEST_ASSERT(agent_sessions_kitty(getpid(), &window, socket, sizeof(socket)));
@@ -399,6 +446,7 @@ int main(int argc, char **argv) {
   TEST_ASSERT(argc == 4);
   kitty_mode = !strcmp(argv[1], "kitty");
   deferred_current = !strcmp(argv[3], "deferred");
+  server_notification = !strcmp(argv[3], "notification");
   record.kind = kitty_mode                    ? TERMINAL_NONE
                 : !strcmp(argv[1], "tmux")    ? TERMINAL_TMUX
                 : !strcmp(argv[1], "wezterm") ? TERMINAL_WEZTERM
@@ -415,7 +463,39 @@ int main(int argc, char **argv) {
   focus_set_current(current);
   focus_set_kitty(kitty);
   focus_test_available(true);
-  if (!strcmp(argv[3], "current") || !strcmp(argv[3], "current-again")) {
+  if (server_notification) {
+    bool detached = !strcmp(getenv("TERMINAL_TEST_MODE"), "detached");
+    for (int i = 0; i < 3; i++) {
+      uint64_t key = (uint64_t)i + 10;
+      TEST_ASSERT(agent_sessions_apply(key, "claude", AGENT_EVENT_WORKING,
+                                       getpid() + i, 1000, 5, NULL) == 0);
+      agent_terminal_t t = record;
+      t.detached = !detached;
+      if (i == 2)
+        strcpy(t.socket, "/other-server");
+      agent_sessions_set_terminal(key, &t);
+    }
+    char value[256], message[384];
+    snprintf(value, sizeof(value), "%s,1234,0", record.socket);
+    setenv("TMUX", value, 1);
+    TEST_ASSERT(agent_terminal_tmux_message(message, sizeof(message)));
+    agent_terminal_t report;
+    TEST_ASSERT(agent_terminal_tmux_request(message, &report));
+    pid_t pids[AGENT_SESSIONS_MAX];
+    int count =
+        agent_sessions_tmux_pids(report.socket, pids, AGENT_SESSIONS_MAX);
+    TEST_ASSERT(count == 2);
+    for (int i = 0; i < count; i++)
+      focus_terminal_resolve(pids[i]);
+    drain();
+    TEST_ASSERT(notes == 2);
+    for (int i = 0; i < 3; i++) {
+      agent_terminal_t t;
+      TEST_ASSERT(agent_sessions_terminal(getpid() + i, &t, NULL, 0));
+      TEST_ASSERT(t.detached == (i == 2 ? !detached : detached));
+    }
+    printf("%d %u\n", focus_take_result(), notes);
+  } else if (!strcmp(argv[3], "current") || !strcmp(argv[3], "current-again")) {
     focus_wezterm_current(getpid(), 222);
     focus_wezterm_current(getpid(), 222);
     drain();

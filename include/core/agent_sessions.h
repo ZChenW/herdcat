@@ -97,6 +97,9 @@ bool agent_sessions_terminal(pid_t pid, agent_terminal_t *terminal, char *name,
                              size_t capacity);
 void agent_sessions_terminal_resolved(pid_t pid,
                                       const agent_terminal_t *terminal);
+// Pane reports prove that this server has an attached client.
+void agent_sessions_tmux_attached(const char *socket);
+int agent_sessions_tmux_pids(const char *socket, pid_t *pids, size_t capacity);
 agent_state_t agent_sessions_resolve(void);
 int64_t agent_sessions_next_deadline(int stale_timeout_s);
 int agent_sessions_count(void);

@@ -51,16 +51,18 @@ int job_start(command_job_t *job, const char *const argv[]) {
       error = posix_spawn_file_actions_addclosefrom_np(&actions, 3);
     }
     if (!error) {
-      char **environment = environ;
+      // owned is what this call allocated, whatever command_socket says later.
+      char **environment = environ, **owned = NULL;
       char socket_env[AGENT_TERMINAL_LISTEN_MAX + 32];
       if (command_socket) {
         size_t count = 0;
         while (environ[count])
           count++;
-        environment = calloc(count + 2, sizeof(*environment));
-        if (!environment) {
+        owned = calloc(count + 2, sizeof(*owned));
+        if (!owned) {
           error = ENOMEM;
         } else {
+          environment = owned;
           size_t used = 0;
           for (size_t i = 0; i < count; i++)
             if (strncmp(environ[i], "WEZTERM_UNIX_SOCKET=", 20))
@@ -73,8 +75,7 @@ int job_start(command_job_t *job, const char *const argv[]) {
       if (!error)
         error = posix_spawnp(&job->pid, argv[0], &actions, NULL,
                              (char *const *)argv, environment);
-      if (command_socket)
-        free(environment);
+      free(owned);
     }
     posix_spawn_file_actions_destroy(&actions);
   }

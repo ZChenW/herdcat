@@ -23,6 +23,13 @@ static void orbit_from(sign_frame_t *frame, int first, double deg, double ox,
     return;
   for (int i = first; i < frame->shape_count; i++) {
     sign_shape_t *shape = &frame->shapes[i];
+    if (shape->upright) {
+      double rx, ry;
+      spin_point(shape->icon_center_x, shape->icon_center_y, ox, oy, deg, &rx,
+                 &ry);
+      shape->icon_center_x = rx;
+      shape->icon_center_y = ry;
+    }
     shape->rotation = deg;
     shape->origin_x = ox;
     shape->origin_y = oy;
@@ -49,7 +56,7 @@ static void orbit_from(sign_frame_t *frame, int first, double deg, double ox,
 
 static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
                      sign_frame_t *frame, double pivot_x, double pivot_y,
-                     double cat_scale, bool named) {
+                     double cat_scale, bool named, double desk_clear) {
   const sign_palette_t *palette = sign_palette(in->theme);
   bool visible = slot->present && (show_session(in, slot->session.state)) &&
                  !(in->typing && in->typing_key == slot->session.key);
@@ -70,8 +77,12 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
     len_target = 94;
   double len =
       fmax(0, aim(&slot->width, len_target, MOVE_MS, &BEZIER_MOVE, in, frame));
+  len += desk_clear;
   double opacity = clamp_unit(aim(&slot->opacity, visible ? 1 : 0, FAN_FADE_MS,
                                   &BEZIER_EASE, in, frame));
+  if (slot->session.terminal.kind == TERMINAL_TMUX &&
+      slot->session.terminal.detached)
+    opacity *= .55;
   double states[AGENT_STATE_COUNT], sum = 0;
   for (int state = 0; state < AGENT_STATE_COUNT; state++) {
     double target = slot->session.state == (agent_state_t)state ? 1 : 0;
@@ -201,6 +212,12 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
         label = done_label(in, true, &slot->session);
       snprintf(text->meta, sizeof(text->meta), "%s · %s", who, label);
     }
+    if (slot->session.terminal.kind == TERMINAL_TMUX &&
+        slot->session.terminal.detached) {
+      size_t used = strlen(text->meta);
+      snprintf(text->meta + used, sizeof(text->meta) - used, " · %s",
+               in->english ? "Detached" : "已断开");
+    }
     include_bounds(frame, pin_x - 220 * cat_scale, pin_y - 70 * cat_scale,
                    440 * cat_scale, 80 * cat_scale);
   }
@@ -245,7 +262,7 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
 }
 
 void layout_fan(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
-                size_t count) {
+                size_t count, double desk_clear) {
   int shown = 0;
   for (size_t i = 0; i < count; i++)
     if (show_session(in, in->sessions[i].state))
@@ -306,7 +323,8 @@ void layout_fan(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
           visible && in->has_hover && in->hover_key == slot->session.key;
       if (hovered != (pass == 1))
         continue;
-      emit_fan(slot, in, frame, pivot_x, pivot_y, cat_scale, slot == named);
+      emit_fan(slot, in, frame, pivot_x, pivot_y, cat_scale, slot == named,
+               desk_clear);
     }
   }
   frame->pad = cover(in->cat_x - 44 * cat_scale, in->cat_y - 84 * cat_scale,

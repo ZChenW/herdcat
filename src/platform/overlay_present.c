@@ -244,6 +244,7 @@ void draw_bar(void) {
                      SIGN_DRAW_OVER, clip);
     }
   }
+  set_margin(overlay);
   update_input_region(overlay, invisible);
   buffer->busy = true;
   wl_surface_attach(overlay->surface, buffer->object, 0, 0);

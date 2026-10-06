@@ -10,7 +10,7 @@
 
 void layout_board(sign_slot_t *slot, const sign_input_t *in,
                   sign_frame_t *frame, double pole_x, double cat_bottom,
-                  double scale) {
+                  double scale, double desk_clear) {
   const sign_palette_t *palette = sign_palette(in->theme);
   bool visible = slot->present && (show_session(in, slot->session.state)) &&
                  !(in->typing && in->typing_key == slot->session.key);
@@ -27,6 +27,9 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
   bool hovered = visible && in->has_hover && in->hover_key == slot->session.key;
   double hover =
       aim(&slot->hover, hovered ? 5 : 0, HOVER_MS, &BEZIER_POP, in, frame);
+  if (slot->session.terminal.kind == TERMINAL_TMUX &&
+      slot->session.terminal.detached)
+    opacity *= .55;
   double states[AGENT_STATE_COUNT], sum = 0;
   for (int state = 0; state < AGENT_STATE_COUNT; state++) {
     double target = slot->session.state == (agent_state_t)state ? 1 : 0;
@@ -64,7 +67,8 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
   int direction = slot->direction;
   double x = pole_x + direction * (5 + offset) * scale -
              (direction < 0 ? width * scale : 0);
-  double y = cat_bottom - (sample(&slot->bottom, in->now_ms) + 26) * scale;
+  double y = cat_bottom -
+             (sample(&slot->bottom, in->now_ms) + desk_clear + 26) * scale;
   bool other = strcmp(slot->session.agent, "claude") &&
                strcmp(slot->session.agent, "codex");
   double radius = other ? 9 : !strcmp(slot->session.agent, "codex") ? 13 : 8;
@@ -127,6 +131,12 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
       else if (finished(slot->session.state))
         label = done_label(in, false, &slot->session);
       snprintf(text->meta, sizeof(text->meta), "%s · %s", who, label);
+    }
+    if (slot->session.terminal.kind == TERMINAL_TMUX &&
+        slot->session.terminal.detached) {
+      size_t used = strlen(text->meta);
+      snprintf(text->meta + used, sizeof(text->meta) - used, " · %s",
+               in->english ? "Detached" : "已断开");
     }
   }
   if (visible && frame->hit_count < SIGN_MAX_VISIBLE) {

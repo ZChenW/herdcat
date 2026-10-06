@@ -268,6 +268,7 @@ static void help(const char *program) {
       "  --focus KEY          Focus a session terminal (full key or unique "
       "prefix)\n"
       "  --pane PID ID        Report the focused kitty/tmux split\n"
+      "  --tmux               Refresh sessions on the TMUX server\n"
       "  --state NAME         Set manual state: idle, working, waiting, done,\n"
       "                       error\n"
       "  --sessions           List tracked agent sessions\n"
@@ -464,6 +465,16 @@ int main(int argc, char **argv) {
         return 1;
       }
       hook_event = argv[i];
+    } else if (!strcmp(arg, "--tmux")) {
+      if (request || hook_agent) {
+        fprintf(stderr, "Select one control command\n");
+        return 1;
+      }
+      if (!agent_terminal_tmux_message(pane_request, sizeof(pane_request))) {
+        fprintf(stderr, "--tmux requires a valid TMUX server environment\n");
+        return 1;
+      }
+      request = pane_request;
     } else if (!strcmp(arg, "--pane")) {
       if (request || hook_agent) {
         fprintf(stderr, "Select one control command\n");

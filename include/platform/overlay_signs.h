@@ -30,6 +30,11 @@ typedef struct {
   int damage_x, damage_y, damage_w, damage_h;
 } overlay_signs_step_t;
 
+// Update placement before constructing pixels and input for this output.
+void overlay_signs_place(size_t index, sign_orientation_t orientation,
+                         int resting_y);
+// Unlifted above placement, used to interpret existing position records.
+int overlay_signs_resting_y(const config_t *config, int surface_height);
 int overlay_signs_height(const config_t *config);
 int overlay_signs_cat_y(const config_t *config, int surface_height);
 // The cat's top on one output, lifted by that output's own frame. Use this

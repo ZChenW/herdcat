@@ -653,7 +653,7 @@ static void test_desk(void) {
   TEST_ASSERT(frame.hit_count == 1 && frame.hits[0].key == pair[0].key);
   near(frame.hits[0].y, upper - 8);
   const sign_shape_t *board = desk_board(&frame);
-  near(board->y, 170 + 68);
+  near(board->y, 170 + 67);
   near(board->radius, 8);
   TEST_ASSERT(board->stroke == 2);
   TEST_ASSERT((board->fill & 0xffffff) == 0xf8fafc);

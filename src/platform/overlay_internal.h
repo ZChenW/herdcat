@@ -1,6 +1,7 @@
 #ifndef HERDCAT_PLATFORM_OVERLAY_INTERNAL_H
 #define HERDCAT_PLATFORM_OVERLAY_INTERNAL_H
 
+#include "graphics/signs.h"
 #include "platform/outputs.h"
 #include "platform/shm_buffer.h"
 #include "platform/wayland.h"
@@ -20,6 +21,9 @@ typedef struct {
   int width, height, physical_width, physical_height;
   // output_x is persisted; cat_x is only used inside the surface.
   int output_x, cat_x, margin_x, margin_y, output_height;
+  int position_y, cat_y;
+  sign_orientation_t orientation;
+  bool has_orientation;
   bool has_position, accepts_pointer;
   bool configured, redraw, resize, closed, damage_all;
   pixel_rect_t pending_damage;
