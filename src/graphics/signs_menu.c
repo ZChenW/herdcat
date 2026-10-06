@@ -94,15 +94,13 @@ static void glyph_sun(sign_frame_t *frame, double ox, double oy, double scale,
 static void glyph_moon(sign_frame_t *frame, double ox, double oy, double scale,
                        uint32_t color) {
   int first = frame->shape_count;
-  // Rounded segments trace a crescent without painting over the moving thumb.
-  for (int i = 0; i < 12; i++) {
-    double t1 = i / 12.0, t2 = (i + 1) / 12.0;
-    double a1 = (-.5 - t1) * 3.141592653589793;
-    double a2 = (-.5 - t2) * 3.141592653589793;
-    glyph_line(frame, ox, oy, scale, 13 + 7 * cos(a1), 9 + 7 * sin(a1),
-               13 + 7 * cos(a2), 9 + 7 * sin(a2), color);
-    glyph_line(frame, ox, oy, scale, 13 - 8 * t1 * (1 - t1), 2 + 14 * t1,
-               13 - 8 * t2 * (1 - t2), 2 + 14 * t2, color);
+  // Rounded strokes from the outer arc to the inner curve fill a crescent
+  // without painting over the moving thumb.
+  for (int i = 0; i <= 16; i++) {
+    double t = i / 16.0;
+    double a = (-.5 - t) * 3.141592653589793;
+    glyph_line(frame, ox, oy, scale, 13 + 7 * cos(a), 9 + 7 * sin(a),
+               13 - 8 * t * (1 - t), 9 + 7 * sin(a), color);
   }
   upright_from(frame, first, ox + 13 * scale, oy + 9 * scale);
 }

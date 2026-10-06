@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise pointer events, regions and persisted positions on two outputs."""
 import argparse
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -20,6 +21,18 @@ style = parser.parse_args().sign_style
 # the default 40px cat.
 clearance = {'fan': 66, 'post': 66, 'off': 0}[style]
 max_margin = 600 - (50 if style == 'off' else 42)
+# post: 2 * (150 - 99 + POST_BOARD_MAX(340) + 17 + 2) = 820.
+# Fan's extent stays 652. Fractional alignment includes the output remainder.
+design_extent = 820 if style == 'post' else 652
+
+
+def surface_width(cat_height, output_width=800, scale=150):
+    width = (cat_height * 500 // 277 if style == 'off' else
+             (cat_height * design_extent + 109) // 110)
+    width = min(width, output_width)
+    step = 120 // math.gcd(120, scale)
+    return width + (output_width - width) % step
+
 
 
 def wait_for(condition, seconds=6):
@@ -104,7 +117,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         app = start()
         wait_for(lambda: len(regions()) == 2 and all(v[2] for v in regions().values()))
         wait_for(lambda: placements().get('TEST-1', (0,) * 6)[4] ==
-                 (72 if style == 'off' else 240))
+                 surface_width(40))
         settled()
         start_x = regions()['TEST-1'][0]
         second_x = regions()['TEST-2'][0]
@@ -143,11 +156,11 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         # Resize and mirror on reload without changing output-space records.
         config.write_text(base + 'cat_height=60\nmirror_x=1\ncat_align=right\n')
         command('reload')
-        wait_for(lambda: placements()['TEST-1'][4] == (108 if style == 'off' else 356))
+        wait_for(lambda: placements()['TEST-1'][4] == surface_width(60))
         assert records() == saved
         config.write_text(base)
         command('reload')
-        wait_for(lambda: placements()['TEST-1'][4] == (72 if style == 'off' else 240))
+        wait_for(lambda: placements()['TEST-1'][4] == surface_width(40))
         send('leave TEST-1 10 -10')
         wait_for(lambda: position_is('TEST-1', (start_x + 30, 50)))
         send('lost TEST-1 10 -10')
@@ -161,7 +174,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         send('step')  # Fractional scale and smaller TEST-1.
         wait_for(lambda: abs(regions()['TEST-1'][0] - 568) <= 1)
         settled()
-        assert abs(local_regions()['TEST-1'][0] - (0 if style == 'off' else 166)) <= 1, (placements(), local_regions())
+        assert abs(local_regions()['TEST-1'][0] - (surface_width(40, 640, 180) - 72)) <= 1, (placements(), local_regions())
         send('step')  # Remove TEST-2.
         settled()
         send('step')  # Re-add TEST-2 and restore its own saved position.
@@ -171,9 +184,9 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         wait_for(lambda: not position.exists())
         wait_for(lambda: abs(regions()['TEST-1'][0] - 284) <= 1)
         settled()
-        assert abs(local_regions()['TEST-1'][0] - (0 if style == 'off' else 84)) <= 1, (placements(), local_regions())
+        assert abs(local_regions()['TEST-1'][0] - (surface_width(40, 640, 180) - 72) // 2) <= 1, (placements(), local_regions())
         wait_for(lambda: 'margin TEST-1 0 0' in server_log.read_text())
-        assert abs(placements()['TEST-1'][3] - (284 if style == 'off' else 200)) <= 1, placements()
+        assert abs(placements()['TEST-1'][3] - (284 - (surface_width(40, 640, 180) - 72) // 2)) <= 1, placements()
         wait_for(lambda: 'margin TEST-2 0 0' in server_log.read_text())
         app.terminate()
         assert app.wait(timeout=3) == 0

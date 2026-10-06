@@ -535,6 +535,7 @@ herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
       }
       bool concealed = overlay_hidden(overlay) || !overlay->configured;
       font_panel_surface_margin(overlay->margin_x, overlay->margin_y);
+      text_set_scale((int)overlay->scale);
       overlay_signs_width(i, overlay->width);
       overlay_signs_step_t sign_step = overlay_signs_step(
           i, &overlay->config, overlay->cat_x, cat_width(overlay),

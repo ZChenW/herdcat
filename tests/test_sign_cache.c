@@ -52,6 +52,7 @@ static void waiting_input(signs_t *model, sign_input_t *in, sign_frame_t *frame,
   }
 }
 static void profile(sign_style_t style, int scale) {
+  text_set_scale(scale);
   signs_t model = {0};
   sign_input_t in;
   sign_frame_t frame;
@@ -92,6 +93,7 @@ static void profile(sign_style_t style, int scale) {
   sign_draw_cleanup();
 }
 static void reuse_phase(sign_style_t style, int scale, bool neighbors) {
+  text_set_scale(scale);
   signs_t model = {0};
   sign_input_t in;
   sign_frame_t frame;

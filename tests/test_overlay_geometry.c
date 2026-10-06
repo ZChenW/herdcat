@@ -8,8 +8,8 @@ int main(void) {
   TEST_ASSERT(overlay_extent(NULL, 2560).width == 0);
   config_t config = {.cat_height = 110, .sign_style = SIGN_STYLE_POST};
   overlay_extent_t extent = overlay_extent(&config, 2560);
-  TEST_ASSERT(extent.width == 652 && extent.cat_x_in_surface == 227);
-  TEST_ASSERT((int64_t)extent.width * 300 * 4 * 2 < 1572864);
+  TEST_ASSERT(extent.width == 820 && extent.cat_x_in_surface == 311);
+  TEST_ASSERT((int64_t)extent.width * 300 * 4 * 2 < 2097152);
   const int heights[] = {10, 40, 110, 200, INT_MAX};
   for (size_t i = 0; i < sizeof(heights) / sizeof(heights[0]); i++) {
     config.cat_height = heights[i];

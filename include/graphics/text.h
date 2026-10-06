@@ -20,11 +20,18 @@ void text_set_scale(int scale_120);
 // these, so one line keeps a single baseline. False if text is not ready.
 typedef struct {
   double ascent, descent;
+  double cap_height;
+  enum {
+    TEXT_CAP_NONE,
+    TEXT_CAP_OS2,
+    TEXT_CAP_GLYPH
+  } cap_source;
 } text_metrics_t;
 bool text_metrics(float px, bool bold, text_metrics_t *out);
 bool text_metrics_family(const char *family, float px, bool bold,
                          text_metrics_t *out);
-// CSS inline baseline: top + (line - (ascent + descent)) / 2 + ascent.
+// Optical baseline: line center + primary-face cap height / 2. Falls back
+// to ascent/descent centering when neither OS/2 nor H supplies a height.
 double text_baseline(double line_top, double line_h, float px, bool bold);
 double text_baseline_family(const char *family, double line_top, double line_h,
                             float px, bool bold);
@@ -39,6 +46,11 @@ int text_set_family(const char *family);
 // Fontconfig lookups so far. Redrawing text already drawn must not add any.
 int text_match_count(void);
 int text_glyph_count(void);
+// Cache misses, for deterministic layout/performance checks.
+int text_measure_count(void);
+int text_metrics_count(void);
+// Identifies the current family/scale and library lifetime for layout caches.
+uint64_t text_layout_key(void);
 // Scalable families that cover lang ("zh-cn" or "en"), deduped and sorted.
 // The first call enumerates; later calls only filter that cache. The default
 // face is not included. Returns the count, or -1 when text is not ready.

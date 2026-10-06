@@ -15,8 +15,7 @@ static void test_metrics(void) {
   TEST_ASSERT(metrics.descent > 1 && metrics.descent < 8);
   TEST_ASSERT(metrics.ascent > metrics.descent);
   double line = 15.6, top = 40;
-  double expect =
-      top + (line - (metrics.ascent + metrics.descent)) / 2 + metrics.ascent;
+  double expect = top + line / 2 + metrics.cap_height / 2;
   TEST_ASSERT(fabs(text_baseline(top, line, 13, true) - expect) < 1e-9);
   text_metrics_t scaled;
   text_set_scale(240);

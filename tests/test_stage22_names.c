@@ -28,6 +28,7 @@ static config_t defaults(void) {
 static sign_frame_t scene(const config_t *config, sign_style_t style,
                           sign_theme_t theme, sign_orientation_t orientation,
                           bool titled) {
+  text_set_scale(120);
   agent_session_view_t sessions[2] = {
       {.key = 1,
        .order = 1,
@@ -85,14 +86,15 @@ static uint64_t pixels(const sign_frame_t *frame, int scale) {
 }
 
 static void no_title_pixels(void) {
-  // Frozen with the original defaults before stage 22; includes text ink.
+  // Stage 23 optical baselines/content-sized boards; includes text ink.
+  // Previous hashes and changes: docs/performance/stage23-text-hashes.json.
   static const uint64_t expected[] = {
-      UINT64_C(0xc41bfec58f9a1fe7), UINT64_C(0xbe2aed4b14c4099d),
-      UINT64_C(0x4783c9bcc1229f52), UINT64_C(0x28a6f56eaf6d6d8b),
-      UINT64_C(0x694eb9c7b651f344), UINT64_C(0x05615fcd173cea9a),
-      UINT64_C(0x6a04247e5bb9841b), UINT64_C(0x1381ecc708c9592a),
-      UINT64_C(0x739e016a94f78581), UINT64_C(0x63f420404c7ee833),
-      UINT64_C(0x59d396860d5dfb43), UINT64_C(0x69a9c678c4e97439),
+      UINT64_C(0x8460f64bb01b937f), UINT64_C(0x345aeea8f52a1d1c),
+      UINT64_C(0xad7b8bfd6b469c62), UINT64_C(0xb5b8282c7659bb93),
+      UINT64_C(0xd397a1d7fe1378d3), UINT64_C(0xd23b961893df5fbe),
+      UINT64_C(0x8ccd7304673c5ea7), UINT64_C(0x79157ba078d3e2f7),
+      UINT64_C(0xd0ca5cc7a3012074), UINT64_C(0xa2c8045436fd311b),
+      UINT64_C(0xdff4c229a45277b6), UINT64_C(0x02b4d4b9780f7ba0),
       UINT64_C(0x266089e3c385bf42), UINT64_C(0x477569bf73297229),
       UINT64_C(0xf3295de5774bc2db), UINT64_C(0x14e45cb3a97e790b),
       UINT64_C(0xcf87ba7fa0c0cd5c), UINT64_C(0xf983a8da66f779ae),

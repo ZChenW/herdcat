@@ -1,6 +1,7 @@
 #include "platform/overlay_geometry.h"
 
 #include "core/herdcat.h"
+#include "graphics/signs.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -23,12 +24,15 @@ overlay_extent_t overlay_extent(const config_t *config, int output_width) {
   int cat = clamp_wide((int64_t)config->cat_height * CAT_IMAGE_WIDTH /
                            CAT_IMAGE_HEIGHT,
                        0, INT_MAX);
-  // Post: pole at 150, board 236, hover/nudge/shake and curve overshoot.
+  // Post: pole at 150, maximum board, offset and damage/rounding outset.
   // Fan: pivot at 108, five 22-degree slots, orbit and 220px nameplate
   // half-width. 326px about the cat center includes the damage outset.
+  int design = config->sign_style == SIGN_STYLE_POST
+                   ? 2 * (150 - 99 + POST_BOARD_MAX + 17 + 2)
+                   : 652;
   int64_t content = config->sign_style == SIGN_STYLE_OFF
                         ? cat
-                        : ((int64_t)config->cat_height * 652 + 109) / 110;
+                        : ((int64_t)config->cat_height * design + 109) / 110;
   // The translucent bar has always covered the output. Keep its pixels.
   int width = config->overlay_opacity > 0
                   ? output_width

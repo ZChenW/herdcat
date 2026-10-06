@@ -97,7 +97,7 @@ static void test_lifecycle(void) {
   TEST_ASSERT(!frame.animating && frame.hit_count == 5 &&
               frame.text_count == 5);
   for (int i = 0; i < frame.hit_count; i++)
-    TEST_ASSERT(frame.hits[i].w == 236);
+    TEST_ASSERT(frame.hits[i].w == POST_BOARD_MIN);
   TEST_ASSERT(frame.bounds_y >= 0);
   check_bounds(&frame);
   in.open = false;
@@ -201,10 +201,10 @@ static void test_easing_hover_and_press(void) {
   in.now_ms = 2190;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(frame.hit_count == 1);
-  near(board_near(&frame, frame.hits[0].x, frame.hits[0].y)->w, 234.267);
+  near(board_near(&frame, frame.hits[0].x, frame.hits[0].y)->w, 149.005);
   in.now_ms = 2500;
   signs_frame(&model, &in, &frame);
-  TEST_ASSERT(!frame.animating && frame.hits[0].w == 236);
+  TEST_ASSERT(!frame.animating && frame.hits[0].w == POST_BOARD_MIN);
   double rested = frame.hits[0].x;
   in.has_hover = true;
   in.hover_key = session0.key;
@@ -447,14 +447,15 @@ static void test_failure_scale_and_clearance(void) {
   in.now_ms = 6000;
   signs_frame(&scaled, &in, &frame);
   TEST_ASSERT(frame.hit_count == 1);
-  TEST_ASSERT(frame.hits[0].x == 300 + 10 && frame.hits[0].w == 472);
+  TEST_ASSERT(frame.hits[0].x == 300 + 10 &&
+              frame.hits[0].w == 2 * POST_BOARD_MIN);
   TEST_ASSERT(frame.hits[0].h == 52);
   near(frame.texts[0].gap, 14);
   near(pole_of(&frame)->h, 272);
   TEST_ASSERT(frame.has_pad);
   TEST_ASSERT(frame.pad.x == (int)floor(0 - 140));
   TEST_ASSERT(frame.pad.y == (int)floor(0 - 320));
-  TEST_ASSERT(frame.pad.w == 880 && frame.pad.h == 540);
+  TEST_ASSERT(frame.pad.w == 1154 && frame.pad.h == 540);
   TEST_ASSERT(sign_clearance(SIGN_STYLE_OFF, 110) == 0);
   TEST_ASSERT(sign_clearance(SIGN_STYLE_POST, 0) == 0);
   int clearance = sign_clearance(SIGN_STYLE_POST, 110);
@@ -493,7 +494,7 @@ static void test_failure_scale_and_clearance(void) {
   signs_frame(&model, &pad, &frame);
   TEST_ASSERT(frame.has_pad);
   TEST_ASSERT(frame.pad.x == 30 && frame.pad.y == 10);
-  TEST_ASSERT(frame.pad.w == 440 && frame.pad.h == 270);
+  TEST_ASSERT(frame.pad.w == 577 && frame.pad.h == 270);
 }
 static const sign_shape_t *fan_plate(const sign_frame_t *frame,
                                      double rotation) {

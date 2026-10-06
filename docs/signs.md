@@ -5,6 +5,9 @@ session title by default. Missing titles are omitted. Claude uses a
 rounded rectangle and Codex a circle. Click a plate to jump to its terminal on
 niri, including across workspaces; dragging a plate moves the whole cat.
 Missing window targets shake briefly. The cat keeps its typing and sleep frames.
+Expanded post boards size to their content between 150 and 340 design pixels,
+shrink further near output edges, and remain 34 pixels wide when collapsed.
+The supplement is shortened or omitted before the main name is shortened.
 
 A kitty split is focused too when that session's process has both
 `KITTY_WINDOW_ID` and `KITTY_LISTEN_ON`. Add these lines to kitty.conf

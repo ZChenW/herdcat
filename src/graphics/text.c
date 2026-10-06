@@ -7,6 +7,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_SYNTHESIS_H
+#include FT_TRUETYPE_TABLES_H
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,14 +16,21 @@
 #  include <malloc.h>
 #endif
 
-#define GLYPH_LIMIT 512
-#define FACE_LIMIT  64
+#define GLYPH_LIMIT  512
+#define FACE_LIMIT   64
+#define METRIC_LIMIT 32
+typedef struct {
+  int size, scale;
+  bool bold, valid;
+  text_metrics_t value;
+} metric_t;
 typedef struct {
   FT_Face ft;
   char *file;
   int index;
   uint64_t used;
   bool resident;
+  metric_t metrics[METRIC_LIMIT];
 } face_t;
 typedef struct {
   uint32_t cp;
@@ -55,6 +63,18 @@ static route_t routes[ROUTE_LIMIT];
 static route_t main_routes[ROUTE_LIMIT];
 static int match_calls;
 static bool preview_active, trim_pending;
+static int measure_calls, metrics_calls;
+#define MEASURE_LIMIT 256
+typedef struct {
+  uint64_t family;
+  float px;
+  int scale, width;
+  bool bold, valid;
+  char text[128];
+} measure_t;
+static measure_t measures[MEASURE_LIMIT];
+static unsigned measure_next;
+static uint64_t lifetime;
 static uint64_t preview_family;
 static void clear_routes(void) {
   memset(routes, 0, sizeof(routes));
@@ -113,6 +133,9 @@ static int routed(const char *family, uint32_t cp, bool bold) {
   return face;
 }
 void text_cleanup(void) {
+  lifetime++;
+  memset(measures, 0, sizeof(measures));
+  measure_next = 0;
   clear_glyphs();
   clear_routes();
   for (int i = 0; i < face_count; i++) {
@@ -439,8 +462,31 @@ static double width(const char *family, const char *s, float px, bool bold) {
 }
 int text_measure_family(const char *family, const char *s, float px,
                         bool bold) {
+  if (!s || !*s || !library || !isfinite(px) || px <= 0 || px > 256)
+    return 0;
+  uint64_t key = family_hash(main_family(family) ? family_name : family);
+  size_t length = strlen(s);
+  if (length < sizeof(measures[0].text))
+    for (int i = 0; i < MEASURE_LIMIT; i++) {
+      const measure_t *m = &measures[i];
+      if (m->valid && m->family == key && m->px == px &&
+          m->scale == scale_120 && m->bold == bold && !strcmp(m->text, s))
+        return m->width;
+    }
+  measure_calls++;
   double w = ceil(width(family, s, px, bold) * 120 / scale_120);
-  return w > INT32_MAX ? INT32_MAX : (int)w;
+  int result = w > INT32_MAX ? INT32_MAX : (int)w;
+  if (length < sizeof(measures[0].text)) {
+    measure_t *m = &measures[measure_next++ % MEASURE_LIMIT];
+    *m = (measure_t){.family = key,
+                     .px = px,
+                     .scale = scale_120,
+                     .width = result,
+                     .bold = bold,
+                     .valid = true};
+    memcpy(m->text, s, length + 1);
+  }
+  return result;
 }
 int text_measure(const char *s, float px, bool bold) {
   return text_measure_family(NULL, s, px, bold);
@@ -478,22 +524,68 @@ int text_glyph_count(void) {
       count++;
   return count;
 }
+int text_measure_count(void) {
+  return measure_calls;
+}
+int text_metrics_count(void) {
+  return metrics_calls;
+}
+uint64_t text_layout_key(void) {
+  return (family_name ? family_hash(family_name) : 0) ^
+         ((uint64_t)scale_120 << 32) ^ lifetime;
+}
 bool text_metrics_family(const char *family, float px, bool bold,
                          text_metrics_t *out) {
   if (!out || !library || !isfinite(px) || px <= 0 || px > 256)
     return false;
-  int index = main_family(family) ? primary[bold] : match(family, 0, bold);
+  int index = main_family(family) ? primary[bold] : routed(family, 0, bold);
   if (index < 0)
     return false;
   FT_Face face = faces[index].ft;
   int size = (int)lround((double)px * scale_120 / 120.0 * 64.0);
+  metric_t *cached = &faces[index].metrics[0];
+  for (int i = 0; i < METRIC_LIMIT; i++) {
+    metric_t *m = &faces[index].metrics[i];
+    if (m->valid && m->size == size && m->scale == scale_120 &&
+        m->bold == bold) {
+      *out = m->value;
+      return true;
+    }
+    if (!m->valid)
+      cached = m;
+  }
   if (size <= 0 || FT_Set_Char_Size(face, 0, size, 72, 72))
     return false;
   double unit = 64.0 * scale_120 / 120.0;
+  metrics_calls++;
+  *out = (text_metrics_t){0};
   out->ascent = face->size->metrics.ascender / unit;
   out->descent = -face->size->metrics.descender / unit;
-  return out->ascent > 0 && out->descent >= 0 && isfinite(out->ascent) &&
-         isfinite(out->descent);
+  const TT_OS2 *os2 = FT_Get_Sfnt_Table(face, ft_sfnt_os2);
+  if (os2 && os2->version != 0xffff && os2->version >= 2 &&
+      os2->sCapHeight > 0) {
+    out->cap_height =
+        FT_MulFix(os2->sCapHeight, face->size->metrics.y_scale) / unit;
+    out->cap_source = TEXT_CAP_OS2;
+  } else {
+    FT_UInt h = FT_Get_Char_Index(face, 'H');
+    if (h && !FT_Load_Glyph(face, h, FT_LOAD_DEFAULT | FT_LOAD_NO_BITMAP)) {
+      if (bold && !(face->style_flags & FT_STYLE_FLAG_BOLD))
+        FT_GlyphSlot_Embolden(face->glyph);
+      out->cap_height = face->glyph->metrics.height / unit;
+      if (out->cap_height > 0)
+        out->cap_source = TEXT_CAP_GLYPH;
+    }
+  }
+  if (!(out->ascent > 0 && out->descent >= 0 && isfinite(out->ascent) &&
+        isfinite(out->descent)))
+    return false;
+  *cached = (metric_t){.size = size,
+                       .scale = scale_120,
+                       .bold = bold,
+                       .valid = true,
+                       .value = *out};
+  return true;
 }
 bool text_metrics(float px, bool bold, text_metrics_t *out) {
   return text_metrics_family(NULL, px, bold, out);
@@ -503,6 +595,8 @@ double text_baseline_family(const char *family, double line_top, double line_h,
   text_metrics_t metrics;
   if (!text_metrics_family(family, px, bold, &metrics))
     return line_top;
+  if (metrics.cap_height > 0)
+    return line_top + line_h / 2 + metrics.cap_height / 2;
   return line_top + (line_h - (metrics.ascent + metrics.descent)) / 2.0 +
          metrics.ascent;
 }

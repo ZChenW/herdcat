@@ -13,6 +13,8 @@
 #define SIGN_MAX_SHAPES  320
 #define SIGN_MAX_TEXTS   AGENT_SESSIONS_MAX
 #define SIGN_MAX_VISIBLE 5
+#define POST_BOARD_MIN   150
+#define POST_BOARD_MAX   340
 
 typedef enum {
   SIGN_ABOVE,

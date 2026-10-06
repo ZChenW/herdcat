@@ -63,6 +63,7 @@ static void scene(config_t config, int scale, int output_width, int output_x,
                      .has_hover = true,
                      .hover_key = 1,
                      .cat_x = output_x,
+                     .surface_width = output_width,
                      .cat_y = cat_y,
                      .cat_height = config.cat_height,
                      .now_ms = 100000,
@@ -76,6 +77,7 @@ static void scene(config_t config, int scale, int output_width, int output_x,
   sign_frame_t old_frame, new_frame;
   signs_frame(&old, &in, &old_frame);
   in.cat_x = place.cat_x_in_surface;
+  in.surface_width = narrow_width;
   signs_frame(&narrow, &in, &new_frame);
   TEST_ASSERT(new_frame.hit_count == old_frame.hit_count);
   for (int i = 0; i < new_frame.hit_count; i++) {

@@ -74,10 +74,19 @@ int main(void) {
                  i++) {
               alpha(a.shapes[i].fill, b.shapes[i].fill);
               alpha(a.shapes[i].outline, b.shapes[i].outline);
-              TEST_ASSERT(a.shapes[i].x == b.shapes[i].x &&
-                          a.shapes[i].y == b.shapes[i].y);
+              TEST_ASSERT(a.shapes[i].y == b.shapes[i].y);
+              if (style == SIGN_STYLE_FAN)
+                TEST_ASSERT(a.shapes[i].x == b.shapes[i].x);
             }
-            TEST_ASSERT(memcmp(a.hits, b.hits, sizeof(a.hits)) == 0);
+            if (style == SIGN_STYLE_FAN)
+              TEST_ASSERT(memcmp(a.hits, b.hits, sizeof(a.hits)) == 0);
+            else {
+              TEST_ASSERT(b.hits[0].w >= a.hits[0].w);
+              TEST_ASSERT(b.hits[0].x + b.hits[0].w ==
+                          a.hits[0].x + a.hits[0].w);
+              TEST_ASSERT(b.hits[0].key == a.hits[0].key &&
+                          b.hits[0].y == a.hits[0].y);
+            }
             uint8_t p[640 * 640 * 4] = {0};
             uint8_t q[640 * 640 * 4] = {0};
             sign_draw(p, 640, 640, 120, &a, SIGN_DRAW_UNDER);

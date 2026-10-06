@@ -422,7 +422,7 @@ static void build_frame(signs_t *model, const sign_input_t *in,
       }
     }
     frame->pad = cover(in->cat_x - 70 * scale, in->cat_y - 160 * scale,
-                       440 * scale, 270 * scale);
+                       (150 + 17 + POST_BOARD_MAX + 70) * scale, 270 * scale);
     frame->has_pad = true;
   }
   // The desk stays on the unshifted cat. The pivot above already moved.

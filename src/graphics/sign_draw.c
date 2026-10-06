@@ -396,7 +396,12 @@ void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
   double pad = SHAPE_PAD + (orbit ? 0 : spin_extra(w, h, shape->rotation));
   if (shape->kind == SIGN_CHECK || shape->kind == SIGN_CROSS)
     pad += stroke;
-  int left = (int)floor(min_x - pad), top = (int)floor(min_y - pad);
+  // Equivalent output/surface translations can land a few ulps either
+  // side of an integer. Stabilize the bitmap extent without moving ink.
+  double edge = min_x - pad;
+  if (fabs(edge - round(edge)) < 1e-9)
+    edge = round(edge);
+  int left = (int)floor(edge), top = (int)floor(min_y - pad);
   int right = (int)ceil(max_x + pad), bottom = (int)ceil(max_y + pad);
   int bw = right - left, bh = bottom - top;
   if (bw <= 0 || bh <= 0 || bw > 8192 || bh > 8192)

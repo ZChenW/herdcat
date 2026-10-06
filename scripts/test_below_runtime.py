@@ -66,6 +66,11 @@ def run(style, theme, top):
                 origin = record[0] if top else 600 - record[1] - record[4]
                 assert 0 <= origin <= 600 - record[4], record
                 assert record[7:9] == (72, 40), record
+                design_extent = 820 if style == 'post' else 652
+                width = (40 * design_extent + 109) // 110
+                # TEST-1 initially uses 150/120 scaling: align its surface
+                # to the four-logical-pixel origin grid on an 800px output.
+                assert record[3] == width + (800 - width) % 4, record
 
             def drag(dy, expected):
                 # Enter a cat directly so the sign pad cannot become the drag

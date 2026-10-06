@@ -117,9 +117,7 @@ void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
     text_draw_clip(dst, dw, dh, (int)lround(name_x * scale), base, text->value,
                    name_px, true, text->color, (int)lround(budget * scale),
                    box);
-  text_metrics_t metrics;
-  if (text->caret && (text->meta_color >> 24) && text->px > 0 &&
-      text_metrics(name_px, true, &metrics)) {
+  if (text->caret && (text->meta_color >> 24) && text->px > 0) {
     int measured = text_measure(text->value, name_px, true);
     double used = measured;
     if (used > budget)
@@ -127,9 +125,7 @@ void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
     double caret_w = text->px * (2.0 / 12.0);
     sign_shape_t bar = {.kind = SIGN_RECT,
                         .x = name_x + used + text->gap,
-                        // Centred on the line's ink, not hung from its top.
-                        .y = baseline - (metrics.ascent - metrics.descent) / 2 -
-                             text->px / 2,
+                        .y = text->line_top + text->line_h / 2 - text->px / 2,
                         .w = caret_w,
                         .h = text->px,
                         .radius = caret_w / 2,

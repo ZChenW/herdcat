@@ -25,6 +25,16 @@
 #  pragma GCC diagnostic pop
 #endif
 
+// Freeze the old board geometry with deterministic measured content. These
+// shape-only goldens exercise rasterization, independently of installed fonts
+// and the new content-dependent layout (covered in test_stage23).
+int __wrap_text_measure(const char *text, float px, bool bold);
+int __wrap_text_measure(const char *text, float px, bool bold) {
+  (void)px;
+  if (!*text)
+    return 0;
+  return bold ? 80 : 108;  // 41px icon/padding + 7px gap + 80 + 108 = 236.
+}
 #define W 800
 #define H 520
 static uint8_t pixels[W * H * 4];
