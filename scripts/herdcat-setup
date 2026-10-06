@@ -1,0 +1,740 @@
+#!/usr/bin/env python3
+"""Install reversible agent integrations using only the Python standard library."""
+import argparse
+import copy
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import sys
+import tempfile
+import urllib.parse
+
+
+class SetupError(Exception):
+    """A configuration cannot safely be changed."""
+
+
+def tr(en, zh):
+    language = os.environ.get('LC_MESSAGES') or os.environ.get('LANG', '')
+    chinese = re.match(r'^zh(?:[_\.\-@]|$)', language)
+    return zh if chinese else en
+
+
+def load_json(text):
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise SetupError('duplicate JSON key')
+            result[key] = value
+        return result
+    try:
+        return json.loads(text, object_pairs_hook=pairs,
+                          parse_constant=lambda _: (_ for _ in ()).throw(
+                              SetupError('non-finite JSON number')))
+    except (ValueError, RecursionError):
+        raise SetupError('invalid JSON') from None
+
+
+@dataclass
+class Node:
+    start: int
+    end: int
+    value: object
+    children: object = None
+
+
+class Jsonc:
+    """Parse JSONC with source spans; edits retain unrelated text and comments."""
+    def __init__(self, text):
+        self.text = text
+        self.pos = 0
+        self.root = self.value()
+        self.space()
+        if self.pos != len(text) or not isinstance(self.root.value, dict):
+            raise SetupError('expected a JSONC object')
+
+    def space(self):
+        while self.pos < len(self.text):
+            if self.text[self.pos].isspace():
+                self.pos += 1
+            elif self.text.startswith('//', self.pos):
+                end = self.text.find('\n', self.pos)
+                self.pos = len(self.text) if end < 0 else end
+            elif self.text.startswith('/*', self.pos):
+                end = self.text.find('*/', self.pos + 2)
+                if end < 0:
+                    raise SetupError('unterminated JSONC comment')
+                self.pos = end + 2
+            else:
+                return
+
+    def value(self, depth=0):
+        if depth > 128:
+            raise SetupError('JSONC nesting too deep')
+        self.space()
+        start = self.pos
+        if start == len(self.text):
+            raise SetupError('missing JSONC value')
+        kind = self.text[start]
+        if kind in '{[':
+            self.pos += 1
+            closing = '}' if kind == '{' else ']'
+            value = {} if kind == '{' else []
+            children = {} if kind == '{' else []
+            self.space()
+            if self.pos < len(self.text) and self.text[self.pos] == closing:
+                self.pos += 1
+                return Node(start, self.pos, value, children)
+            while True:
+                self.space()
+                key_start = self.pos
+                if kind == '{':
+                    key = self.value(depth + 1)
+                    if not isinstance(key.value, str) or key.value in value:
+                        raise SetupError('invalid or duplicate JSONC key')
+                    self.space()
+                    if self.text[self.pos:self.pos + 1] != ':':
+                        raise SetupError('missing JSONC colon')
+                    self.pos += 1
+                    child = self.value(depth + 1)
+                    value[key.value] = child.value
+                    children[key.value] = (key_start, child)
+                else:
+                    child = self.value(depth + 1)
+                    value.append(child.value)
+                    children.append(child)
+                self.space()
+                token = self.text[self.pos:self.pos + 1]
+                if token == closing:
+                    self.pos += 1
+                    return Node(start, self.pos, value, children)
+                if token != ',':
+                    raise SetupError('missing JSONC comma')
+                self.pos += 1
+                self.space()
+                if self.text[self.pos:self.pos + 1] == closing:
+                    self.pos += 1
+                    return Node(start, self.pos, value, children)
+        try:
+            value, length = json.JSONDecoder().raw_decode(self.text[start:])
+        except (ValueError, RecursionError):
+            raise SetupError('invalid JSONC value') from None
+        if isinstance(value, float) and not (-float('inf') < value < float('inf')):
+            raise SetupError('non-finite JSONC number')
+        self.pos += length
+        return Node(start, self.pos, value)
+
+
+def apply_edits(text, edits):
+    for start, end, replacement in sorted(edits, reverse=True):
+        text = text[:start] + replacement + text[end:]
+    return text
+
+
+def owned_hook(item):
+    if not isinstance(item, dict):
+        return False
+    return any(isinstance(item.get(key), str) and
+               item[key].startswith(('herdcat --hook ', 'bongocat --hook '))
+               for key in ('command', 'bash'))
+
+
+def strip_hooks(data):
+    result = copy.deepcopy(data)
+    hooks = result.get('hooks', {})
+    if not isinstance(hooks, dict):
+        raise SetupError('hooks must be an object')
+    found = False
+    for event, entries in list(hooks.items()):
+        if not isinstance(entries, list) or any(not isinstance(e, dict) for e in entries):
+            raise SetupError('hook events must contain arrays of objects')
+        kept = []
+        changed = False
+        for item in entries:
+            if owned_hook(item):
+                changed = found = True
+                continue
+            if 'hooks' in item:
+                if (not isinstance(item['hooks'], list) or
+                        any(not isinstance(child, dict) for child in item['hooks'])):
+                    raise SetupError('nested hooks must be an array')
+                children = [child for child in item['hooks'] if not owned_hook(child)]
+                if children != item['hooks']:
+                    changed = found = True
+                    if not children:
+                        continue
+                    item['hooks'] = children
+            kept.append(item)
+        if changed:
+            if kept:
+                hooks[event] = kept
+            else:
+                del hooks[event]
+    if found and not hooks:
+        result.pop('hooks', None)
+    return result, found
+
+
+def json_bytes(data):
+    return (json.dumps(data, ensure_ascii=False, indent=2) + '\n').encode()
+
+
+def merge_hooks(before, template, remove):
+    data = load_json(before.decode()) if before else {}
+    if not isinstance(data, dict):
+        raise SetupError('expected a JSON object')
+    cleaned, found = strip_hooks(data)
+    baseline = json_bytes(cleaned) if found else before
+    if remove:
+        return baseline, baseline, found
+    result = copy.deepcopy(cleaned)
+    if 'version' in template:
+        if result.get('version', 1) != template['version']:
+            raise SetupError('unsupported hooks version')
+        result.setdefault('version', template['version'])
+    hooks = result.setdefault('hooks', {})
+    for event, entries in template['hooks'].items():
+        hooks.setdefault(event, []).extend(copy.deepcopy(entries))
+    # Retain the existing formatting when the definitions are already current.
+    after = before if result == data else json_bytes(result)
+    return after, baseline, found
+
+
+BEGIN = '# >>> herdcat >>>'
+END = '# <<< herdcat <<<'
+
+
+def kimi_text(before, template, remove):
+    text = before.decode()
+    # Fail closed for multiline strings instead of mistaking a quoted header
+    # or marker for configuration structure. Provider bytes stay untouched.
+    if '\"\"\"' in text or "'''" in text:
+        raise SetupError('multiline TOML requires manual integration')
+    starts = list(re.finditer(r'(?m)^# >>> herdcat >>>\r?\n', text))
+    ends = list(re.finditer(r'(?m)^# <<< herdcat <<<(?:\r?\n|$)', text))
+    if len(starts) != len(ends) or len(starts) > 1:
+        raise SetupError('invalid herdcat TOML markers')
+    found = bool(starts)
+    if starts:
+        if starts[0].end() > ends[0].start():
+            raise SetupError('invalid herdcat TOML markers')
+        text = text[:starts[0].start()] + text[ends[0].end():]
+    # Recognize only simple, complete legacy hook tables. Never parse or
+    # serialize provider tables; ambiguous multiline values require manual work.
+    headers = list(re.finditer(r'(?m)^\[.*\][ \t]*(?:#[^\r\n]*)?\r?$', text))
+    edits = []
+    for index, header in enumerate(headers):
+        if not re.match(r'^\[\[hooks\]\]', header.group()):
+            continue
+        finish = headers[index + 1].start() if index + 1 < len(headers) else len(text)
+        block = text[header.start():finish]
+        commands = re.findall(r'(?m)^command\s*=\s*([\'\"])([^\r\n]*)\1\s*(?:#.*)?$', block)
+        if commands and commands[0][1].startswith(('herdcat --hook ', 'bongocat --hook ')):
+            if '\"\"\"' in block or "'''" in block:
+                raise SetupError('ambiguous legacy TOML hook; remove manually')
+            edits.append((header.start(), finish, ''))
+            found = True
+    text = apply_edits(text, edits)
+    if BEGIN in text or END in text:
+        raise SetupError('ambiguous herdcat TOML marker')
+    baseline = text.encode()
+    if remove:
+        return baseline, baseline, found
+    if re.search(r'(?m)^\s*hooks\s*=', text) or re.search(r'(?m)^\[hooks\]', text):
+        raise SetupError('unsupported TOML hooks table; use [[hooks]] manually')
+    # Blank separator is inside the managed span so removal preserves bytes.
+    separator = '' if not text or text.endswith('\n') else '\n'
+    addition = separator + BEGIN + '\n' + template.decode().rstrip() + '\n' + END + '\n'
+    after = baseline + addition.encode()
+    return after, baseline, found
+
+
+def bridge_owned(before, agent):
+    if not before:
+        return True
+    text = before.decode()
+    return ('spawn("herdcat"' in text or 'spawn("bongocat"' in text or
+            f'herdcat --hook {agent}' in text or f'bongocat --hook {agent}' in text)
+
+
+def plugin_owned(value, target):
+    # Exact private directory identity, not a substring in another plugin name.
+    if isinstance(value, dict):
+        value = value.get('package')
+    if not isinstance(value, str):
+        return False
+    if value in (str(target), target.as_uri(), str(target / 'index.js'),
+                 (target / 'index.js').as_uri()):
+        return True
+    return legacy_bridge(value)
+
+
+def legacy_bridge(value):
+    # Earlier instructions put the bridge elsewhere (for example under
+    # ~/.local/share/herdcat/opencode). An entry is ours when the file it
+    # loads is our bridge, wherever it lives; otherwise it would load twice.
+    if value.startswith('file://'):
+        value = urllib.parse.unquote(urllib.parse.urlparse(value).path)
+    if not value.startswith(('/', '~')):
+        return False
+    path = Path(value).expanduser()
+    try:
+        if path.is_dir():
+            path = path / 'index.js'
+        if not path.is_file() or path.stat().st_size > 65536:
+            return False
+        return bridge_owned(path.read_bytes(), 'opencode')
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def opencode_text(before, target, remove):
+    text = before.decode() if before else '{}\n'
+    parsed = Jsonc(text)
+    root = parsed.root
+    edits = []
+    found = False
+    for key in ('plugin', 'plugins'):
+        if key not in root.children:
+            continue
+        _, array = root.children[key]
+        if not isinstance(array.value, list):
+            raise SetupError('opencode plugin field must be an array')
+        owned = [plugin_owned(child.value, target) for child in array.children]
+        commas = {}
+        for i, child in enumerate(array.children):
+            scanner = Jsonc.__new__(Jsonc)
+            scanner.text, scanner.pos = text, child.end
+            scanner.space()
+            if text[scanner.pos:scanner.pos + 1] == ',':
+                commas[i] = scanner.pos
+        for i, child in enumerate(array.children):
+            if not owned[i]:
+                continue
+            found = True
+            # Remove a value and its following comma, retaining all comments.
+            if i in commas:
+                edits.append((commas[i], commas[i] + 1, ''))
+            edits.append((child.start, child.end, ''))
+        if owned and owned[-1] and len(owned) - 1 not in commas:
+            kept = [i for i, is_owned in enumerate(owned) if not is_owned]
+            if kept and kept[-1] in commas:
+                position = commas[kept[-1]]
+                edits.append((position, position + 1, ''))
+    clean = apply_edits(text, edits)
+    baseline = clean.encode() if found else before
+    if remove:
+        return baseline, baseline, found
+    parsed = Jsonc(clean)
+    root = parsed.root
+    key = 'plugins' if 'plugins' in root.children else 'plugin'
+    entry = json.dumps(str(target))
+    if key in root.children:
+        _, array = root.children[key]
+        insertion = array.end - 1
+        scanner = Jsonc.__new__(Jsonc)
+        scanner.text = clean
+        scanner.pos = array.children[-1].end if array.children else array.start + 1
+        scanner.space()
+        comma = ',' if array.children and clean[scanner.pos:scanner.pos + 1] != ',' else ''
+        addition = comma + entry
+    else:
+        insertion = root.end - 1
+        scanner = Jsonc.__new__(Jsonc)
+        scanner.text = clean
+        scanner.pos = list(root.children.values())[-1][1].end if root.children else root.start + 1
+        scanner.space()
+        comma = ',' if root.children and clean[scanner.pos:scanner.pos + 1] != ',' else ''
+        addition = comma + '\n  "' + key + '": [' + entry + ']\n'
+    after = (clean[:insertion] + addition + clean[insertion:]).encode()
+    Jsonc(after.decode())
+    # An unchanged managed entry is current regardless of its whitespace.
+    original = Jsonc(text).root.value
+    if found and len([v for k in ('plugin', 'plugins') for v in original.get(k, [])
+                      if plugin_owned(v, target)]) == 1:
+        if any(v == str(target) for k in ('plugin', 'plugins') for v in original.get(k, [])):
+            after = before
+    return after, baseline, found
+
+
+@dataclass(frozen=True)
+class Adapter:
+    name: str
+    commands: tuple
+    home_dir: str
+    target: str
+    kind: str
+    template: str
+    env_home: str = ''
+
+
+ADAPTERS = (
+    Adapter('claude', ('claude',), '.claude', 'settings.json', 'json',
+            'hooks/claude-code.settings.json', 'CLAUDE_CONFIG_DIR'),
+    Adapter('codex', ('codex',), '.codex', 'hooks.json', 'json',
+            'hooks/codex.hooks.json', 'CODEX_HOME'),
+    Adapter('grok', ('grok',), '.grok', 'hooks/herdcat.json', 'json',
+            'hooks/grok.json', 'GROK_HOME'),
+    Adapter('cursor', ('cursor-agent', 'cursor'), '.cursor', 'hooks.json', 'json',
+            'hooks/cursor.hooks.json'),
+    Adapter('copilot', ('copilot',), '.copilot', 'hooks/hooks.json', 'json',
+            'hooks/copilot.hooks.json', 'COPILOT_HOME'),
+    Adapter('kimi', ('kimi',), '.kimi-code', 'config.toml', 'kimi',
+            'hooks/kimi-code.toml', 'KIMI_CODE_HOME'),
+    Adapter('pi', ('pi',), '.pi', 'agent/extensions/herdcat.ts', 'copy',
+            'pi/herdcat.ts'),
+    Adapter('opencode', ('opencode',), '.config/opencode', 'opencode.jsonc', 'opencode',
+            'opencode/index.js'),
+)
+
+
+def integrations_dir():
+    script = Path(__file__).resolve()
+    for candidate in (script.parent.parent / 'share/herdcat/integrations',
+                      script.parent.parent / 'integrations'):
+        if candidate.is_dir():
+            return candidate
+    raise SetupError('integration templates missing; install herdcat integrations')
+
+
+def base_dir(adapter):
+    home = Path(os.environ.get('HOME') or Path.home())
+    if adapter.name == 'opencode':
+        return Path(os.environ.get('XDG_CONFIG_HOME') or home / '.config') / 'opencode'
+    if adapter.env_home and os.environ.get(adapter.env_home):
+        return Path(os.environ[adapter.env_home]).expanduser().absolute()
+    if adapter.name == 'pi' and os.environ.get('PI_CODING_AGENT_DIR'):
+        return Path(os.environ['PI_CODING_AGENT_DIR']).expanduser().absolute()
+    return home / adapter.home_dir
+
+
+def target_path(adapter):
+    base = base_dir(adapter)
+    if adapter.name == 'pi' and os.environ.get('PI_CODING_AGENT_DIR'):
+        return base / 'extensions/herdcat.ts'
+    if adapter.name == 'opencode':
+        # Both formats are merged by opencode. Prefer jsonc; don't create a
+        # second global config when only JSON exists.
+        if not (base / 'opencode.jsonc').exists() and (base / 'opencode.json').exists():
+            return base / 'opencode.json'
+    return base / adapter.target
+
+
+def installed(adapter):
+    return base_dir(adapter).is_dir() or any(shutil.which(c) for c in adapter.commands)
+
+
+def state_dir():
+    home = Path(os.environ.get('HOME') or Path.home())
+    return Path(os.environ.get('XDG_STATE_HOME') or home / '.local/state') / 'herdcat'
+
+
+def private_dir(path):
+    if path.is_symlink():
+        raise SetupError('unsafe state directory')
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if not path.is_dir() or path.stat().st_uid != os.getuid():
+        raise SetupError('unsafe state directory')
+    os.chmod(path, 0o700)
+
+
+def atomic_write(path, data, mode):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary = tempfile.mkstemp(prefix='.' + path.name + '.', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            os.fchmod(stream.fileno(), mode)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+@dataclass
+class Change:
+    path: Path
+    resolved: Path
+    before: bytes | None
+    after: bytes | None
+    baseline: bytes | None
+    mode: int
+    receipt: Path
+    previous: dict | None
+
+
+def read_file(path):
+    resolved = path.resolve(strict=False)
+    if resolved.exists():
+        info = resolved.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            raise SetupError('target must be a user-owned regular file')
+        if info.st_size > 8 * 1024 * 1024:
+            raise SetupError('configuration is too large')
+        return resolved, resolved.read_bytes(), stat.S_IMODE(info.st_mode)
+    if path.is_symlink():
+        raise SetupError('dangling target symlink')
+    return resolved, None, 0o600
+
+
+def receipt_path(agent, resolved):
+    digest = hashlib.sha256(os.fsencode(str(resolved))).hexdigest()
+    return state_dir() / 'setup' / (agent + '-' + digest + '.json')
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest() if data is not None else None
+
+
+def make_change(agent, path, after, baseline, found, remove):
+    resolved, before, mode = read_file(path)
+    receipt = receipt_path(agent, resolved)
+    previous = None
+    if receipt.exists():
+        if receipt.is_symlink() or receipt.stat().st_uid != os.getuid():
+            raise SetupError('unsafe setup receipt')
+        previous = load_json(receipt.read_text())
+        if not isinstance(previous, dict) or previous.get('target') != str(resolved):
+            raise SetupError('invalid setup receipt')
+        if not isinstance(previous.get('installed'), str) or not re.fullmatch(
+                r'[0-9a-f]{64}', previous['installed']):
+            raise SetupError('invalid setup receipt hash')
+        if not isinstance(previous.get('mode'), int) or not 0 <= previous['mode'] <= 0o7777:
+            raise SetupError('invalid setup receipt mode')
+        restore = previous.get('restore')
+        if restore is not None:
+            if not isinstance(restore, str):
+                raise SetupError('invalid restore path')
+            restore_path = Path(restore)
+            backups = (state_dir() / 'backups').resolve()
+            if not restore_path.resolve().is_relative_to(backups):
+                raise SetupError('restore path outside setup backups')
+            _, restored, _ = read_file(restore_path)
+            if restored is None:
+                raise SetupError('setup backup missing')
+    if remove and previous and previous.get('installed') == digest(before):
+        restore = previous.get('restore')
+        after = Path(restore).read_bytes() if restore else None
+        if after is not None:
+            mode = previous.get('mode', mode)
+    elif remove and not found:
+        after = before
+    elif remove and before is None:
+        after = None
+    if agent == 'kimi':
+        mode = 0o600
+    if not remove and before is None:
+        baseline = None
+    return Change(path, resolved, before, after, baseline, mode, receipt, previous)
+
+
+def prepare(adapter, templates, remove):
+    path = target_path(adapter)
+    _, before, _ = read_file(path)
+    source = (templates / adapter.template).read_bytes()
+    if adapter.kind == 'json':
+        after, baseline, found = merge_hooks(before, load_json(source.decode()), remove)
+    elif adapter.kind == 'kimi':
+        after, baseline, found = kimi_text(before or b'', source, remove)
+        if not remove and before and BEGIN.encode() in before:
+            # Do not rewrite an already current marked block.
+            pattern = re.compile(rb'(?m)^# >>> herdcat >>>\r?\n(.*?)^# <<< herdcat <<<(?:\r?\n|$)', re.S)
+            match = pattern.search(before)
+            if match and match[1].rstrip() == source.rstrip():
+                after = before
+    elif adapter.kind == 'copy':
+        if before and not bridge_owned(before, 'pi'):
+            raise SetupError('herdcat.ts is not a herdcat bridge; move it manually')
+        after, baseline, found = (None if remove else source), None, bool(before)
+    else:
+        plugin = base_dir(adapter) / 'herdcat-plugin'
+        after, baseline, found = opencode_text(before, plugin, remove)
+        config = make_change(adapter.name, path, after, baseline, found, remove)
+        bridge = plugin / 'index.js'
+        _, bridge_before, _ = read_file(bridge)
+        if bridge_before and not bridge_owned(bridge_before, 'opencode'):
+            raise SetupError('herdcat plugin file is not owned; move it manually')
+        # A JSONC failure above must never leave a copied plugin behind.
+        return [config, make_change(adapter.name, bridge, None if remove else source,
+                                    None, bool(bridge_before), remove)]
+    return [make_change(adapter.name, path, after, baseline, found, remove)]
+
+
+def save_changes(agent, changes, remove):
+    pending = [change for change in changes if change.before != change.after]
+    if not pending:
+        return
+    root = state_dir()
+    private_dir(root)
+    private_dir(root / 'backups')
+    private_dir(root / 'setup')
+    stamp = datetime.now(timezone.utc).strftime('setup-%Y%m%dT%H%M%S-')
+    backup = Path(tempfile.mkdtemp(prefix=stamp, dir=root / 'backups')) / agent
+    private_dir(backup)
+    restores = {}
+    # Recheck all inputs and finish backups before changing any target.
+    for index, change in enumerate(pending):
+        resolved, current, mode = read_file(change.path)
+        if resolved != change.resolved or current != change.before:
+            raise SetupError('configuration changed while preparing; retry')
+        if current is not None:
+            atomic_write(backup / (str(index) + '-' + change.path.name), current,
+                         0o600 if agent == 'kimi' else mode)
+        if change.previous and change.previous.get('installed') == digest(current):
+            restores[index] = change.previous.get('restore')
+        elif change.baseline is not None:
+            restore = backup / (str(index) + '-restore')
+            atomic_write(restore, change.baseline, change.mode)
+            restores[index] = str(restore)
+        else:
+            restores[index] = None
+    applied = []
+    try:
+        for index, change in enumerate(pending):
+            if change.after is None:
+                if change.resolved.exists():
+                    change.resolved.unlink()
+            else:
+                atomic_write(change.resolved, change.after, change.mode)
+            applied.append(change)
+            if not remove:
+                record = {'target': str(change.resolved), 'installed': digest(change.after),
+                          'restore': restores[index], 'mode': change.mode}
+                atomic_write(change.receipt, json_bytes(record), 0o600)
+    except OSError:
+        for change in reversed(applied):
+            if change.before is None:
+                change.resolved.unlink(missing_ok=True)
+            else:
+                atomic_write(change.resolved, change.before, change.mode)
+        raise
+    if remove:
+        for change in changes:
+            change.receipt.unlink(missing_ok=True)
+
+
+def describe(adapter, changes, remove):
+    print(f'{adapter.name}: ' + tr('planned changes', '计划改动'))
+    for change in changes:
+        if change.before == change.after:
+            continue
+        action = tr('remove', '移除') if change.after is None or remove else tr('merge/install', '合并/接入')
+        print(f'  {action}: {change.path}')
+        if change.path != change.resolved:
+            print('  ' + tr('symlink target: ', '符号链接目标：') + str(change.resolved))
+    if adapter.kind == 'json':
+        data = load_json((changes[0].before or b'{}').decode())
+        count = sum(owned_hook(item) + sum(owned_hook(child) for child in item.get('hooks', []))
+                    for entries in data.get('hooks', {}).values() for item in entries)
+        if count:
+            print('  ' + tr(f'remove/replace {count} managed hook commands',
+                           f'移除/替换 {count} 条受管理 hook 命令'))
+    # Show only our definitions, never any portion of an existing config.
+    if adapter.kind in ('json', 'kimi') and not remove:
+        source = (integrations_dir() / adapter.template).read_text()
+        if adapter.kind == 'json':
+            data = load_json(source)
+            for event, entries in data['hooks'].items():
+                for entry in entries:
+                    for hook in entry.get('hooks', [entry]):
+                        print(f'  {event}: {hook.get("command", hook.get("bash"))}')
+        else:
+            for line in source.splitlines():
+                if line.startswith(('event =', 'command =')):
+                    print('  ' + line)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=tr(
+        'Connect coding agents to herdcat (Python 3, standard library only).',
+        '将 coding agent 接入 herdcat（Python 3，仅标准库）。'))
+    parser.add_argument('agents', nargs='*', metavar='AGENT', help=', '.join(a.name for a in ADAPTERS))
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--status', action='store_true')
+    mode.add_argument('--remove', action='store_true')
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--yes', action='store_true')
+    args = parser.parse_args(argv)
+    unknown = set(args.agents) - {a.name for a in ADAPTERS}
+    if unknown:
+        parser.error(tr('unknown agent', '未知 agent'))
+    try:
+        templates = integrations_dir()
+    except SetupError as error:
+        print(tr('Setup unavailable: ', '无法接入：') + str(error), file=sys.stderr)
+        return 1
+    selected = [a for a in ADAPTERS if not args.agents or a.name in args.agents]
+    work = []
+    failed = False
+    for adapter in selected:
+        present = installed(adapter)
+        if not present and not args.agents and not args.remove:
+            print(adapter.name + ': ' + tr('not installed', '未安装'))
+            continue
+        try:
+            changes = prepare(adapter, templates, args.remove)
+        except (SetupError, OSError, UnicodeError, RecursionError):
+            print(f'{adapter.name}: ' + tr('skipped: cannot safely read/merge ', '跳过：无法安全读取/合并 ') +
+                  str(target_path(adapter)), file=sys.stderr)
+            print(tr('  Manual steps: docs/agents.md; fix the file and retry.',
+                     '  手动步骤：docs/agents.md；修复文件后重试。'), file=sys.stderr)
+            failed = True
+            continue
+        changed = any(c.before != c.after for c in changes)
+        found = any(c.before and c.before != c.baseline for c in changes)
+        if args.status:
+            status = tr('connected, outdated', '已接入但过期') if found else tr('not connected', '未接入')
+            if not changed:
+                status = tr('connected', '已接入')
+            if not present:
+                status = tr('not installed', '未安装')
+            print(f'{adapter.name}: {status}')
+        elif changed:
+            describe(adapter, changes, args.remove)
+            work.append((adapter, changes))
+        else:
+            print(f'{adapter.name}: ' + (tr('already removed', '已移除') if args.remove else
+                                          tr('already current', '已是最新')))
+    if args.status or args.dry_run or not work:
+        return int(failed)
+    if not args.yes:
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            print(tr('Non-interactive setup requires --yes; no files changed.',
+                     '非交互接入必须带 --yes；未改动文件。'), file=sys.stderr)
+            return 1
+        try:
+            answer = input(tr('Apply these changes? [y/N] ', '应用这些改动？[y/N] '))
+        except EOFError:
+            answer = ''
+        if answer.lower() not in ('y', 'yes'):
+            print(tr('Cancelled; no files changed.', '已取消；未改动文件。'))
+            return int(failed)
+    done = []
+    for adapter, changes in work:
+        try:
+            save_changes(adapter.name, changes, args.remove)
+            done.append(adapter.name)
+            print(adapter.name + ': ' + (tr('removed', '已移除') if args.remove else tr('connected', '已接入')))
+        except (SetupError, OSError):
+            print(adapter.name + ': ' + tr('write failed; check backups under ', '写入失败；检查备份目录 ') +
+                  str(state_dir() / 'backups'), file=sys.stderr)
+            failed = True
+    if done:
+        print(tr('Restart/reload open agents to load the changes.', '请重启/重新加载已打开的 agent。'))
+        if 'codex' in done and not args.remove:
+            print(tr('Codex: enable [features] hooks; use /hooks to review and trust the new definitions.',
+                     'Codex：启用 [features] hooks，并用 /hooks 审阅、重新信任新定义。'))
+    return int(failed)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

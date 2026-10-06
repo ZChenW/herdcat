@@ -523,6 +523,7 @@ static int runtime_fds(int *fds, size_t capacity) {
 static void help(const char *program) {
   printf(
       "Usage: %s [options]\n"
+      "  setup [AGENT ...]    Connect agents (herdcat-setup; Python 3)\n"
       "  -c, --config FILE    Configuration path (XDG search by default)\n"
       "  -w, --watch-config   Reload 300 ms after config changes settle\n"
       "  -m, --monitor NAME   Override configured output selection\n"
@@ -654,6 +655,15 @@ int main(int argc, char **argv) {
     return input_helper_main(argc, argv);
   }
   input_privilege_drop();
+  if (argc > 1 && strcmp(argv[1], "setup") == 0) {
+    argv[1] = "herdcat-setup";
+    execvp(argv[1], &argv[1]);
+    fprintf(stderr,
+            "Cannot run herdcat-setup: %s. Install the setup script and "
+            "Python 3, and include its bin directory in PATH.\n",
+            strerror(errno));
+    return 1;
+  }
   herdcat_error_init(0);
   const char *explicit_path = NULL;
   const char *request = NULL;
@@ -799,6 +809,7 @@ int main(int argc, char **argv) {
            result == HERDCAT_SUCCESS ? "valid" : "invalid");
     int failure = result != HERDCAT_SUCCESS;
     if (doctor) {
+      printf("Agent integrations: herdcat setup --status\n");
       printf("focus=%s\n", focus_available() ? "niri" : "none");
       failure |= input_list_devices();
       failure |= wayland_list_monitors(true);

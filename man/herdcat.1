@@ -4,6 +4,9 @@ herdcat \- desktop cat that shows coding agent sessions on Wayland
 .SH SYNOPSIS
 .B herdcat
 [OPTIONS]
+.br
+.B herdcat setup
+[AGENT ...] [--status | --remove] [--dry-run] [--yes]
 .SH DESCRIPTION
 .B herdcat
 is a lightweight Bongo Cat overlay for Wayland compositors. The cat reacts to your keyboard input in real-time and holds up one sign for every coding agent session, showing its name and state; clicking a sign jumps to that session's terminal. Features include multi-monitor support, hot-reloadable configuration (all properties), idle sleep animation, and fullscreen auto-hiding.
@@ -35,6 +38,41 @@ Display this help message and exit.
 .TP
 .BR \-v ", " \-\-version
 Display version information and exit.
+
+.SH AGENT SETUP
+.B herdcat setup
+uses the optional Python 3 helper \fBherdcat-setup\fR to connect installed agents.
+Supported names are claude, codex, grok, cursor, copilot, kimi, pi and opencode.
+With no names, it detects executables in PATH and existing configuration
+directories, previews changes and asks for confirmation (default: no).
+.TP
+.B --status
+Report not installed, not connected, connected or connected but outdated.
+.TP
+.B --dry-run
+Preview managed changes without writing configuration, backups or state.
+.TP
+.B --remove
+Remove managed hooks or bridges, retaining unrelated settings.
+.TP
+.B --yes
+Confirm changes without prompting. Required for non-interactive writes.
+.PP
+Setup reads installed templates from PREFIX/share/herdcat/integrations.
+It preserves unrelated JSON hooks and JSONC comments, and appends a marked
+block to Kimi TOML without rewriting provider settings. Invalid or ambiguous
+configuration is left untouched with a nonzero exit status.
+.PP
+Original files are backed up under
+$XDG_STATE_HOME/herdcat/backups/setup-<timestamp>/<agent>/, defaulting to
+~/.local/state/herdcat/backups/. Modes are retained; Kimi files use 0600.
+Writes use atomic replacement. Symlink targets are updated and links retained.
+Private setup receipts permit exact original-byte restoration on removal
+when no later edits occurred; otherwise only managed entries are removed.
+.PP
+Restart or reload open agents after changing hooks. Codex requires the
+[features] hooks setting and renewed review/trust through /hooks.
+See docs/agents.md for manual configuration and version-specific limitations.
 
 .SH CONFIGURATION
 The default configuration file location is \fB~/.config/herdcat/herdcat.conf\fR.
@@ -71,6 +109,7 @@ List Wayland output names, dimensions and scales.
 .TP
 .B --doctor
 Check configuration, protocols, outputs, devices and permissions.
+Prints a pointer to \fBherdcat setup --status\fR for agent integrations.
 .TP
 .B --hide, --show
 Suppress or restore all overlays without resetting animation state.

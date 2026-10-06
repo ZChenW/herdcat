@@ -1,0 +1,32 @@
+{
+  "api_key": "sk-FAKE-DO-NOT-USE",
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo audit >/dev/null"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "herdcat --hook codex --old 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bongocat --hook codex --old 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

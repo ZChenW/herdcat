@@ -1,0 +1,17 @@
+default_model = "fake"
+
+[providers.fake]
+type = "kimi"
+base_url = "https://example.invalid/v1"
+api_key = "sk-FAKE-DO-NOT-USE"
+
+[models.fake]
+provider = "fake"
+model = "fake"
+max_context_size = 8192
+capabilities = []
+
+[[hooks]]
+event = "Stop"
+command = "echo audit >/dev/null"
+timeout = 3

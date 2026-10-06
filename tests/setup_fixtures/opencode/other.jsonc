@@ -1,0 +1,5 @@
+{
+  // Keep this comment and the trailing comma.
+  "api_key": "sk-FAKE-DO-NOT-USE",
+  "plugin": ["/fake/audit-plugin",],
+}

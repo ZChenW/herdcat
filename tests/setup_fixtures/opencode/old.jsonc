@@ -1,0 +1,5 @@
+{
+  // Keep independent plugins.
+  "api_key": "sk-FAKE-DO-NOT-USE",
+  "plugin": ["/fake/audit-plugin", "@HERDCAT_PLUGIN@",],
+}

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "api_key": "sk-FAKE-DO-NOT-USE",
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "echo audit >/dev/null"
+      },
+      {
+        "type": "command",
+        "bash": "herdcat --hook copilot --old 2>/dev/null || true"
+      },
+      {
+        "type": "command",
+        "bash": "bongocat --hook copilot --old 2>/dev/null || true"
+      }
+    ]
+  }
+}

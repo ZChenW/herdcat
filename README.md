@@ -60,13 +60,20 @@ herdcat --watch-config --monitor eDP-1
 
 ### Connect Your Agents
 
-Each agent reports its state through a hook that runs `herdcat --hook <agent>`. For Claude Code, add this to `~/.claude/settings.json` for every event in [the example](integrations/hooks/claude-code.settings.json):
+Connect installed agents with one command (requires Python 3):
 
-```json
-{ "type": "command", "command": "herdcat --hook claude >/dev/null 2>&1 || true" }
+```bash
+herdcat setup                    # Preview changes, then confirm (default: no)
+herdcat setup claude codex       # Select agents
+herdcat setup --dry-run          # Preview without writing
+herdcat setup --status           # Check all eight integrations
+herdcat setup --remove claude    # Remove the integration
 ```
 
-Ready-made hook files and bridges for all eight agents are in [`integrations/`](integrations/), and [docs/agents.md](docs/agents.md) walks through each one.
+Setup preserves unrelated hooks, backs up files before writing and can update
+older herdcat/bongocat hooks. Non-interactive use requires `--yes`. Restart or
+reload open agents afterward; Codex also needs `/hooks` review and renewed trust.
+[docs/agents.md](docs/agents.md) covers setup, backups and manual integration.
 
 ## Configuration
 

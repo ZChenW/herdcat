@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "api_key": "sk-FAKE-DO-NOT-USE",
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "echo audit >/dev/null"
+      }
+    ]
+  }
+}

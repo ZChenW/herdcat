@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "api_key": "sk-FAKE-DO-NOT-USE",
+  "hooks": {
+    "stop": [
+      {
+        "type": "command",
+        "command": "echo audit >/dev/null"
+      }
+    ]
+  }
+}

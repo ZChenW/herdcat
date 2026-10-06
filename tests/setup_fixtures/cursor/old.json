@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "api_key": "sk-FAKE-DO-NOT-USE",
+  "hooks": {
+    "stop": [
+      {
+        "type": "command",
+        "command": "echo audit >/dev/null"
+      },
+      {
+        "type": "command",
+        "command": "herdcat --hook cursor --old 2>/dev/null || true"
+      },
+      {
+        "type": "command",
+        "command": "bongocat --hook cursor --old 2>/dev/null || true"
+      }
+    ]
+  }
+}

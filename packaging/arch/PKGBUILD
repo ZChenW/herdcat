@@ -6,6 +6,7 @@ arch=('x86_64' 'aarch64')
 url='https://github.com/ZChenW/herdcat'
 license=('MIT')
 depends=('glibc' 'wayland' 'freetype2' 'fontconfig')
+optdepends=('python: herdcat setup')
 makedepends=('git' 'gcc' 'make' 'pkgconf')
 provides=('herdcat')
 conflicts=('herdcat')

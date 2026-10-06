@@ -49,6 +49,63 @@ resume shows the current resolved state. The indicator is shared across outputs.
 
 ## Agent status integration
 
+Use `herdcat setup` to detect installed agents, preview changes and confirm them.
+Python 3 is optional for the overlay and required only for setup. In a source
+checkout, run `python3 scripts/herdcat-setup` directly, or put `scripts/` in
+`PATH` before running `./build/herdcat setup`.
+
+```sh
+herdcat setup claude codex --dry-run
+herdcat setup claude codex --yes
+herdcat setup --status
+herdcat setup --remove claude codex --yes
+```
+
+Agent names are `claude`, `codex`, `grok`, `cursor`, `copilot`, `kimi`, `pi`, and
+`opencode`. Without names, setup selects agents whose executable is in `PATH`
+or whose configuration directory exists. Explicit names also allow preparing
+configuration before installing an agent. Confirmation defaults to no; a
+non-interactive terminal must supply `--yes`. `--dry-run` and `--status` never
+write files, and output never includes existing configuration contents.
+
+JSON merges preserve unrelated settings and hooks. Commands beginning with
+`herdcat --hook ` or the legacy `bongocat --hook ` identify managed entries;
+setup replaces obsolete events/commands and removes only these entries.
+Grok's dedicated `hooks/herdcat.json` also preserves unrelated entries if they
+are present. Kimi receives a block between `# >>> herdcat >>>` and
+`# <<< herdcat <<<`; text outside the block is retained, except for recognized
+simple legacy herdcat hook tables. Ambiguous markers/tables need manual repair.
+Pi's extension and opencode's bridge occupy private herdcat paths; setup refuses
+to overwrite unrelated code there. opencode JSONC edits retain comments and
+trailing commas. Setup uses `opencode.jsonc`, or existing `opencode.json` when
+there is no JSONC file, retaining the existing `plugin` or `plugins` field.
+The legacy `plugin` field is accepted by the observed opencode 2.0.23 converter;
+newer documentation calls this field `plugins`. Both configuration files can
+contribute plugins; review the other file manually for duplicate declarations.
+
+`CODEX_HOME`, `GROK_HOME`, `CLAUDE_CONFIG_DIR`, `COPILOT_HOME`, `KIMI_CODE_HOME`,
+`PI_CODING_AGENT_DIR`, and `XDG_CONFIG_HOME` are respected where applicable.
+The defaults below remain the manual reference. Kimi Code uses `.kimi-code/`;
+the separate legacy kimi-cli project uses `.kimi/` and is not this adapter.
+
+Before every changed file, setup saves a private backup directory under
+`$XDG_STATE_HOME/herdcat/backups/setup-<timestamp>/<agent>/` (default
+`~/.local/state/herdcat/backups/`). File modes are preserved; Kimi remains 0600.
+Writes use temporary files and atomic replacement. Symlink targets are updated
+and displayed; links remain intact. Invalid JSON/JSONC is left untouched with a
+nonzero exit and a reference to the manual steps below.
+
+Private receipts under the same state directory let removal restore the exact
+original bytes when no subsequent edits occurred. When a config has changed
+since setup, removal instead strips the managed entries and retains new user
+settings. Keep backups/receipts until removal if exact formatting restoration
+matters. Removing a migrated legacy bridge removes it rather than reinstalling
+the obsolete integration. Setup never enables Codex features automatically:
+enable `[features] hooks`, then use `/hooks` to review and trust changed hooks.
+Restart/reload open agents after setup or removal.
+
+### Manual integration reference
+
 1. Install herdcat (`make release && sudo make install`) and confirm that
    `herdcat --help` includes `--hook`.
 2. Keep your config at `~/.config/herdcat/herdcat.conf` and run `herdcat -w`.
@@ -126,7 +183,8 @@ sampled idle state, so that interrupt path remains unverified.
 Merge [grok.json](../integrations/hooks/grok.json) into a new file in
 `~/.grok/hooks/` (or `$GROK_HOME/hooks/`), preserving existing hooks. Grok may
 also load Claude/Cursor compatibility hooks; check `/hooks` for duplicates.
-Restart the agent after merging. No installer changes user configuration.
+Restart the agent after merging. Package installation never changes agent
+configuration; `herdcat setup` does so only after confirmation or `--yes`.
 
 | Grok event (PascalCase or snake_case) | Action |
 | --- | --- |
@@ -267,7 +325,8 @@ then append its **absolute directory path** to the effective configuration's
 `plugin` array. Preserve every existing plugin entry. This host reads both
 `opencode.json` and `opencode.jsonc`; its plugin declaration was in jsonc.
 Check the effective configuration on your host rather than assuming one file
-wins. Reload opencode after merging; there is no installer or npm dependency.
+wins. opencode 2.0.23 also accepts the newer `plugins` field. Reload opencode
+after merging; the bridge needs no npm dependency.
 The plugin's default `{id, setup}` export and async iterable subscription are
 for v2; it is not a v1 plugin.
 

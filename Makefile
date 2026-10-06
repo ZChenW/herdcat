@@ -138,11 +138,20 @@ install: $(TARGET)
 	install -Dm755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/herdcat
 	install -Dm644 herdcat.conf.example $(DESTDIR)$(PREFIX)/share/herdcat/herdcat.conf.example
 	install -Dm755 scripts/find_input_devices.sh $(DESTDIR)$(PREFIX)/bin/herdcat-find-devices
+	install -Dm755 scripts/herdcat-setup $(DESTDIR)$(PREFIX)/bin/herdcat-setup
+	@for file in integrations/hooks/* integrations/pi/herdcat.ts integrations/opencode/index.js; do \
+		install -Dm644 $$file $(DESTDIR)$(PREFIX)/share/herdcat/$$file || exit 1; \
+	done
 	install -Dm644 man/herdcat.1 $(DESTDIR)$(PREFIX)/share/man/man1/herdcat.1
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat-find-devices
+	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat-setup
+	@for file in integrations/hooks/* integrations/pi/herdcat.ts integrations/opencode/index.js; do \
+		rm -f $(DESTDIR)$(PREFIX)/share/herdcat/$$file; \
+	done
+	-rmdir $(DESTDIR)$(PREFIX)/share/herdcat/integrations/hooks $(DESTDIR)$(PREFIX)/share/herdcat/integrations/pi $(DESTDIR)$(PREFIX)/share/herdcat/integrations/opencode $(DESTDIR)$(PREFIX)/share/herdcat/integrations
 	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/herdcat.1
 	rm -f $(DESTDIR)$(PREFIX)/share/herdcat/herdcat.conf.example
 	-rmdir $(DESTDIR)$(PREFIX)/share/herdcat
@@ -303,6 +312,9 @@ test: $(TEST_BINARIES)
 		failures=$$((failures + 1)); \
 	echo "--- test_measure_scenarios.py ---"; \
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_measure_scenarios.py || \
+		failures=$$((failures + 1)); \
+	echo "--- test_setup.py ---"; \
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_setup.py || \
 		failures=$$((failures + 1)); \
 	if [ $$failures -gt 0 ]; then \
 		echo "$$failures test suite(s) failed"; \
