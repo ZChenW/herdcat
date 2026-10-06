@@ -12,7 +12,7 @@
 
 #define SIGN_MAX_SHAPES  320
 #define SIGN_MAX_TEXTS   AGENT_SESSIONS_MAX
-#define SIGN_MAX_VISIBLE 5
+#define SIGN_MAX_VISIBLE 10
 #define POST_BOARD_MIN   150
 #define POST_BOARD_MAX   340
 
@@ -85,6 +85,10 @@ typedef struct {
   int x, y, w, h;
   uint64_t key;
   pid_t pid;
+  // Two-row fan targets use the actual rotated plate, with front precedence.
+  bool back_row, precise;
+  double center_x, center_y, half_w, half_h, rotation, radius;
+  sign_shape_kind_t kind;
 } sign_hit_t;
 typedef struct {
   int x, y, w, h;
@@ -128,12 +132,13 @@ typedef struct {
   double x1, y1, x2, y2;
 } sign_scalar_t;
 typedef struct {
-  bool used, present;
+  bool used, present, back_row;
   agent_session_view_t session;
   int direction;
   // width: post board width, or fan length. bottom: post row, or fan angle.
   // hover: post shift, or fan plate scale. label: fan nameplate 0..1.
   sign_scalar_t width, bottom, opacity, hover, label, states[AGENT_STATE_COUNT];
+  sign_scalar_t row_size;  // Fan row scale, animated along with the rod.
   int64_t failure_ms;
 } sign_slot_t;
 typedef struct {
@@ -206,6 +211,8 @@ static inline double sign_tag_height(const sign_text_t *text) {
 }
 void signs_focus_failed(signs_t *model, uint64_t key, int64_t now_ms);
 // Logical pixels the surface needs above the cat's top. Zero when off.
-int sign_clearance(sign_style_t style, int cat_height);
+int sign_clearance(sign_style_t style, int cat_height, int sign_max);
+// Nearest plate within a row; front plates win intersections with the back.
+bool signs_hit(const sign_frame_t *frame, double x, double y, sign_hit_t *hit);
 
 #endif

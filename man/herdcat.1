@@ -164,9 +164,15 @@ Default fan: raised plates with individual hover labels. Post: a pole with
 boards that expand together on hover. Off restores whole-cat state artwork,
 original surface height and cat-only input region.
 .TP
-.B sign_max=1..5
-Maximum displayed signs (default 5); active sessions take precedence, while
-selected sessions retain creation order.
+.B sign_max=1..10
+Maximum displayed signs (default 10); active sessions take precedence, while
+selected sessions retain creation order. Fan signs above five use two rows:
+the five highest-priority sessions stand in front (waiting, error, unread done,
+working, idle), with smaller plates on longer rods behind them. Back rods,
+plates, icons and unread dots stay behind all front shapes even on hover;
+hover nameplates stay above both rows. Post signs continue alternating sides
+up to ten rows. Surface height and orientation clearance follow this limit;
+limits of five or less retain the original geometry.
 .TP
 .B sign_idle=hover|always|never
 Show idle signs on hover (default), always, or never, even on hover.

@@ -211,14 +211,18 @@ center before the typing desk is emitted. Text and grouped icons stay upright;
 reflected bases rasterize from their original side and flip their bitmap to
 preserve NanoSVG edge sampling. Orientation changes reset sign transitions
 while retaining the menu and desk scalar state.
-`graphics/signs_fan.c` holds the existing fan orbit and plate-layout functions.
+`graphics/signs_fan.c` holds fan orbit and plate layout. Above five visible
+sessions it assigns the priority front row and emits complete back groups
+before front groups, with hover sorting inside each row. Retained slots animate
+row changes. The pure `signs_hit` shares the rotated plate geometry and front
+precedence with overlay pointer handling; single-row hit behavior is unchanged.
 `graphics/signs_post.c` holds post-board layout, while pole/slot assembly stays
 inside the shared `signs_frame` function.
 `graphics/signs_menu.c` holds the switch-card geometry and glyph-layout functions.
 `src/graphics/signs_internal.h` shares layout types, constants and declarations
 privately without extending the model's public interface.
 `graphics/sign_draw.c` rasterizes NanoSVG shapes into premultiplied BGRA
-with a bitmap LRU bounded by 192 slots and 4 MiB of pixels, including settled
+with a bitmap LRU bounded by 2048 slots and 16 MiB of pixels, including settled
 nameplate backgrounds. Full-motion waiting shapes align bitmap origins to
 physical pixels. After 60 seconds without any waiting session, a one-shot
 deadline releases waiting phase bitmaps, retaining those also used by ordinary

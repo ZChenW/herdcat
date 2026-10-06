@@ -13,8 +13,8 @@
 #  include <malloc.h>
 #endif
 
-#define CACHE_SLOTS   192
-#define CACHE_BYTES   ((size_t)4 * 1024 * 1024)
+#define CACHE_SLOTS   2048
+#define CACHE_BYTES   ((size_t)16 * 1024 * 1024)
 #define SHAPE_PAD     3.0
 #define SVG_BYTES     1024
 #define CACHE_IDLE_MS 60000

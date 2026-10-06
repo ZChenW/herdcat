@@ -10,9 +10,9 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-// Cat, up to five boards, and the open hover pad. An open switch card
+// Cat, up to ten boards, and the open hover pad. An open switch card
 // replaces the boards and the pad.
-#define OVERLAY_SIGNS_REGION_LIMIT 7
+#define OVERLAY_SIGNS_REGION_LIMIT (SIGN_MAX_VISIBLE + 2)
 
 typedef struct {
   int x, y, w, h;

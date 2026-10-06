@@ -16,8 +16,9 @@ sign_orientation_t overlay_orientation(const config_t *config, int cat_y,
       config->overlay_opacity > 0 || config->cat_height <= 0 ||
       output_height < surface_height)
     return SIGN_ABOVE;
-  int clearance = sign_clearance(config->sign_style, config->cat_height) +
-                  sign_name_clearance(config);
+  int clearance =
+      sign_clearance(config->sign_style, config->cat_height, config->sign_max) +
+      sign_name_clearance(config);
   int64_t threshold = clearance;
   if (has_history && previous == SIGN_BELOW)
     threshold += 24;

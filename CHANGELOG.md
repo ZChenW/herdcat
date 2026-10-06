@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Ten session signs** - `sign_max=1..10`, default 10. Fans above five use
+  an unchanged front row and an 88% back row on longer rods; back shapes stay
+  behind every front shape during hover and motion. State priority chooses
+  the front five, with animated row changes. Posts continue to ten rows;
+  clearance follows the configured limit and limits up to five keep old pixels.
+
 - **Typing desk distance** - `sign_desk_offset=-6..24` adjusts the distance
   from the cat in scaled logical pixels, supports hot reload on every output,
   and preserves existing pixels at the default 0.

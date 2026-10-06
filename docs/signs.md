@@ -57,6 +57,31 @@ process and does not use `kitten @`, so it needs no extra remote-control
 permission. It gives up within a few tens of milliseconds when the cat is
 not running, and it writes nothing to the terminal.
 
+## Two-row fan
+
+`sign_max=10` is the default (range 1–10). With five or fewer visible
+sessions the fan keeps its original pixels. Above five, the five highest
+priorities stand in front: waiting, error, unread completion, working, then
+idle. Ties retain the existing display order, which also determines left to
+right order inside each row. State changes animate the angle, rod length
+and row scale without recreating the session slot.
+
+The front row is identical to the original five-sign fan. Back plates, icons,
+unread dots and rod thickness are 88% size, on longer rods. Both rows fan out
+symmetrically around the cat; the larger back radius uses a smaller angular
+step to keep the same adjacent plate-centre spacing. Back rods, plates, icons
+and unread dots always paint before every front shape, including during hover,
+press, focus-failure shakes and waiting nudges. A hovered back plate enlarges
+normally and its nameplate appears above both rows. Only plates are targets;
+front plates own any overlap. The same ordering applies below the cat.
+
+Post signs simply continue their alternating sides to ten rows. Menu opening
+retracts both fan rows. The typing desk, switch card and font panel keep their
+existing layout. Surface height and above/below thresholds reserve room for
+the configured `sign_max`, even when fewer sessions are present; values up to
+five retain the previous height. See the [stage 26 report](performance/stage26-report.md)
+and [rendered examples](design/two-rows/README.md).
+
 ## Terminal support
 
 | Terminal | Window focus | Pane focus | Current pane | Terminal configuration |
@@ -200,7 +225,7 @@ This requires niri's event stream and uses activity only, never key contents.
 | Global option | Values (default first) |
 | --- | --- |
 | `sign_style` | `fan`, `post`, `off` |
-| `sign_max` | `5`; range 1–5 |
+| `sign_max` | `10`; range 1–10 |
 | `sign_idle` | `hover`, `always`, `never` |
 | `sign_font` | empty = system sans-serif; Fontconfig family, up to 127 bytes |
 | `sign_font_size` | `13`; range 10–20, metadata/desk text proportional |
@@ -234,7 +259,7 @@ matching split only when the socket above is set. Without a split report, kitty
 splits still share that window: the desk takes the newest session, and focusing
 the window marks every session in it seen. Text supports Latin and CJK with
 fallback, but lacks
-ligatures, right-to-left shaping and combining marks. At most five of the 32
+ligatures, right-to-left shaping and combining marks. At most ten of the 32
 tracked sessions are displayed. Approval still stays yellow until the tool
 finishes; Claude Escape has no hook and retains the existing timeout limitation.
 No sign-related periodic wakes remain when there are no sessions, hover or

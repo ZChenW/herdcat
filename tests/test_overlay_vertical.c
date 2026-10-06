@@ -104,7 +104,8 @@ static void placement_and_drag(void) {
   const int heights[] = {40, 60, 110, 200};
   for (size_t h = 0; h < sizeof(heights) / sizeof(heights[0]); h++) {
     config.cat_height = heights[h];
-    int clearance = sign_clearance(config.sign_style, config.cat_height);
+    int clearance =
+        sign_clearance(config.sign_style, config.cat_height, config.sign_max);
     int surface = config.cat_height + clearance + 4;
     for (int y = 0; y <= 1080 - config.cat_height; y++) {
       overlay_vertical_t p = overlay_place_vertical(

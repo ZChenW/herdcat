@@ -43,6 +43,10 @@ void signs_reflect(sign_frame_t *frame, double center_y) {
   for (int i = 0; i < frame->hit_count; i++) {
     sign_hit_t *hit = &frame->hits[i];
     hit->y = (int)lround(axis - (hit->y + (double)hit->h));
+    if (hit->precise) {
+      hit->center_y = axis - hit->center_y;
+      hit->rotation = -hit->rotation;
+    }
   }
   if (frame->has_pad)
     reflect_rect(&frame->pad, axis);

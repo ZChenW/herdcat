@@ -121,7 +121,7 @@ Every option below goes in the same file and is applied when you save it.
 | Option | Default | What it does |
 | --- | --- | --- |
 | `sign_style` | `fan` | `fan`, `post` (signpost) or `off` |
-| `sign_max` | `5` | How many sessions get a sign, 1 to 5 |
+| `sign_max` | `10` | How many sessions get a sign, 1 to 10; fan uses two rows above 5 |
 | `sign_idle` | `hover` | Show idle sessions on `hover`, `always` or `never` |
 | `sign_theme` | `light` | `light`, `dark` or `auto` (follows the desktop) |
 | `sign_language` | `auto` | `auto`, `en` or `zh` |

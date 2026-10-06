@@ -50,13 +50,21 @@ static void geometry(void) {
   int fan_height = overlay_signs_height(&fan);
   TEST_ASSERT(fan_height == 294);
   TEST_ASSERT(overlay_signs_cat_y(&fan, fan_height) == 180);
-  TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 110) == 180);
-  TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 110) - 174 >= 6);
-  TEST_ASSERT(sign_clearance(SIGN_STYLE_POST, 110) - 174 >= 6);
+  TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 110, 5) == 180);
+  TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 110, 5) - 174 >= 6);
+  TEST_ASSERT(sign_clearance(SIGN_STYLE_POST, 110, 5) - 174 >= 6);
   config_t raised = config_of(110, 120, 0);
   raised.sign_style = SIGN_STYLE_FAN;
   TEST_ASSERT(overlay_signs_height(&raised) == 300);
   TEST_ASSERT(overlay_signs_cat_y(&raised, 300) == 186);
+  // Surface allocation follows configured capacity even with zero sessions.
+  for (int max = 1; max <= 10; max++) {
+    fan.sign_max = max;
+    tight.sign_max = max;
+    TEST_ASSERT(overlay_signs_height(&fan) == (max <= 5 ? 294 : 387));
+    TEST_ASSERT(overlay_signs_height(&tight) ==
+                294 + (max <= 5 ? 0 : 33 * (max - 5)));
+  }
   int x = -4, y = -8;
   drag_clamp(&x, &y, 1000, 200, 800, fan_height);
   TEST_ASSERT(x == 0 && y == 0);
@@ -341,16 +349,20 @@ static void live_options(void) {
   config_t config = config_of(110, 120, 0);
   config.sign_animations = SIGN_ANIM_OFF;
   config.sign_language = SIGN_LANGUAGE_EN;
-  for (int i = 1; i <= 6; i++)
+  for (int i = 1; i <= 10; i++)
     TEST_ASSERT(agent_sessions_apply((uint64_t)i, "claude", AGENT_EVENT_START,
                                      0, i, 5, NULL) == 0);
   for (int style = SIGN_STYLE_POST; style <= SIGN_STYLE_FAN; style++) {
     config.sign_style = (sign_style_t)style;
     config.sign_idle = SIGN_IDLE_ALWAYS;
-    for (int max = 1; max <= 5; max++) {
+    for (int max = 1; max <= 10; max++) {
       config.sign_max = max;
       overlay_signs_step(0, &config, 100, 199, 300, false, 1000);
       TEST_ASSERT(overlay_signs_frame(0)->hit_count == max);
+      overlay_signs_rect_t regions[OVERLAY_SIGNS_REGION_LIMIT];
+      int region_count = overlay_signs_regions(
+          0, &config, 100, 198, 300, regions, OVERLAY_SIGNS_REGION_LIMIT);
+      TEST_ASSERT(region_count >= max + 1);
     }
     config.sign_idle = SIGN_IDLE_NEVER;
     overlay_signs_pointer(0, 102, 295);
@@ -358,7 +370,7 @@ static void live_options(void) {
     TEST_ASSERT(overlay_signs_frame(0)->hit_count == 0);
     config.sign_idle = SIGN_IDLE_HOVER;
     overlay_signs_step(0, &config, 100, 199, 300, false, 1000);
-    TEST_ASSERT(overlay_signs_frame(0)->hit_count == 5);
+    TEST_ASSERT(overlay_signs_frame(0)->hit_count == 10);
     config.sign_typing_desk = 1;
     overlay_signs_type_at(1, 1000);
     overlay_signs_step(0, &config, 100, 199, 300, false, 1000);

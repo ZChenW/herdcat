@@ -17,9 +17,8 @@ parser.add_argument('--sign-style', choices=('fan', 'post', 'off'), default='fan
 style = parser.parse_args().sign_style
 # A 40px cat in a 50px bar has enough desk space already.
 # Fan and post follow sign_clearance(): (cat_height * design + 109) / 110.
-# Both designs are 180 since the switch card has four rows, which is 66px at
-# the default 40px cat.
-clearance = {'fan': 66, 'post': 66, 'off': 0}[style]
+# Default sign_max=10 reserves design heights 273 (fan) and 345 (post).
+clearance = {'fan': 100, 'post': 126, 'off': 0}[style]
 max_margin = 600 - (50 if style == 'off' else 42)
 # post: 2 * (150 - 99 + POST_BOARD_MAX(340) + 17 + 2) = 820.
 # Fan's extent stays 652. Fractional alignment includes the output remainder.

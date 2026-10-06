@@ -20,6 +20,7 @@ struct test_surface {
   struct monitor *monitor;
   unsigned width, height;
   struct test_rect input, cat_input;
+  unsigned input_count;
   int margin_top, margin_bottom, margin_left;
   bool configure_pending, layered;
   char ns[64];

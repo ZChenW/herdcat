@@ -50,26 +50,6 @@ bool inside(int x, int y, int w, int h, double px, double py) {
   return w > 0 && h > 0 && px >= x && py >= y && px < x + (double)w &&
          py < y + (double)h;
 }
-static bool top_hit(const sign_frame_t *frame, double x, double y,
-                    sign_hit_t *hit) {
-  // Fan plates overlap, so the nearest plate centre wins, not the last drawn.
-  bool found = false;
-  double best = 0;
-  for (int i = 0; i < frame->hit_count; i++) {
-    const sign_hit_t *candidate = &frame->hits[i];
-    if (!inside(candidate->x, candidate->y, candidate->w, candidate->h, x, y))
-      continue;
-    double dx = x - (candidate->x + candidate->w / 2.0);
-    double dy = y - (candidate->y + candidate->h / 2.0);
-    double distance = dx * dx + dy * dy;
-    if (!found || distance < best) {
-      found = true;
-      best = distance;
-      *hit = *candidate;
-    }
-  }
-  return found;
-}
 static void track_expanded(size_t index, int cat_x, int cat_y, int cat_w,
                            int cat_h, int64_t now_ms) {
   bool was_open = expanded[index];
@@ -78,7 +58,7 @@ static void track_expanded(size_t index, int cat_x, int cat_y, int cat_w,
   const sign_frame_t *frame =
       lanes[index].has_frame ? &lanes[index].frame : NULL;
   sign_hit_t hit = {0};
-  bool over_hit = here && frame && top_hit(frame, pointer_x, pointer_y, &hit);
+  bool over_hit = here && frame && signs_hit(frame, pointer_x, pointer_y, &hit);
   bool over_cat =
       here && inside(cat_x, cat_y, cat_w, cat_h, pointer_x, pointer_y);
   bool over_pad = here && expanded[index] && frame && frame->has_pad &&
@@ -271,7 +251,7 @@ bool over_cat(size_t index) {
 bool over_sign(size_t index) {
   sign_hit_t hit;
   return lanes[index].has_frame &&
-         top_hit(&lanes[index].frame, pointer_x, pointer_y, &hit);
+         signs_hit(&lanes[index].frame, pointer_x, pointer_y, &hit);
 }
 
 overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
@@ -464,7 +444,7 @@ bool overlay_signs_pointer(size_t index, double x, double y) {
   if (lanes[index].has_frame && segment_at(&lanes[index].frame, x, y))
     return true;
   sign_hit_t hit;
-  return lanes[index].has_frame && top_hit(&lanes[index].frame, x, y, &hit);
+  return lanes[index].has_frame && signs_hit(&lanes[index].frame, x, y, &hit);
 }
 void overlay_signs_leave(void) {
   tracking = false;
@@ -507,7 +487,7 @@ bool overlay_signs_press(size_t index) {
   closing[index] = false;
   sign_hit_t hit;
   if (tracking && track_index == index && lanes[index].has_frame &&
-      top_hit(&lanes[index].frame, pointer_x, pointer_y, &hit)) {
+      signs_hit(&lanes[index].frame, pointer_x, pointer_y, &hit)) {
     pressed = true;
     pressed_key = hit.key;
     pressed_pid = hit.pid;

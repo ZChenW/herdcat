@@ -189,11 +189,11 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
   }
   if (visible && frame->hit_count < SIGN_MAX_VISIBLE) {
     frame->hits[frame->hit_count++] =
-        (sign_hit_t){(int)floor(x),
-                     (int)floor(y),
-                     (int)ceil(x + width * scale) - (int)floor(x),
-                     (int)ceil(y + 26 * scale) - (int)floor(y),
-                     slot->session.key,
-                     slot->session.pid};
+        (sign_hit_t){.x = (int)floor(x),
+                     .y = (int)floor(y),
+                     .w = (int)ceil(x + width * scale) - (int)floor(x),
+                     .h = (int)ceil(y + 26 * scale) - (int)floor(y),
+                     .key = slot->session.key,
+                     .pid = slot->session.pid};
   }
 }

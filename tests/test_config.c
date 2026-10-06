@@ -446,7 +446,7 @@ static void test_sign_config(void) {
   write_temp_config(path, "");
   TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_SUCCESS,
                  "sign defaults load");
-  TEST_ASSERT(config.sign_style == SIGN_STYLE_FAN && config.sign_max == 5 &&
+  TEST_ASSERT(config.sign_style == SIGN_STYLE_FAN && config.sign_max == 10 &&
                   config.sign_idle == SIGN_IDLE_HOVER && !config.sign_font[0] &&
                   config.sign_font_size == 13 &&
                   config.sign_animations == SIGN_ANIM_FULL &&
@@ -472,7 +472,7 @@ static void test_sign_config(void) {
                    "every sign enum and font value loads");
     config_cleanup_full(&config);
   }
-  for (int max = 1; max <= 5; max++) {
+  for (int max = 1; max <= 10; max++) {
     for (int size = 10; size <= 20; size++) {
       char line[64];
       snprintf(line, sizeof(line), "sign_max=%d\nsign_font_size=%d\n", max,
@@ -507,6 +507,16 @@ static void test_sign_config(void) {
     TEST_ASSERT(config.sign_desk_offset == (i ? 24 : -6), "offset clamped");
     config_cleanup_full(&config);
   }
+  const int outside_max[] = {0, 11};
+  for (size_t i = 0; i < sizeof(outside_max) / sizeof(outside_max[0]); i++) {
+    char line[64];
+    snprintf(line, sizeof(line), "sign_max=%d\n", outside_max[i]);
+    write_temp_config(path, line);
+    TEST_ASSERT_EQ(load_config(&config, path), HERDCAT_SUCCESS,
+                   "tolerant sign_max clamps");
+    TEST_ASSERT(config.sign_max == (i ? 10 : 1), "sign_max clamped");
+    config_cleanup_full(&config);
+  }
   const char *invalid[] = {
       "sign_style=unknown",
       "sign_idle=unknown",
@@ -522,7 +532,7 @@ static void test_sign_config(void) {
       "sign_desk_offset=2147483648",
       "[monitor:TEST-1]\nsign_desk_offset=12",
       "sign_max=0",
-      "sign_max=6",
+      "sign_max=11",
       "sign_max=1x",
       "sign_font_size=9",
       "sign_font_size=21",

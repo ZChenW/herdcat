@@ -113,6 +113,17 @@ are supported and devices are deduplicated by identity. No permission changes
 are made automatically. Keycodes are never transmitted or logged, including
 with `enable_debug=1`.
 
+## Session sign limit
+
+`sign_max=10` limits displayed sessions to 1–10. A fan with more than five
+visible sessions has an unchanged five-sign front row and an 88% back row
+on longer rods. Waiting, error, unread completion, working and idle determine
+front priority; equal priorities retain display order. Back shapes always
+stay behind front shapes, while hover nameplates appear above both rows.
+Post signs continue alternating sides to ten rows. Surface height and
+above/below clearance follow the configured limit; `sign_max<=5` preserves
+the previous geometry. This global option supports watching and `--reload`.
+
 ## Typing desk distance
 
 `sign_desk_offset=0` adjusts the typing desk distance in integer logical pixels

@@ -218,7 +218,7 @@ static void config_set_defaults(config_t *config) {
       .cat_draggable = 1,
       .sign_style = SIGN_STYLE_FAN,
       .sign_theme = SIGN_THEME_LIGHT,
-      .sign_max = 5,
+      .sign_max = 10,
       .sign_font_size = 13,
       .sign_idle = SIGN_IDLE_HOVER,
       .sign_animations = SIGN_ANIM_FULL,

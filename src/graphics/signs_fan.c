@@ -54,29 +54,37 @@ static void orbit_from(sign_frame_t *frame, int first, double deg, double ox,
   }
 }
 
+static double rod_length(agent_state_t state, bool visible, bool hovered) {
+  bool urgent = state == AGENT_STATE_WAITING || state == AGENT_STATE_ERROR;
+  if (!visible)
+    return 34;
+  if (urgent && hovered)
+    return 116;
+  if (hovered)
+    return 102;
+  return urgent ? 110 : 94;
+}
+
 static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
                      sign_frame_t *frame, double pivot_x, double pivot_y,
-                     double cat_scale, bool named, double desk_clear) {
+                     double cat_scale, bool named, double desk_clear,
+                     bool two_rows, double back_length) {
   const sign_palette_t *palette = sign_palette(in->theme);
   bool visible = slot->present && (show_session(in, slot->session.state)) &&
                  !(in->typing && in->typing_key == slot->session.key);
   bool hovered = visible && in->has_hover && in->hover_key == slot->session.key;
   bool pressed = in->has_pressed && in->pressed_key == slot->session.key;
-  bool waiting = slot->session.state == AGENT_STATE_WAITING;
-  // Both are raised higher. Only waiting sways and is named without hover:
-  // two nameplates side by side would cover each other.
-  bool urgent = waiting || slot->session.state == AGENT_STATE_ERROR;
-  double len_target = 34;
-  if (visible && urgent && hovered)
-    len_target = 116;
-  else if (visible && hovered)
-    len_target = 102;
-  else if (visible && urgent)
-    len_target = 110;
-  else if (visible)
-    len_target = 94;
+  double len_target = rod_length(slot->session.state, visible, hovered);
+  if (visible && slot->back_row)
+    len_target += back_length;
   double len =
       fmax(0, aim(&slot->width, len_target, MOVE_MS, &BEZIER_MOVE, in, frame));
+  double row_target = slot->back_row ? FAN_BACK_SCALE : 1;
+  double row_size = row_target;
+  if (slot->row_size.target != row_target ||
+      in->now_ms < slot->row_size.start + slot->row_size.duration)
+    row_size =
+        aim(&slot->row_size, row_target, MOVE_MS, &BEZIER_EASE, in, frame);
   len += desk_clear;
   double opacity = clamp_unit(aim(&slot->opacity, visible ? 1 : 0, FAN_FADE_MS,
                                   &BEZIER_EASE, in, frame));
@@ -128,6 +136,7 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
     double target = pressed ? .94 : (hovered ? 1.16 : 1);
     plate = aim(&slot->hover, target, FAN_SCALE_MS, &BEZIER_POP, in, frame);
   }
+  plate *= row_size;
   double angle = sample(&slot->bottom, in->now_ms);
   bool nudging =
       states[AGENT_STATE_WAITING] > .001 && in->animations == SIGN_ANIM_FULL;
@@ -146,8 +155,9 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
   int stick_at = frame->shape_count;
   double stick_h = (len - 14) * cat_scale;
   if (stick_h > 0.4)
-    add_shape(frame, SIGN_RECT, pivot_x - 2.5 * cat_scale, pivot_y - stick_h,
-              5 * cat_scale, stick_h, 2.5 * cat_scale, 1.5 * cat_scale,
+    add_shape(frame, SIGN_RECT, pivot_x - 2.5 * cat_scale * row_size,
+              pivot_y - stick_h, 5 * cat_scale * row_size, stick_h,
+              2.5 * cat_scale * row_size, 1.5 * cat_scale * row_size,
               with_alpha(palette->paper, opacity),
               with_alpha(palette->ink, opacity));
   double half_w = (codex ? 15 : 17) * plate;
@@ -200,8 +210,9 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
     // Only the plate is a target. A box around the whole tilted sign would
     // cover its neighbours' plates and steal their hover.
     double plate_y = pivot_y - center_sy * cat_scale;
-    double reach_x = (half_w + 2) * cat_scale;
-    double reach_y = (half_h + 2) * cat_scale;
+    double pad = two_rows ? 0 : 2;
+    double reach_x = (half_w + pad) * cat_scale;
+    double reach_y = (half_h + pad) * cat_scale;
     double min_x = 0, min_y = 0, max_x = 0, max_y = 0;
     double corners[4][2] = {
         {pivot_x - reach_x, plate_y - reach_y},
@@ -226,12 +237,39 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
         max_y = ry;
     }
     frame->hits[frame->hit_count++] =
-        (sign_hit_t){(int)floor(min_x),
-                     (int)floor(min_y),
-                     (int)ceil(max_x) - (int)floor(min_x),
-                     (int)ceil(max_y) - (int)floor(min_y),
-                     slot->session.key,
-                     slot->session.pid};
+        (sign_hit_t){.x = (int)floor(min_x),
+                     .y = (int)floor(min_y),
+                     .w = (int)ceil(max_x) - (int)floor(min_x),
+                     .h = (int)ceil(max_y) - (int)floor(min_y),
+                     .key = slot->session.key,
+                     .pid = slot->session.pid,
+                     .back_row = slot->back_row,
+                     .precise = two_rows};
+    if (two_rows) {
+      sign_hit_t *hit = &frame->hits[frame->hit_count - 1];
+      hit->half_w = half_w * cat_scale;
+      hit->half_h = half_h * cat_scale;
+      hit->rotation = angle;
+      hit->kind = other ? SIGN_CUT : SIGN_RECT;
+      hit->radius = (codex ? 15 : 9) * plate * cat_scale;
+      spin_point(pivot_x, plate_y, pivot_x, pivot_y, angle, &hit->center_x,
+                 &hit->center_y);
+    }
+  }
+}
+
+static int front_priority(const agent_session_view_t *session) {
+  switch (session->state) {
+  case AGENT_STATE_WAITING:
+    return 0;
+  case AGENT_STATE_ERROR:
+    return 1;
+  case AGENT_STATE_DONE:
+    return session->unread ? 2 : 4;
+  case AGENT_STATE_WORKING:
+    return 3;
+  default:
+    return 4;
   }
 }
 
@@ -245,13 +283,56 @@ void layout_fan(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
   double cat_scale = in->cat_height / 110.0;
   double pivot_x = in->cat_x + 108 * cat_scale;
   double pivot_y = in->cat_y + 72 * cat_scale;
-  int cursor = 0;
+  bool front[SIGN_MAX_VISIBLE] = {0};
+  bool two_rows = shown > FAN_FRONT_COUNT;
+  if (two_rows) {
+    for (int n = 0; n < FAN_FRONT_COUNT; n++) {
+      size_t best = count;
+      for (size_t i = 0; i < count; i++) {
+        if (front[i] || !show_session(in, in->sessions[i].state))
+          continue;
+        if (best == count || front_priority(&in->sessions[i]) <
+                                 front_priority(&in->sessions[best]))
+          best = i;
+      }
+      front[best] = true;
+    }
+  }
+  double back_length = 0;
+  if (two_rows) {
+    double front_growth = 0;
+    for (size_t i = 0; i < count; i++) {
+      if (!front[i])
+        continue;
+      const agent_session_view_t *s = &in->sessions[i];
+      bool hovered = in->has_hover && in->hover_key == s->key;
+      bool visible = !(in->typing && in->typing_key == s->key);
+      front_growth =
+          fmax(front_growth, rod_length(s->state, visible, hovered) - 94);
+    }
+    back_length = FAN_BACK_LENGTH + front_growth +
+                  (shown == SIGN_MAX_VISIBLE ? FAN_BACK_WIDE : 0);
+  }
+  // Match the front row's adjacent centre distance on the larger radius.
+  double back_spread = two_rows
+                           ? 2 *
+                                 asin((94 - 13.5) / (94 + back_length - 13.5) *
+                                      sin(spread * 3.141592653589793 / 360)) *
+                                 180 / 3.141592653589793
+                           : 0;
+  int cursors[2] = {0};
   for (size_t i = 0; i < count; i++) {
     const agent_session_view_t *session = &in->sessions[i];
     bool visible = show_session(in, session->state);
+    bool back_row = two_rows && visible && !front[i];
+    int row = back_row ? 1 : 0;
+    int row_count = two_rows
+                        ? (back_row ? shown - FAN_FRONT_COUNT : FAN_FRONT_COUNT)
+                        : shown;
     double offset = 0;
     if (visible)
-      offset = cursor++ - (shown - 1) / 2.0;
+      offset = cursors[row]++ - (row_count - 1) / 2.0;
+    double angle = offset * (back_row ? back_spread : spread);
     bool existed = false;
     for (int s = 0; s < AGENT_SESSIONS_MAX; s++)
       if (model->slots[s].used && model->slots[s].session.key == session->key)
@@ -259,26 +340,37 @@ void layout_fan(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
     sign_slot_t *slot = claim_slot(model, session, 0);
     if (!slot)
       continue;
-    if (!existed)
-      slot->bottom.from = slot->bottom.target = offset * spread;
+    if (!existed) {
+      slot->bottom.from = slot->bottom.target = angle;
+      slot->row_size.from = slot->row_size.target =
+          back_row ? FAN_BACK_SCALE : 1;
+    }
+    // Retain a retracting row's depth until it disappears into the menu.
+    if (visible || !in->menu)
+      slot->back_row = back_row;
     slot->present = true;
     slot->session = *session;
-    aim(&slot->bottom, offset * spread, FAN_ANGLE_MS, &BEZIER_MOVE, in, frame);
+    aim(&slot->bottom, angle, FAN_ANGLE_MS, &BEZIER_MOVE, in, frame);
   }
   // Nameplates are wider than the gap between two signs, so only one is up
   // at a time: the hovered sign, otherwise whoever has waited longest. The
   // next one in line is named as soon as that one is answered.
   const sign_slot_t *named = NULL;
+  bool has_back = two_rows;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     const sign_slot_t *slot = &model->slots[i];
-    if (!slot->used || !slot->present ||
-        !show_session(in, slot->session.state) ||
+    if (!slot->used)
+      continue;
+    has_back |= slot->back_row;
+    if (!slot->present || !show_session(in, slot->session.state) ||
         (in->typing && in->typing_key == slot->session.key))
       continue;
     if (in->has_hover && in->hover_key == slot->session.key) {
       named = slot;
-      break;
+      continue;
     }
+    if (named && in->has_hover && named->session.key == in->hover_key)
+      continue;
     if (slot->session.state != AGENT_STATE_WAITING)
       continue;
     if (!named ||
@@ -287,7 +379,9 @@ void layout_fan(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
          slot->session.order < named->session.order))
       named = slot;
   }
-  for (int pass = 0; pass < 2; pass++) {
+  // Emit complete back groups first, including hovered/pressed/shaking ink.
+  // Text nameplates use SIGN_DRAW_OVER and remain above both rows and the cat.
+  for (int pass = has_back ? 0 : 2; pass < 4; pass++) {
     for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
       sign_slot_t *slot = &model->slots[i];
       if (!slot->used)
@@ -295,13 +389,15 @@ void layout_fan(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
       bool visible = slot->present && (show_session(in, slot->session.state));
       bool hovered =
           visible && in->has_hover && in->hover_key == slot->session.key;
-      if (hovered != (pass == 1))
+      if (slot->back_row != (pass < 2) || hovered != (pass % 2 == 1))
         continue;
       emit_fan(slot, in, frame, pivot_x, pivot_y, cat_scale, slot == named,
-               desk_clear);
+               desk_clear, two_rows, back_length);
     }
   }
-  frame->pad = cover(in->cat_x - 44 * cat_scale, in->cat_y - 84 * cat_scale,
-                     288 * cat_scale, 194 * cat_scale);
+  double extra = back_length;
+  frame->pad =
+      cover(in->cat_x - 44 * cat_scale, in->cat_y - (84 + extra) * cat_scale,
+            288 * cat_scale, (194 + extra) * cat_scale);
   frame->has_pad = true;
 }

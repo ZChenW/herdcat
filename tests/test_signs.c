@@ -456,9 +456,9 @@ static void test_failure_scale_and_clearance(void) {
   TEST_ASSERT(frame.pad.x == (int)floor(0 - 140));
   TEST_ASSERT(frame.pad.y == (int)floor(0 - 320));
   TEST_ASSERT(frame.pad.w == 1154 && frame.pad.h == 540);
-  TEST_ASSERT(sign_clearance(SIGN_STYLE_OFF, 110) == 0);
-  TEST_ASSERT(sign_clearance(SIGN_STYLE_POST, 0) == 0);
-  int clearance = sign_clearance(SIGN_STYLE_POST, 110);
+  TEST_ASSERT(sign_clearance(SIGN_STYLE_OFF, 110, 5) == 0);
+  TEST_ASSERT(sign_clearance(SIGN_STYLE_POST, 0, 5) == 0);
+  int clearance = sign_clearance(SIGN_STYLE_POST, 110, 5);
   TEST_ASSERT(clearance >= 160 && clearance <= 180);
   TEST_ASSERT(clearance - 174 >= 6);
   signs_t rising = {0};
@@ -572,10 +572,10 @@ static void test_fan(void) {
   TEST_ASSERT(frame.hit_count == 3);
   TEST_ASSERT(frame.pad.x == 56 && frame.pad.y == 86);
   TEST_ASSERT(frame.pad.w == 288 && frame.pad.h == 194);
-  int clearance = sign_clearance(SIGN_STYLE_FAN, 110);
+  int clearance = sign_clearance(SIGN_STYLE_FAN, 110, 5);
   TEST_ASSERT(clearance == 180);
   TEST_ASSERT(clearance - 174 >= 6);
-  TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 0) == 0);
+  TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 0, 5) == 0);
   signs_t rising = {0};
   agent_session_view_t many[5];
   for (int i = 0; i < 5; i++)
@@ -970,7 +970,7 @@ static void test_theme_row(void) {
   for (int height = 40; height <= 220; height += 30) {
     double scale = height / 110.0;
     in.cat_height = height;
-    in.cat_y = sign_clearance(in.style, height);
+    in.cat_y = sign_clearance(in.style, height, 5);
     signs_t moving = {0};
     in.now_ms = 0;
     signs_frame(&moving, &in, &frame);

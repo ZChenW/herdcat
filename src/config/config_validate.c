@@ -86,7 +86,7 @@ static void config_validate_timing(config_t *config) {
 static void config_validate_appearance(config_t *config) {
   config_clamp_int(&config->sign_desk_offset, -6, 24, "sign_desk_offset");
   config_clamp_int(&config->sign_title_length, 0, 64, "sign_title_length");
-  config_clamp_int(&config->sign_max, 1, 5, "sign_max");
+  config_clamp_int(&config->sign_max, 1, 10, "sign_max");
   config_clamp_int(&config->sign_font_size, 10, 20, "sign_font_size");
   // Validate opacity
   config_clamp_int(&config->overlay_opacity, 0, 255, "overlay_opacity");

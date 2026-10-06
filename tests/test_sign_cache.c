@@ -157,7 +157,7 @@ static void cache_limits(void) {
   sign_frame_t frame = {.bounds_w = W, .bounds_h = H, .shape_count = 1};
   sign_draw_cleanup();
   // Large bitmaps reach the byte budget before filling the slot array.
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 72; i++) {
     frame.shapes[0] = (sign_shape_t){.x = 10,
                                      .y = 10,
                                      .w = 500,
@@ -176,7 +176,7 @@ static void cache_limits(void) {
   TEST_ASSERT(sign_draw_cache_stats().misses == 1);
   // Tiny bitmaps instead reach the slot cap and evict the oldest entry.
   sign_draw_cleanup();
-  for (int i = 0; i < 220; i++) {
+  for (int i = 0; i < sign_draw_cache_stats().slot_limit + 28; i++) {
     frame.shapes[0] = (sign_shape_t){
         .x = 10, .y = 10, .w = 3, .h = 3, .fill = 0xff100000U + (uint32_t)i};
     draw(pixels, W, H, 120, &frame);

@@ -189,9 +189,9 @@ with tempfile.TemporaryDirectory(prefix="herdcat-integration-") as directory:
         # A transparent overlay is only as wide as the cat and its signs, at
         # each output's scale. The reloaded config has the default visible
         # bar, which still spans the output.
-        assert "TEST-1 300x145" in text and "TEST-1 357x174" in text
-        assert "TEST-2 712x304" in text
-        assert "TEST-1 960x186" in text and "TEST-2 2048x248" in text
+        assert "TEST-1 300x188" in text and "TEST-1 357x225" in text
+        assert "TEST-2 712x404" in text
+        assert "TEST-1 960x243" in text and "TEST-2 2048x324" in text
         assert "visible TEST-1 0" in text and "visible TEST-2 0" in text
         assert "visible TEST-1 1" in text
         assert text.count("overlay TEST-2") >= 2

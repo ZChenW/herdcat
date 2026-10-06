@@ -174,6 +174,7 @@ static void frame(struct wl_client *client, struct wl_resource *resource,
 }
 struct test_region {
   struct test_rect first, last;
+  unsigned count;
 };
 static void input_region(struct wl_client *client, struct wl_resource *resource,
                          struct wl_resource *region) {
@@ -182,6 +183,7 @@ static void input_region(struct wl_client *client, struct wl_resource *resource,
   struct test_region *rects = region ? wl_resource_get_user_data(region) : NULL;
   surface->input = rects ? rects->last : (struct test_rect){0};
   surface->cat_input = rects ? rects->first : (struct test_rect){0};
+  surface->input_count = rects ? rects->count : 0;
 }
 static void region_request(struct wl_client *client,
                            struct wl_resource *resource,
@@ -201,6 +203,7 @@ static void commit(struct wl_client *client, struct wl_resource *resource) {
     surface->configure_pending = false;
   }
   if (drag_mode && surface->monitor) {
+    printf("input-count %s %u\n", surface->monitor->name, surface->input_count);
     printf("input %s %d %d %d %d\n", surface->monitor->name, surface->input.x,
            surface->input.y, surface->input.width, surface->input.height);
     if (!strcmp(surface->ns, "herdcat-overlay") && surface->buffer) {
@@ -272,6 +275,7 @@ static void add_region(struct wl_client *client, struct wl_resource *resource,
   if (!rects->first.width)
     rects->first = (struct test_rect){x, y, width, height};
   rects->last = (struct test_rect){x, y, width, height};
+  rects->count++;
 }
 static void region_destroyed(struct wl_resource *resource) {
   free(wl_resource_get_user_data(resource));

@@ -12,7 +12,9 @@ BINARY = str(Path('build/herdcat').resolve())
 FIXTURE = str(Path('build/compositor/server').resolve())
 
 
-def run(style, theme, top):
+def run(style, theme, top, sign_max):
+    design = 180 if sign_max <= 5 else 273 if style == 'fan' else 345
+    clearance = (40 * design + 109) // 110
     with tempfile.TemporaryDirectory(prefix='herdcat-below-runtime-') as directory:
         root = Path(directory)
         env = runtime_env(XDG_RUNTIME_DIR=directory,
@@ -25,7 +27,8 @@ def run(style, theme, top):
             'overlay_height=50\ncat_y_offset=0\ncat_x_offset=0\n'
             'disable_fullscreen_hide=1\nhotplug_scan_interval=0\n'
             f'overlay_position={"top" if top else "bottom"}\n'
-            f'sign_style={style}\nsign_theme={theme}\nsign_animations=off\n')
+            f'sign_style={style}\nsign_theme={theme}\nsign_animations=off\n'
+            f'sign_max={sign_max}\n')
         log = root / 'server.log'
         with log.open('w') as server_file, (root / 'app.log').open('w') as app_file:
             server = subprocess.Popen([FIXTURE], env=env, stdin=subprocess.PIPE,
@@ -66,6 +69,7 @@ def run(style, theme, top):
                 origin = record[0] if top else 600 - record[1] - record[4]
                 assert 0 <= origin <= 600 - record[4], record
                 assert record[7:9] == (72, 40), record
+                assert record[4] == 50 + clearance, record
                 design_extent = 820 if style == 'post' else 652
                 width = (40 * design_extent + 109) // 110
                 # TEST-1 initially uses 150/120 scaling: align its surface
@@ -113,12 +117,12 @@ def run(style, theme, top):
                 record = settled()
                 assert abs(cat_output(record)) <= 1, record
                 assert position.read_text() == saved
-                # Stay below until clearance + 24 (66 + 24 = 90).
-                record = drag(89, 89)
+                # Stay below until the configured clearance + 24.
+                record = drag(clearance + 23, clearance + 23)
                 assert record[6] <= 3, record
-                record = drag(5, 94)
-                assert abs(record[6] - 74) <= 1, record
-                record = drag(-29, 65)
+                record = drag(5, clearance + 28)
+                assert abs(record[6] - (clearance + 8)) <= 1, record
+                record = drag(-29, clearance - 1)
                 assert record[6] <= 3, record
                 # A waiting sign's input region must extend beneath the cat.
                 subprocess.run([BINARY, '--state', 'waiting'], env=env,
@@ -139,7 +143,7 @@ def run(style, theme, top):
                 text = (root / 'app.log').read_text()
                 assert 'ERROR: AddressSanitizer' not in text
                 assert 'runtime error:' not in text
-                print(style, theme, 'top' if top else 'bottom', 'passed')
+                print(style, theme, 'top' if top else 'bottom', sign_max, 'passed')
             except Exception:
                 print(log.read_text()[-6000:])
                 print((root / 'app.log').read_text()[-3000:])
@@ -159,4 +163,5 @@ def run(style, theme, top):
 for style in ('fan', 'post'):
     for theme in ('light', 'dark'):
         for top in (False, True):
-            run(style, theme, top)
+            for sign_max in (5, 10):
+                run(style, theme, top, sign_max)

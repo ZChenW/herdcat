@@ -14,19 +14,25 @@
 // Peak of cubic-bezier(.34,1.4,.64,1) lifts the 5-sign cap to 162 design
 // pixels above the cat. Two more pixels cover the damage outset.
 // The four-row card starts 174px above the cat and keeps 6px of margin.
-#define POST_CLEARANCE 180
-#define FAN_CLEARANCE  180
-#define FAN_FADE_MS    250
-#define FAN_ANGLE_MS   500
-#define FAN_SCALE_MS   180
-#define FAN_POP_MS     500
-#define FAN_TAG_MS     220
-#define DESK_MOVE_MS   320
-#define DESK_FADE_MS   180
-#define DESK_TOP       67
-#define DESK_LIFT      8
-#define DESK_SLIDE     22
-#define DESK_CLEAR     22
+#define POST_CLEARANCE  180
+#define FAN_CLEARANCE   180
+#define FAN_FRONT_COUNT 5
+// One 30px plate plus a 10px gap; a full back fan needs extra outer-slot
+// clearance. Urgent/hovered front rod growth is added by layout_fan.
+#define FAN_BACK_LENGTH 40
+#define FAN_BACK_WIDE   16
+#define FAN_BACK_SCALE  .88
+#define FAN_FADE_MS     250
+#define FAN_ANGLE_MS    500
+#define FAN_SCALE_MS    180
+#define FAN_POP_MS      500
+#define FAN_TAG_MS      220
+#define DESK_MOVE_MS    320
+#define DESK_FADE_MS    180
+#define DESK_TOP        67
+#define DESK_LIFT       8
+#define DESK_SLIDE      22
+#define DESK_CLEAR      22
 
 typedef struct {
   double x1, y1, x2, y2;

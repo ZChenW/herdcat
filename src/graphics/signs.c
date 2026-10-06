@@ -264,16 +264,56 @@ sign_slot_t *claim_slot(signs_t *model, const agent_session_view_t *session,
   return free_slot;
 }
 
-int sign_clearance(sign_style_t style, int cat_height) {
+int sign_clearance(sign_style_t style, int cat_height, int sign_max) {
   int design = 0;
+  int extra_rows = sign_max > 5 ? (sign_max > 10 ? 5 : sign_max - 5) : 0;
+  // Include the existing movement curve's overshoot and damage outset.
   if (style == SIGN_STYLE_POST)
-    design = POST_CLEARANCE;
+    design = POST_CLEARANCE + 33 * extra_rows;
   else if (style == SIGN_STYLE_FAN)
-    design = FAN_CLEARANCE;
+    design = FAN_CLEARANCE + (extra_rows ? 93 : 0);
   if (design <= 0 || cat_height <= 0)
     return 0;
   int64_t value = ((int64_t)cat_height * design + 109) / 110;
   return value > INT_MAX ? INT_MAX : (int)value;
+}
+bool signs_hit(const sign_frame_t *frame, double x, double y, sign_hit_t *hit) {
+  bool found = false;
+  double best = 0;
+  for (int i = 0; i < frame->hit_count; i++) {
+    const sign_hit_t *candidate = &frame->hits[i];
+    if (x < candidate->x || y < candidate->y ||
+        x >= candidate->x + (double)candidate->w ||
+        y >= candidate->y + (double)candidate->h)
+      continue;
+    if (candidate->precise) {
+      double rad = candidate->rotation * 3.141592653589793 / 180;
+      double dx = x - candidate->center_x, dy = y - candidate->center_y;
+      double local_x = fabs(dx * cos(rad) + dy * sin(rad));
+      double local_y = fabs(dy * cos(rad) - dx * sin(rad));
+      if (local_x > candidate->half_w || local_y > candidate->half_h)
+        continue;
+      double corner_x = local_x - candidate->half_w + candidate->radius;
+      double corner_y = local_y - candidate->half_h + candidate->radius;
+      if (corner_x > 0 && corner_y > 0 &&
+          (candidate->kind == SIGN_CUT
+               ? corner_x + corner_y > candidate->radius
+               : corner_x * corner_x + corner_y * corner_y >
+                     candidate->radius * candidate->radius))
+        continue;
+    }
+    double dx = x - (candidate->x + candidate->w / 2.0);
+    double dy = y - (candidate->y + candidate->h / 2.0);
+    double distance = dx * dx + dy * dy;
+    bool same_row = !found || candidate->back_row == hit->back_row;
+    if (!found || (hit->back_row && !candidate->back_row) ||
+        (same_row && distance < best)) {
+      found = true;
+      best = distance;
+      *hit = *candidate;
+    }
+  }
+  return found;
 }
 void signs_focus_failed(signs_t *model, uint64_t key, int64_t now) {
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
@@ -453,8 +493,10 @@ static void build_frame(signs_t *model, const sign_input_t *in,
         layout_board(slot, in, frame, pole_x, cat_bottom, scale, desk_clear);
       }
     }
-    frame->pad = cover(in->cat_x - 70 * scale, in->cat_y - 160 * scale,
-                       (150 + 17 + POST_BOARD_MAX + 70) * scale, 270 * scale);
+    double extra = shown > 5 ? (shown - 5) * 30 : 0;
+    frame->pad =
+        cover(in->cat_x - 70 * scale, in->cat_y - (160 + extra) * scale,
+              (150 + 17 + POST_BOARD_MAX + 70) * scale, (270 + extra) * scale);
     frame->has_pad = true;
   }
   // The desk stays on the unshifted cat. The pivot above already moved.

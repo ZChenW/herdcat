@@ -139,7 +139,7 @@ enable_debug=0
 
 # Session signs (global settings; reload with -w or --reload).
 sign_style=fan           # fan | post | off (off uses whole-cat agent artwork)
-sign_max=5               # 1..5 displayed sessions
+sign_max=10              # 1..10 displayed sessions; fan uses two rows above 5
 sign_idle=hover          # hover | always | never
 sign_font=               # Fontconfig family; empty selects system sans-serif
 sign_font_size=13        # 10..20; metadata and desk text scale proportionally

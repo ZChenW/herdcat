@@ -149,7 +149,7 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
   } ranges[] = {
       {"sign_desk_offset",        -6, 24            },
       {"sign_title_length",       0,  64            },
-      {"sign_max",                1,  5             },
+      {"sign_max",                1,  10            },
       {"sign_font_size",          10, 20            },
       {"cat_height",              10, 200           },
       {"overlay_height",          20, 300           },

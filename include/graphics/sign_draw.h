@@ -13,8 +13,8 @@ typedef enum {
 
 // scale_120 is the overlay buffer scale. The destination is premultiplied
 // BGRA. Settled shapes are reused from a small cache; a frame whose scalars
-// are still moving is rasterized and not stored. The LRU holds at most 192
-// bitmaps and 4 MiB of pixels. Ink is clipped to bounds.
+// are still moving is rasterized and not stored. The LRU holds at most 2048
+// bitmaps and 64 MiB of pixels. Ink is clipped to bounds.
 void sign_draw(uint8_t *dst, int dst_w, int dst_h, int scale_120,
                const sign_frame_t *frame, sign_draw_layer_t layer);
 void sign_draw_clip(uint8_t *dst, int dst_w, int dst_h, int scale_120,

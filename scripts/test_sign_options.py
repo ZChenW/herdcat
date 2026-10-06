@@ -69,7 +69,7 @@ try:
     wire('ask aaaaaaaaaaaaaaaa STAGE22_PRIVATE_TITLE')
     values = {
         'sign_style': ['fan', 'post', 'off'],
-        'sign_max': list(range(1, 6)),
+        'sign_max': list(range(1, 11)),
         'sign_idle': ['hover', 'always', 'never'],
         'sign_font': ['', 'Noto Sans', 'monospace', 'missing-herdcat-font'],
         'sign_font_size': list(range(10, 21)),
