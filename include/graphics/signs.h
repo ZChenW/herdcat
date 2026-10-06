@@ -178,6 +178,7 @@ typedef struct {
   // typing retracts that sign but keeps its slot. desk_snap skips the slide.
   // typing_until is the absolute time the desk should start leaving.
   bool typing, desk_snap;
+  int desk_offset;  // Logical pixels at the 110px design height.
   uint64_t typing_key;
   int64_t typing_until;
   char desk_name[128];

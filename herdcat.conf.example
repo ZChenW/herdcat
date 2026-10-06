@@ -151,6 +151,7 @@ sign_theme=light        # light | auto | dark (auto follows XDG portal)
 sign_language=auto       # auto (LC_MESSAGES, then LANG) | en | zh
 sign_done=sticky         # sticky (unread stays up) | timeout
 sign_typing_desk=1        # 0 disables the focused-session typing desk
+sign_desk_offset=0        # -6..24 logical pixels; positive moves away from cat
 
 # ─── What a sign is called ─────────────────────────────────────────────────
 # A session has two names: its project (the directory) and its title (what

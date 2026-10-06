@@ -113,6 +113,16 @@ are supported and devices are deduplicated by identity. No permission changes
 are made automatically. Keycodes are never transmitted or logged, including
 with `enable_debug=1`.
 
+## Typing desk distance
+
+`sign_desk_offset=0` adjusts the typing desk distance in integer logical pixels
+at the 110-pixel cat height, scaled with the cat. The range is -6..24; positive
+values move it farther away (down for above signs, up for below signs), negative
+values move it closer. The default 0 preserves all existing pixels. Below signs
+reserve additional desk clearance for positive offsets; surface and screen edges
+tighten the displacement. This global option supports config watching and
+`--reload`, and applies to every output. `sign_typing_desk=0` disables the desk.
+
 ## Session names and titles
 
 All four name settings are global and support config watching or `--reload`:

@@ -66,6 +66,8 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
     target = &config->sign_font_size;
   } else if (strcmp(key, "sign_typing_desk") == 0) {
     target = &config->sign_typing_desk;
+  } else if (strcmp(key, "sign_desk_offset") == 0) {
+    target = &config->sign_desk_offset;
   } else if (strcmp(key, "cat_x_offset") == 0) {
     target = &config->cat_x_offset;
   } else if (strcmp(key, "cat_y_offset") == 0) {
@@ -145,6 +147,7 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
     const char *key;
     int minimum, maximum;
   } ranges[] = {
+      {"sign_desk_offset",        -6, 24            },
       {"sign_title_length",       0,  64            },
       {"sign_max",                1,  5             },
       {"sign_font_size",          10, 20            },

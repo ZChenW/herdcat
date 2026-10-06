@@ -9,10 +9,16 @@ void overlay_signs_width(size_t index, int surface_width) {
   if (index < MAX_OUTPUTS)
     lanes[index].surface_width = surface_width;
 }
-static int desk_hang(int cat_height) {
+static int desk_hang(const config_t *config) {
+  int cat_height = config->cat_height;
   if (cat_height <= 0)
     return 0;
-  return (cat_height * 4 + 109) / 110;
+  // Either orientation can move toward the lower edge. Reserve both, since
+  // the surface height is shared when the signs switch orientation.
+  int offset = config->sign_desk_offset;
+  if (offset < 0)
+    offset = -offset;
+  return (int)(((int64_t)cat_height * (4 + offset) + 109) / 110);
 }
 
 int overlay_signs_height(const config_t *config) {
@@ -25,7 +31,7 @@ int overlay_signs_height(const config_t *config) {
   int spare = config->overlay_height > config->cat_height
                   ? config->overlay_height - config->cat_height
                   : 0;
-  int hang = desk_hang(config->cat_height);
+  int hang = desk_hang(config);
   if (hang > spare)
     extra += hang - spare;
   if (extra < 0 || config->overlay_height > INT_MAX - extra)
@@ -40,7 +46,7 @@ int overlay_signs_resting_y(const config_t *config, int surface_height) {
   }
   int cat = config->cat_height > 0 ? config->cat_height : 0;
   int limit = surface_height > cat ? surface_height - cat : 0;
-  int64_t y = (int64_t)surface_height - cat - desk_hang(cat);
+  int64_t y = (int64_t)surface_height - cat - desk_hang(config);
   // A positive offset would push the pole base below the surface.
   if (config->cat_y_offset < 0)
     y += config->cat_y_offset;

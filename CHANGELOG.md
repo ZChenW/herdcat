@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Typing desk distance** - `sign_desk_offset=-6..24` adjusts the distance
+  from the cat in scaled logical pixels, supports hot reload on every output,
+  and preserves existing pixels at the default 0.
+
 - **Child agents** - Agents launched by a tracked agent share its sign. Fan
   labels expand as `Claude + Codex` (including repeated types and bounded
   summaries); post boards show `Claude +2`. Children remain in `--sessions`

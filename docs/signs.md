@@ -348,6 +348,3 @@ it from the label; no active children restores `Claude`. Existing layout and
 width transitions handle the text change. The parent's state, colours, icon,
 name/title and elapsed minutes always remain its own.
 
-The five table rows rendered by the production rasterizer are shown in
-[light](design/children/light.png) and [dark](design/children/dark.png).
-Rebuild both sheets with `python3 scripts/render_stage24_designs.py`.

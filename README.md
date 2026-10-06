@@ -9,12 +9,14 @@ A desktop cat for Wayland that herds your coding agents: it types along with you
 
 ## Features
 
-- 🪧 One sign per agent session, with its name and state
+- 🪧 One sign per agent session, with its project, session title and state
 - 🚦 Working, waiting for approval, done, stopped on error and idle at a glance
 - 🖱️ Click a sign to jump to that session's terminal (niri; pane focus in kitty, tmux and WezTerm)
 - 🔔 Finished sessions stay up until you have looked at them
 - ⌨️ The sign of the terminal you type in comes down under the paws
-- 🎴 Two styles, fan and signpost; right-click to switch style, language and font
+- 🎴 Two styles, fan and signpost; right-click to switch style, language, font and theme
+- 🌗 Light and dark themes, or follow the desktop
+- 🧩 An agent started by another agent joins its sign: `Claude + Codex`
 - ✋ Drag the cat anywhere, the position is remembered
 - 🤖 Claude Code, Codex, Grok, Kimi Code, Cursor Agent, Copilot CLI, Pi and opencode
 - 🎯 Everything Bongo Cat already did: keyboard animation, hot-reload, multi-monitor, sleep mode
@@ -111,6 +113,29 @@ overlay_position=bottom
 ```
 
 Style, language and font can also be changed from the right-click card; those choices are saved outside the config file.
+
+### Signs
+
+Every option below goes in the same file and is applied when you save it.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `sign_style` | `fan` | `fan`, `post` (signpost) or `off` |
+| `sign_max` | `5` | How many sessions get a sign, 1 to 5 |
+| `sign_idle` | `hover` | Show idle sessions on `hover`, `always` or `never` |
+| `sign_theme` | `light` | `light`, `dark` or `auto` (follows the desktop) |
+| `sign_language` | `auto` | `auto`, `en` or `zh` |
+| `sign_font`, `sign_font_size` | system sans, `13` | Font family and size (10 to 20) |
+| `sign_animations` | `full` | `full`, `reduced` or `off` |
+| `sign_done` | `sticky` | Finished sessions stay up until seen, or `timeout` |
+| `sign_typing_desk` | `1` | The sign of the terminal you type in comes down under the paws |
+| `sign_desk_offset` | `0` | Move that desk away from the cat (up to 24) or closer (down to -6) |
+| `sign_name` | `project` | The bold name: `project` (directory) or `title` (session title) |
+| `sign_name_extra` | `inline` | Where the other name goes: `inline`, `end`, `above`, `below` or `off` |
+| `sign_title_length` | `16` | Longest title shown, 0 for all of it |
+| `sign_nameplate` | unset | Your own nameplate, for example `**{name}**  {agent} · {state}\n{title}` |
+
+A nameplate template can use `{name}`, `{project}`, `{title}`, `{agent}` and `{state}`, `**bold**`, and `\n` for a second line. [herdcat.conf.example](herdcat.conf.example) has every option with a comment.
 
 ### Documentation
 

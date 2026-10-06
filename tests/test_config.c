@@ -452,7 +452,7 @@ static void test_sign_config(void) {
                   config.sign_animations == SIGN_ANIM_FULL &&
                   config.sign_language == SIGN_LANGUAGE_AUTO &&
                   config.sign_done == SIGN_DONE_STICKY &&
-                  config.sign_typing_desk,
+                  config.sign_typing_desk && config.sign_desk_offset == 0,
               "all nine sign defaults");
   config_cleanup_full(&config);
   const char *valid[] = {
@@ -485,6 +485,28 @@ static void test_sign_config(void) {
       config_cleanup_full(&config);
     }
   }
+  for (int offset = -6; offset <= 24; offset++) {
+    char line[64];
+    snprintf(line, sizeof(line), "sign_desk_offset=%d\n", offset);
+    write_temp_config(path, line);
+    TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_SUCCESS,
+                   "desk offset parses across its full range");
+    TEST_ASSERT(config.sign_desk_offset == offset, "offset preserved");
+    config_t effective;
+    config_for_monitor(&config, "TEST-1", &effective);
+    TEST_ASSERT(effective.sign_desk_offset == offset, "offset on each output");
+    config_cleanup_full(&config);
+  }
+  const int outside[] = {-7, 25};
+  for (size_t i = 0; i < sizeof(outside) / sizeof(outside[0]); i++) {
+    char line[64];
+    snprintf(line, sizeof(line), "sign_desk_offset=%d\n", outside[i]);
+    write_temp_config(path, line);
+    TEST_ASSERT_EQ(load_config(&config, path), HERDCAT_SUCCESS,
+                   "tolerant offset validation clamps");
+    TEST_ASSERT(config.sign_desk_offset == (i ? 24 : -6), "offset clamped");
+    config_cleanup_full(&config);
+  }
   const char *invalid[] = {
       "sign_style=unknown",
       "sign_idle=unknown",
@@ -493,6 +515,12 @@ static void test_sign_config(void) {
       "sign_done=unknown",
       "sign_typing_desk=2",
       "sign_typing_desk=-1",
+      "sign_desk_offset=-7",
+      "sign_desk_offset=25",
+      "sign_desk_offset=1.5",
+      "sign_desk_offset=12x",
+      "sign_desk_offset=2147483648",
+      "[monitor:TEST-1]\nsign_desk_offset=12",
       "sign_max=0",
       "sign_max=6",
       "sign_max=1x",

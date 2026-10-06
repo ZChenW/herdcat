@@ -79,6 +79,7 @@ typedef struct {
   sign_language_t sign_language;
   sign_done_t sign_done;
   int sign_typing_desk;
+  int sign_desk_offset;
   sign_name_t sign_name;
   sign_name_extra_t sign_name_extra;
   int sign_title_length;

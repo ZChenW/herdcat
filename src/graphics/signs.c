@@ -295,8 +295,17 @@ static void emit_desk(sign_frame_t *frame, const sign_input_t *in, double scale,
   double x = in->cat_x + 12 * scale;
   double y = in->cat_y + lround(lift) +
              (DESK_TOP + (1 - progress) * DESK_SLIDE) * scale;
+  // The desk is emitted after reflection to keep its default ink unchanged.
+  // Reflect only the new displacement when the signs point down.
+  double offset = in->desk_offset * scale;
+  y += in->orientation == SIGN_BELOW ? -offset : offset;
   double w = 164 * scale;
   double h = 26 * scale;
+  if (in->desk_offset && in->surface_height > 0) {
+    // Tighten the displacement at a surface/output edge, including the
+    // damage outset used by include_bounds. Zero keeps the old pixels.
+    y = fmax(2, fmin(y, in->surface_height - h - 2));
+  }
   add_shape(frame, SIGN_RECT, x, y, w, h, 8 * scale, 2 * scale,
             with_alpha(palette->paper, fade), with_alpha(palette->ink, fade));
   if (frame->text_count >= SIGN_MAX_TEXTS)
@@ -466,8 +475,8 @@ void signs_frame(signs_t *model, const sign_input_t *in, sign_frame_t *frame) {
       in->cat_height <= 0 || in->menu)
     return;
   double scale = in->cat_height / 110.0;
-  double clear =
-      DESK_CLEAR * scale * clamp_unit(sample(&model->desk_fade, in->now_ms));
+  double clear = (DESK_CLEAR + (in->desk_offset > 0 ? in->desk_offset : 0)) *
+                 scale * clamp_unit(sample(&model->desk_fade, in->now_ms));
   // Measure the unextended frame first, including animated nameplates and
   // damage outsets. Extending a fan rod moves its ink by at most this amount;
   // post rows move by exactly it. Menu and desk geometry remain unchanged.

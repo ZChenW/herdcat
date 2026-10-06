@@ -136,9 +136,58 @@ static void desk_at_edge(void) {
                                 OVERLAY_SIGNS_REGION_LIMIT);
   TEST_ASSERT(n == 1);  // The typing slot retracts; the desk is never an input.
 }
+static double desk_y(size_t index) {
+  const sign_frame_t *frame = overlay_signs_frame(index);
+  TEST_ASSERT(frame && frame->text_count);
+  TEST_ASSERT(frame->texts[frame->text_count - 1].caret);
+  return frame->shapes[frame->shape_count - 1].y;
+}
+static void desk_offset_reload(void) {
+  overlay_signs_cleanup();
+  config.sign_animations = SIGN_ANIM_OFF;
+  config.sign_desk_offset = 0;
+  overlay_signs_place(0, SIGN_ABOVE, 180);
+  overlay_signs_place(1, SIGN_BELOW, 8);
+  overlay_signs_type_at(1, 4000);
+  step(0, 4000);
+  step(1, 4000);
+  double above = desk_y(0), below = desk_y(1);
+  int height = overlay_signs_height(&config);
+  int resting = overlay_signs_resting_y(&config, height);
+  config.sign_desk_offset = 12;
+  overlay_signs_use_config();
+  step(0, 4100);
+  step(1, 4100);
+  TEST_ASSERT(desk_y(0) == above + 12);
+  TEST_ASSERT(desk_y(1) == below - 12);
+  TEST_ASSERT(overlay_signs_height(&config) == height + 12);
+  TEST_ASSERT(overlay_signs_resting_y(&config, height + 12) == resting);
+  config.sign_desk_offset = -6;
+  overlay_signs_use_config();
+  step(0, 4200);
+  step(1, 4200);
+  TEST_ASSERT(desk_y(0) == above - 6);
+  TEST_ASSERT(desk_y(1) == below + 6);
+  TEST_ASSERT(overlay_signs_height(&config) == height + 6);
+  config.sign_desk_offset = 0;
+  overlay_signs_use_config();
+  step(0, 4300);
+  step(1, 4300);
+  TEST_ASSERT(desk_y(0) == above && desk_y(1) == below);
+  // Scaling and spare overlay height apply before rounding the hang margin.
+  config_t large = config;
+  large.cat_height = 200;
+  large.overlay_height = 200;
+  int base = overlay_signs_height(&large);
+  large.sign_desk_offset = 24;
+  TEST_ASSERT(overlay_signs_height(&large) == base + 43);
+  large.sign_style = SIGN_STYLE_OFF;
+  TEST_ASSERT(overlay_signs_height(&large) == 200);
+}
 int main(void) {
   reset_and_regions();
   desk_at_edge();
+  desk_offset_reload();
   overlay_signs_cleanup();
   return 0;
 }

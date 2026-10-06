@@ -246,6 +246,12 @@ Default 1. Typing in the focused agent terminal retracts its sign and puts a
 name board under the paws. It leaves after 2.5 seconds without input, on focus
 loss, submission or hiding. It receives no pointer input. No keystroke content
 is read or recorded for this feature.
+.TP
+.B sign_desk_offset=-6..24
+Default 0. Integer distance adjustment in logical pixels at the 110-pixel cat
+height, scaled with the cat. Positive moves the typing desk farther away
+(down for above signs, up for below signs); negative moves it closer.
+Screen edges tighten the displacement. Supports config watching and --reload.
 .PP
 Focus tracking and terminal jumps require niri. Without its event stream,
 sticky completions are unread until clicked or submitted again, and the desk

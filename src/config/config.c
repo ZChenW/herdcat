@@ -225,6 +225,7 @@ static void config_set_defaults(config_t *config) {
       .sign_language = SIGN_LANGUAGE_AUTO,
       .sign_done = SIGN_DONE_STICKY,
       .sign_typing_desk = 1,
+      .sign_desk_offset = 0,
       .sign_name = SIGN_NAME_PROJECT,
       .sign_name_extra = SIGN_EXTRA_INLINE,
       .sign_title_length = 16,
