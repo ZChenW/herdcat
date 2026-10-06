@@ -118,22 +118,22 @@ Style, language and font can also be changed from the right-click card; those ch
 
 Every option below goes in the same file and is applied when you save it.
 
-| Option | Default | What it does |
-| --- | --- | --- |
-| `sign_style` | `fan` | `fan`, `post` (signpost) or `off` |
-| `sign_max` | `10` | How many sessions get a sign, 1 to 10; fan uses two rows above 5 |
-| `sign_idle` | `hover` | Show idle sessions on `hover`, `always` or `never` |
-| `sign_theme` | `light` | `light`, `dark` or `auto` (follows the desktop) |
-| `sign_language` | `auto` | `auto`, `en` or `zh` |
-| `sign_font`, `sign_font_size` | system sans, `13` | Font family and size (10 to 20) |
-| `sign_animations` | `full` | `full`, `reduced` or `off` |
-| `sign_done` | `sticky` | Finished sessions stay up until seen, or `timeout` |
-| `sign_typing_desk` | `1` | The sign of the terminal you type in comes down under the paws |
-| `sign_desk_offset` | `0` | Move that desk away from the cat (up to 24) or closer (down to -6) |
-| `sign_name` | `project` | The bold name: `project` (directory) or `title` (session title) |
-| `sign_name_extra` | `inline` | Where the other name goes: `inline`, `end`, `above`, `below` or `off` |
-| `sign_title_length` | `16` | Longest title shown, 0 for all of it |
-| `sign_nameplate` | unset | Your own nameplate, for example `**{name}**  {agent} · {state}\n{title}` |
+| Option | Default | What it does | Example |
+| --- | --- | --- | --- |
+| `sign_style` | `fan` | `fan`, `post` (signpost) or `off` | <img src="docs/screenshots/options/style.png" width="400" alt="style"> |
+| `sign_max` | `10` | How many sessions get a sign, 1 to 10; the fan uses two rows above 5 | <img src="docs/screenshots/options/max.png" width="219" alt="max"> |
+| `sign_idle` | `hover` | Show idle sessions on `hover`, `always` or `never` | <img src="docs/screenshots/options/idle.png" width="211" alt="idle"> |
+| `sign_theme` | `light` | `light`, `dark` or `auto` (follows the desktop) | <img src="docs/screenshots/options/theme.png" width="400" alt="theme"> |
+| `sign_language` | `auto` | `auto`, `en` or `zh` | <img src="docs/screenshots/options/language.png" width="400" alt="language"> |
+| `sign_font`<br>`sign_font_size` | system sans<br>`13` | Font family and size (10 to 20) | <img src="docs/screenshots/options/font.png" width="400" alt="font"> |
+| `sign_animations` | `full` | `full`, `reduced` or `off` |  |
+| `sign_done` | `sticky` | Finished sessions stay up until seen, or `timeout` | <img src="docs/screenshots/options/done.png" width="147" alt="done"> |
+| `sign_typing_desk` | `1` | The sign of the terminal you type in comes down under the paws | <img src="docs/screenshots/options/desk.png" width="123" alt="desk"> |
+| `sign_desk_offset` | `0` | Move that desk away from the cat (up to 24) or closer (down to -6) | <img src="docs/screenshots/options/offset.png" width="246" alt="offset"> |
+| `sign_name` | `project` | The bold name: `project` (directory) or `title` (session title) | <img src="docs/screenshots/options/name.png" width="400" alt="name"> |
+| `sign_name_extra` | `inline` | Where the other name goes: `inline`, `end`, `above`, `below` or `off` | <img src="docs/screenshots/options/extra.png" width="217" alt="extra"> |
+| `sign_title_length` | `16` | Longest title shown, 0 for all of it | <img src="docs/screenshots/options/length.png" width="295" alt="length"> |
+| `sign_nameplate` | unset | Your own nameplate, here `{agent} · **{title}**\n{project} · {state}` | <img src="docs/screenshots/options/nameplate.png" width="136" alt="nameplate"> |
 
 A nameplate template can use `{name}`, `{project}`, `{title}`, `{agent}` and `{state}`, `**bold**`, and `\n` for a second line. [herdcat.conf.example](herdcat.conf.example) has every option with a comment.
 
