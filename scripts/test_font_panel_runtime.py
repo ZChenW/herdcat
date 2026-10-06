@@ -21,8 +21,8 @@ def wait_for(condition):
 
 def name_center(rect):
     # The font name sits between the arrows, at the same fraction of the card
-    # at every cat scale. 77/154 and 103/130 are the scale-1 center.
-    return (rect[0] + rect[2] * 77 // 154, rect[1] + rect[3] * 103 // 130)
+    # at every cat scale. 77/154 and 103/168 are the scale-1 center (four rows).
+    return (rect[0] + rect[2] * 77 // 154, rect[1] + rect[3] * 103 // 168)
 
 
 with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:

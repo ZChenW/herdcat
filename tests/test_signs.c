@@ -459,7 +459,7 @@ static void test_failure_scale_and_clearance(void) {
   TEST_ASSERT(sign_clearance(SIGN_STYLE_POST, 0) == 0);
   int clearance = sign_clearance(SIGN_STYLE_POST, 110);
   TEST_ASSERT(clearance >= 160 && clearance <= 180);
-  TEST_ASSERT(clearance - 136 >= 6);
+  TEST_ASSERT(clearance - 174 >= 6);
   signs_t rising = {0};
   agent_session_view_t many[5];
   for (int i = 0; i < 5; i++)
@@ -572,8 +572,8 @@ static void test_fan(void) {
   TEST_ASSERT(frame.pad.x == 56 && frame.pad.y == 86);
   TEST_ASSERT(frame.pad.w == 288 && frame.pad.h == 194);
   int clearance = sign_clearance(SIGN_STYLE_FAN, 110);
-  TEST_ASSERT(clearance == 142);
-  TEST_ASSERT(clearance - 136 >= 6);
+  TEST_ASSERT(clearance == 180);
+  TEST_ASSERT(clearance - 174 >= 6);
   TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 0) == 0);
   signs_t rising = {0};
   agent_session_view_t many[5];
@@ -749,34 +749,34 @@ static void test_menu(void) {
   in.now_ms = 1000;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(frame.menu_open && !frame.animating && frame.next_frame_ms == 0);
-  TEST_ASSERT(frame.menu_card.x == 122 && frame.menu_card.y == 34);
-  TEST_ASSERT(frame.menu_card.w == 154 && frame.menu_card.h == 130);
+  TEST_ASSERT(frame.menu_card.x == 122 && frame.menu_card.y == -4);
+  TEST_ASSERT(frame.menu_card.w == 154 && frame.menu_card.h == 168);
   TEST_ASSERT(frame.menu_card.y + frame.menu_card.h == 170 - 6);
-  const sign_shape_t *card = shape_box(&frame, 122, 34, 154, 130);
+  const sign_shape_t *card = shape_box(&frame, 122, -4, 154, 168);
   TEST_ASSERT(card && card->above && card->radius == 14 && card->stroke == 2);
   TEST_ASSERT((card->fill & 0xffffff) == 0xf8fafc);
   TEST_ASSERT((card->outline & 0xffffff) == 0x111827);
   const sign_shape_t *holder = shape_box(&frame, 197, 164, 5, 54);
   TEST_ASSERT(holder && !holder->above && holder->stroke == 1.5 &&
               holder->radius == 2.5);
-  TEST_ASSERT(frame.menu_style[0].x == 134 && frame.menu_style[0].y == 46);
+  TEST_ASSERT(frame.menu_style[0].x == 134 && frame.menu_style[0].y == 8);
   TEST_ASSERT(frame.menu_style[0].w == 65 && frame.menu_style[0].h == 30);
   TEST_ASSERT(frame.menu_style[1].x == 199 && frame.menu_style[1].w == 65);
   TEST_ASSERT(frame.menu_style_thumb.x == 138 &&
-              frame.menu_style_thumb.y == 50);
+              frame.menu_style_thumb.y == 12);
   TEST_ASSERT(frame.menu_style_thumb.w == 61 && frame.menu_style_thumb.h == 22);
-  const sign_shape_t *thumb = shape_box(&frame, 138, 50, 61, 22);
+  const sign_shape_t *thumb = shape_box(&frame, 138, 12, 61, 22);
   TEST_ASSERT(thumb && thumb->above && (thumb->fill & 0xffffff) == 0x111827);
-  TEST_ASSERT(frame.menu_lang_thumb.x == 138 && frame.menu_lang[0].y == 84);
-  TEST_ASSERT(frame.menu_lang_thumb.y == 88);
-  TEST_ASSERT(frame.menu_font.x == 134 && frame.menu_font.y == 122);
+  TEST_ASSERT(frame.menu_lang_thumb.x == 138 && frame.menu_lang[0].y == 46);
+  TEST_ASSERT(frame.menu_lang_thumb.y == 50);
+  TEST_ASSERT(frame.menu_font.x == 134 && frame.menu_font.y == 84);
   TEST_ASSERT(frame.menu_font.w == 130 && frame.menu_font.h == 30);
   TEST_ASSERT(frame.menu_font_prev.x == 134 && frame.menu_font_prev.w == 26);
   TEST_ASSERT(frame.menu_font_next.x == 238 && frame.menu_font_next.w == 26);
-  TEST_ASSERT(!shape_box(&frame, 160, 124, 78, 26));
+  TEST_ASSERT(!shape_box(&frame, 160, 86, 78, 26));
   in.menu_font_hot = true;
   signs_frame(&model, &in, &frame);
-  const sign_shape_t *hot = shape_box(&frame, 160, 124, 78, 26);
+  const sign_shape_t *hot = shape_box(&frame, 160, 86, 78, 26);
   TEST_ASSERT(hot && hot->stroke == 0 && (hot->fill & 0xffffff) == 0xe3e8f0);
   in.menu_font_hot = false;
   signs_frame(&model, &in, &frame);
@@ -800,7 +800,7 @@ static void test_menu(void) {
   for (int i = 0; i < frame.shape_count; i++) {
     const sign_shape_t *stroke = &frame.shapes[i];
     double mid_x = stroke->x + stroke->w / 2, mid_y = stroke->y + stroke->h / 2;
-    if (stroke->w > 3 || mid_y >= 137 || mid_y < 122 || stroke->rotation == 0)
+    if (stroke->w > 3 || mid_y >= 99 || mid_y < 84 || stroke->rotation == 0)
       continue;
     if (mid_x < 160 && stroke->rotation > 0)
       left_up++;
@@ -940,7 +940,55 @@ static void test_waiting_phases(void) {
     }
   }
 }
+static void test_theme_row(void) {
+  signs_t model = {0};
+  sign_frame_t frame;
+  sign_input_t in = base_input(NULL, 0);
+  in.style = SIGN_STYLE_FAN;
+  in.animations = SIGN_ANIM_OFF;
+  in.menu = true;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(frame.menu_theme[0].x == 134 && frame.menu_theme[0].y == 122);
+  TEST_ASSERT(frame.menu_theme[1].x == 199 && frame.menu_theme[1].y == 122);
+  TEST_ASSERT(frame.menu_theme[0].w == 65 && frame.menu_theme[0].h == 30);
+  TEST_ASSERT(frame.menu_theme_thumb.x == 138 &&
+              frame.menu_theme_thumb.y == 126);
+  TEST_ASSERT(frame.menu_theme_thumb.w == 61 && frame.menu_theme_thumb.h == 22);
+  in.animations = SIGN_ANIM_FULL;
+  in.theme = SIGN_THEME_DARK;
+  in.now_ms = 1000;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(frame.animating && frame.menu_theme_thumb.x == 138);
+  in.now_ms = 1140;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(frame.animating && frame.menu_theme_thumb.x > 138);
+  in.now_ms = 1280;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(!frame.animating && frame.menu_theme_thumb.x == 199);
+  // The taller card keeps its bottom, its border and its padding.
+  for (int height = 40; height <= 220; height += 30) {
+    double scale = height / 110.0;
+    in.cat_height = height;
+    in.cat_y = sign_clearance(in.style, height);
+    signs_t moving = {0};
+    in.now_ms = 0;
+    signs_frame(&moving, &in, &frame);
+    for (int t = 1; t <= 400; t++) {
+      in.now_ms = t;
+      signs_frame(&moving, &in, &frame);
+      if (frame.menu_open) {
+        TEST_ASSERT(frame.menu_card.y >= 0);
+        if (t >= 260) {
+          TEST_ASSERT(fabs(frame.menu_card.h - 168 * scale) <= 2);
+          TEST_ASSERT(fabs(frame.menu_card.y + frame.menu_card.h -
+                           (in.cat_y - 6 * scale)) <= 2);
+        }
+      }
+    }
+  }
+}
 int main(void) {
+  test_theme_row();
   test_waiting_phases();
   options();
   test_menu();

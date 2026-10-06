@@ -3,8 +3,6 @@
 
 #include "graphics/signs.h"
 
-#define INK          0xff111827U
-#define PAPER        0xfff8fafcU
 #define MOVE_MS      420
 #define WIDTH_MS     380
 #define FADE_MS      200
@@ -15,11 +13,11 @@
 #define SHAKE_MS     350
 // Peak of cubic-bezier(.34,1.4,.64,1) lifts the 5-sign cap to 162 design
 // pixels above the cat. Two more pixels cover the damage outset.
-// The fan card starts 136px above the cat and keeps 6px of margin.
-#define POST_CLEARANCE 164
+// The four-row card starts 174px above the cat and keeps 6px of margin.
+#define POST_CLEARANCE 180
 // Wide enough for a name next to "Agent · state".
 #define POST_BOARD    236
-#define FAN_CLEARANCE 142
+#define FAN_CLEARANCE 180
 #define FAN_FADE_MS   250
 #define FAN_ANGLE_MS  500
 #define FAN_SCALE_MS  180
@@ -46,7 +44,6 @@ extern const sign_bezier_t BEZIER_MOVE;
 extern const sign_bezier_t BEZIER_POP;
 extern const sign_bezier_t BEZIER_SLIDE;
 extern const sign_bezier_t BEZIER_WIDTH;
-extern const uint32_t FILLS[AGENT_STATE_COUNT];
 extern const sign_words_t WORDS[];
 
 double sample(const sign_scalar_t *scalar, int64_t now);
@@ -58,7 +55,7 @@ uint32_t with_alpha(uint32_t rgb, double alpha);
 void include_bounds(sign_frame_t *frame, double x, double y, double w,
                     double h);
 bool finished(agent_state_t state);
-uint32_t meta_color(agent_state_t state);
+uint32_t meta_color(agent_state_t state, const sign_input_t *in);
 const char *done_label(const sign_input_t *in, bool fan,
                        const agent_session_view_t *session);
 bool show_session(const sign_input_t *in, agent_state_t state);
@@ -67,7 +64,7 @@ void add_shape(sign_frame_t *frame, sign_shape_kind_t kind, double x, double y,
                double w, double h, double radius, double stroke, uint32_t fill,
                uint32_t outline);
 void add_unread(sign_frame_t *frame, agent_state_t state, double x, double y,
-                double w, double scale, double opacity);
+                double w, double scale, double opacity, const sign_input_t *in);
 void wake_at(sign_frame_t *frame, int64_t when);
 double nudge_phase(const sign_input_t *in, const sign_slot_t *slot,
                    sign_frame_t *frame);

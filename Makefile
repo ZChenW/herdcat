@@ -221,7 +221,7 @@ TEST_CFLAGS = $(BASE_CFLAGS) -g3 -O0 -DDEBUG -DTEST_BUILD
 TEST_LDFLAGS = -lm -lpthread
 
 OVERLAY_SIGNS_TEST_DEPS = src/platform/overlay_signs.c src/platform/overlay_menu.c
-SIGNS_TEST_DEPS = src/graphics/signs.c src/graphics/signs_fan.c src/graphics/signs_post.c src/graphics/signs_menu.c
+SIGNS_TEST_DEPS = src/graphics/sign_palette.c src/graphics/signs.c src/graphics/signs_fan.c src/graphics/signs_post.c src/graphics/signs_menu.c
 
 # Source files needed by test_config
 CONFIG_MODULE_SOURCES = src/config/config.c src/config/config_parse.c src/config/config_validate.c
@@ -263,13 +263,19 @@ $(BUILDDIR)/test_sign_cache: tests/test_sign_cache.c src/graphics/sign_draw.c $(
 $(BUILDDIR)/test_buffer_damage: tests/test_buffer_damage.c src/platform/shm_buffer.c src/graphics/sign_draw.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c src/graphics/animation.c src/graphics/embedded_assets.c src/core/agent_state.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS) -lwayland-client
 
-$(BUILDDIR)/test_font_panel: tests/test_font_panel.c src/graphics/font_panel.c src/graphics/sign_draw.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_font_panel: tests/test_font_panel.c src/graphics/font_panel.c src/graphics/sign_palette.c src/graphics/sign_draw.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
 
 $(BUILDDIR)/test_overlay_signs: tests/test_overlay_signs.c $(CONFIG_MODULE_SOURCES) $(OVERLAY_SIGNS_TEST_DEPS) $(SIGNS_TEST_DEPS) src/graphics/text.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
 
-TEST_BINARIES = $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
+$(BUILDDIR)/test_theme_pixels: tests/test_theme_pixels.c src/graphics/font_panel.c src/graphics/sign_draw.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+
+$(BUILDDIR)/test_sign_palette: tests/test_sign_palette.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+TEST_BINARIES = $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
 
 $(BUILDDIR)/test_drag: tests/test_drag.c src/platform/drag.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)

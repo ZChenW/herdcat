@@ -518,6 +518,7 @@ static void open_model(const config_t *config, int64_t now_ms) {
   catalog_lang = 0;
   load_faces(english);
   font_panel_reset(&panel);
+  font_panel_set_theme(&panel, config->sign_theme);
   font_panel_set_faces(&panel, catalog, catalog_count);
   font_panel_set_prepared(&panel, 0);
   font_panel_set_real_preview(&panel, false);
@@ -531,6 +532,10 @@ static void open_model(const config_t *config, int64_t now_ms) {
 static void retarget(const config_t *config) {
   if (!panel.open)
     return;
+  if (panel.theme != config->sign_theme) {
+    font_panel_set_theme(&panel, config->sign_theme);
+    need_draw = true;
+  }
   bool english = config_sign_english(config);
   if (panel.english != english) {
     load_faces(english);

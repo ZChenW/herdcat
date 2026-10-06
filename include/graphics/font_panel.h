@@ -45,6 +45,7 @@ typedef struct {
   bool english, open, dirty;
   double scale;
   sign_animations_t animations;
+  sign_theme_t theme;
   font_panel_filter_t filter;
   int first_row, hover, hot;
   int64_t now_ms, idle_at;
@@ -81,6 +82,7 @@ bool font_panel_open(font_panel_t *panel, bool english, double scale,
 void font_panel_close(font_panel_t *panel);
 bool font_panel_is_open(const font_panel_t *panel);
 void font_panel_set_selected(font_panel_t *panel, const char *selected);
+void font_panel_set_theme(font_panel_t *panel, sign_theme_t theme);
 void font_panel_set_language(font_panel_t *panel, bool english);
 void font_panel_activity(font_panel_t *panel, int64_t now_ms);
 // Local logical pixels. The origin is the panel's top left.

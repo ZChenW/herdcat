@@ -1,5 +1,6 @@
 #include "config/sign_options.h"
 #include "core/agent_adapters.h"
+#include "graphics/sign_palette.h"
 #include "graphics/signs.h"
 #include "signs_internal.h"
 
@@ -10,6 +11,7 @@
 void layout_board(sign_slot_t *slot, const sign_input_t *in,
                   sign_frame_t *frame, double pole_x, double cat_bottom,
                   double scale) {
+  const sign_palette_t *palette = sign_palette(in->theme);
   bool visible = slot->present && (show_session(in, slot->session.state)) &&
                  !(in->typing && in->typing_key == slot->session.key);
   // Waiting and error say what they are without being hovered.
@@ -42,7 +44,7 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
   for (int channel = 0; channel < 3; channel++) {
     double mixed = 0;
     for (int state = 0; state < AGENT_STATE_COUNT; state++)
-      mixed += ((FILLS[state] >> (channel * 8)) & 255) * states[state];
+      mixed += ((palette->fills[state] >> (channel * 8)) & 255) * states[state];
     fill |= (uint32_t)lround(sum ? mixed / sum : 0) << (channel * 8);
   }
   double offset = hover;
@@ -69,7 +71,7 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
   int board_at = frame->shape_count;
   add_shape(frame, other ? SIGN_CUT : SIGN_RECT, x, y, width * scale,
             26 * scale, radius * scale, 2 * scale, with_alpha(fill, opacity),
-            with_alpha(INK, opacity));
+            with_alpha(palette->ink, opacity));
   int first_icon = frame->shape_count;
   double icon_x = direction > 0 ? x + 17 * scale : x + (width - 17) * scale;
   for (int state = 0; state < AGENT_STATE_COUNT; state++)
@@ -84,12 +86,13 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
     frame->shapes[i].clip_h = 22 * scale;
   }
   if (slot->session.unread && finished(slot->session.state)) {
-    add_unread(frame, slot->session.state, x, y, width * scale, scale, opacity);
+    add_unread(frame, slot->session.state, x, y, width * scale, scale, opacity,
+               in);
   }
   snap_from(frame, board_at, nudging);
   if (width > 41 && frame->text_count < SIGN_MAX_TEXTS) {
     sign_text_t *text = &frame->texts[frame->text_count++];
-    uint32_t meta = meta_color(slot->session.state);
+    uint32_t meta = meta_color(slot->session.state, in);
     double ratio = font_ratio(in);
     double line_h = 13 * scale * ratio;
     *text = (sign_text_t){.x = x + (direction > 0 ? 33 : 8) * scale,
@@ -101,7 +104,7 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
                           .px = line_h,
                           .meta_px = 11.5 * scale * ratio,
                           .gap = 7 * scale,
-                          .color = with_alpha(INK, opacity),
+                          .color = with_alpha(palette->ink, opacity),
                           .meta_color = with_alpha(meta, opacity),
                           .reverse = direction < 0};
     snprintf(text->value, sizeof(text->value), "%s", slot->session.name);

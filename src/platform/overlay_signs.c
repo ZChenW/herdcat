@@ -170,6 +170,7 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
       .sessions = shown,
       .count = selected > 0 ? (size_t)selected : 0,
       .style = config->sign_style,
+      .theme = config->sign_theme,
       .animations = config->sign_animations,
       .idle = config->sign_idle,
       .font_size = config->sign_font_size,
@@ -320,6 +321,8 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
     local.sign_style = style_choice;
   if (language_override)
     local.sign_language = language_choice;
+  if (theme_override)
+    local.sign_theme = theme_choice;
   if ((invisible || local.sign_style == SIGN_STYLE_OFF) && menu_open &&
       index == menu_index)
     menu_close();
@@ -645,7 +648,7 @@ void overlay_signs_cleanup(void) {
   memset(close_at, 0, sizeof(close_at));
   tracking = holding = pressed = focus_armed = desk_on = false;
   menu_open = menu_right_down = menu_toggle = block_drag = false;
-  menu_activity = style_override = language_override = false;
+  menu_activity = style_override = language_override = theme_override = false;
   font_override = font_dirty = font_pending = fonts_ready = false;
   previewing = was_browsing = panel_entered = has_kept_card = false;
   preview_face[0] = '\0';

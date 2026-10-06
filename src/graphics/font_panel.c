@@ -1,18 +1,12 @@
 #include "graphics/font_panel.h"
 
 #include "graphics/sign_draw.h"
+#include "graphics/sign_palette.h"
 #include "graphics/text.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-
-#define INK   0xff111827U
-#define PAPER 0xfff8fafcU
-#define HOVER 0xffe3e8f0U
-#define COUNT 0xff4a5261U
-#define META  0xff71430bU
-#define PLATE 0xffffe4a3U
 
 // Design pixels at cat scale 1. INSET is the 2px border plus 10px padding.
 // Every box below is fixed; a face change only swaps glyphs inside it.
@@ -507,6 +501,12 @@ void font_panel_set_selected(font_panel_t *panel, const char *selected) {
   remember(panel, selected);
   panel->dirty = true;
 }
+void font_panel_set_theme(font_panel_t *panel, sign_theme_t theme) {
+  if (!panel || panel->theme == theme)
+    return;
+  panel->theme = theme;
+  panel->dirty = true;
+}
 void font_panel_set_language(font_panel_t *panel, bool english) {
   if (!panel || panel->english == english)
     return;
@@ -771,38 +771,43 @@ static double centered_base(const char *family, font_panel_box_t line,
 static void draw_shapes(const font_panel_t *panel, sign_frame_t *frame,
                         const font_panel_layout_t *layout, pop_t pop,
                         double fade) {
+  const sign_palette_t *palette = sign_palette(panel->theme);
   double scale = unit_scale(panel);
   add_rect(
       frame,
       pop_box(pop, (font_panel_box_t){0, 0, layout->width, layout->height}),
-      14 * scale * pop.s, 2 * scale * pop.s, with_alpha(PAPER, fade),
-      with_alpha(INK, fade));
+      14 * scale * pop.s, 2 * scale * pop.s, with_alpha(palette->paper, fade),
+      with_alpha(palette->ink, fade));
   add_rect(frame, pop_box(pop, layout->filter), 9 * scale * pop.s,
-           2 * scale * pop.s, with_alpha(PAPER, fade), with_alpha(INK, fade));
+           2 * scale * pop.s, with_alpha(palette->paper, fade),
+           with_alpha(palette->ink, fade));
   add_rect(frame, pop_box(pop, layout->thumb), 5 * scale * pop.s, 0,
-           with_alpha(INK, fade), 0);
+           with_alpha(palette->ink, fade), 0);
   int selected = font_panel_selected_index(panel);
   double mix = motion_at(&panel->mix, panel->now_ms);
   for (int i = 0; i < layout->cell_count; i++) {
     int index = layout->first_row * FONT_PANEL_COLS + i;
     font_panel_box_t box = pop_box(pop, layout->cells[i]);
     if (index == selected) {
-      add_rect(frame, box, 8 * scale * pop.s, 0, with_alpha(INK, fade), 0);
-    } else if (index == panel->hot && mix > 0) {
-      add_rect(frame, box, 8 * scale * pop.s, 0, with_alpha(HOVER, fade * mix),
+      add_rect(frame, box, 8 * scale * pop.s, 0, with_alpha(palette->ink, fade),
                0);
+    } else if (index == panel->hot && mix > 0) {
+      add_rect(frame, box, 8 * scale * pop.s, 0,
+               with_alpha(palette->hover, fade * mix), 0);
     }
   }
   add_rect(frame, pop_box(pop, layout->preview), 10 * scale * pop.s,
-           2 * scale * pop.s, with_alpha(PLATE, fade), with_alpha(INK, fade));
+           2 * scale * pop.s, with_alpha(palette->plate, fade),
+           with_alpha(palette->ink, fade));
   if (layout->bar.w > 0)
     add_rect(frame, pop_box(pop, layout->bar), 1.5 * scale * pop.s, 0,
-             with_alpha(INK, fade), 0);
+             with_alpha(palette->ink, fade), 0);
 }
 static void draw_filter_labels(const font_panel_t *panel, uint8_t *dst, int dw,
                                int dh, int scale_120,
                                const font_panel_layout_t *layout, pop_t pop,
                                double fade) {
+  const sign_palette_t *palette = sign_palette(panel->theme);
   double scale = unit_scale(panel);
   double pos = motion_at(&panel->thumb, panel->now_ms);
   const panel_words_t *words = &WORDS[lang_index(panel)];
@@ -815,7 +820,8 @@ static void draw_filter_labels(const font_panel_t *panel, uint8_t *dst, int dw,
     double amount = 1 - fabs(pos - i);
     if (amount < 0)
       amount = 0;
-    uint32_t color = with_alpha(mix_rgb(INK, PAPER, amount), fade);
+    uint32_t color =
+        with_alpha(mix_rgb(palette->ink, palette->paper, amount), fade);
     int width = measure_text(chrome(panel), labels[i], px, true);
     double x = origin + column * i + (column - width) / 2;
     font_panel_box_t line = {origin + column * i, layout->filter.y + 2 * scale,
@@ -830,6 +836,7 @@ static void draw_filter_labels(const font_panel_t *panel, uint8_t *dst, int dw,
 static void draw_cells(const font_panel_t *panel, uint8_t *dst, int dw, int dh,
                        int scale_120, const font_panel_layout_t *layout,
                        pop_t pop, double fade) {
+  const sign_palette_t *palette = sign_palette(panel->theme);
   double scale = unit_scale(panel);
   double px = 13 * scale;
   int selected = font_panel_selected_index(panel);
@@ -845,7 +852,8 @@ static void draw_cells(const font_panel_t *panel, uint8_t *dst, int dw, int dh,
     if (text.w <= 0)
       continue;
     double base = centered_base(family, text, px, true);
-    uint32_t color = with_alpha(index == selected ? PAPER : INK, fade);
+    uint32_t color =
+        with_alpha(index == selected ? palette->paper : palette->ink, fade);
     font_panel_box_t drawn = pop_box(pop, text);
     draw_line(dst, dw, dh, scale_120,
               pop_box(pop, (font_panel_box_t){text.x, 0, 0, 0}).x,
@@ -857,6 +865,7 @@ static void draw_preview(const font_panel_t *panel, uint8_t *dst, int dw,
                          int dh, int scale_120,
                          const font_panel_layout_t *layout, pop_t pop,
                          double fade) {
+  const sign_palette_t *palette = sign_palette(panel->theme);
   double scale = unit_scale(panel);
   const char *family = preview_family(panel);
   const char *meta = WORDS[lang_index(panel)].meta;
@@ -871,19 +880,21 @@ static void draw_preview(const font_panel_t *panel, uint8_t *dst, int dw,
   font_panel_box_t drawn = pop_box(pop, line);
   double x = pop_box(pop, (font_panel_box_t){line.x, 0, 0, 0}).x;
   double y = pop_y(pop, base);
-  uint32_t ink = with_alpha(INK, fade);
+  uint32_t ink = with_alpha(palette->ink, fade);
   draw_line(dst, dw, dh, scale_120, x, y, family, PREVIEW_NAME, name_px * pop.s,
             true, ink, 0, drawn);
   double meta_x = line.x + name_w + GAP * scale;
   draw_line(dst, dw, dh, scale_120,
             pop_box(pop, (font_panel_box_t){meta_x, 0, 0, 0}).x, y, family,
-            meta, 11.5 * scale * pop.s, false, with_alpha(META, fade), 0,
-            drawn);
+            meta, 11.5 * scale * pop.s, false, with_alpha(palette->meta, fade),
+            0, drawn);
 }
 void font_panel_draw(const font_panel_t *panel, uint8_t *dst, int dst_w,
                      int dst_h, int scale_120) {
   if (!panel || !panel->open || !dst || dst_w <= 0 || dst_h <= 0)
     return;
+
+  const sign_palette_t *palette = sign_palette(panel->theme);
   double fade = motion_at(&panel->fade, panel->now_ms);
   if (fade < 0)
     fade = 0;
@@ -918,7 +929,7 @@ void font_panel_draw(const font_panel_t *panel, uint8_t *dst, int dst_w,
   draw_line(dst, dst_w, dst_h, scale_120 > 0 ? scale_120 : 120,
             pop_box(pop, (font_panel_box_t){layout.count.x, 0, 0, 0}).x,
             pop_y(pop, count_base), chrome(panel), count, count_px * pop.s,
-            false, with_alpha(COUNT, fade), layout.count.w,
+            false, with_alpha(palette->count, fade), layout.count.w,
             pop_box(pop, layout.count));
   int buffer = scale_120 > 0 ? scale_120 : 120;
   draw_filter_labels(panel, dst, dst_w, dst_h, buffer, &layout, pop, fade);

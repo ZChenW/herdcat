@@ -69,6 +69,12 @@ static void test_place(void) {
   place_at(0, 0, 10, 10, 384, 200, 100, 100, 0, 0);
   place_at(0, 0, 154, 130, 384, 200, 548, 1200, 164, 0);
 }
+static void test_tall_card_place(void) {
+  // The fourth row grows upward: the panel still aligns with the same bottom.
+  place_at(100, 162, 154, 168, 384, 200, 2000, 1200, 264, 130);
+  place_at(646, 162, 154, 168, 384, 200, 800, 1200, 252, 130);
+  place_at(0, 6, 154, 168, 384, 391, 2000, 1200, 164, 0);
+}
 static void test_boxes(void) {
   near(font_panel_height(0, 1), 95);
   near(font_panel_height(1, 1), 121);
@@ -432,6 +438,7 @@ static void test_prepared(void) {
 int main(void) {
   test_prepared();
   test_place();
+  test_tall_card_place();
   test_boxes();
   test_filter();
   test_hover_and_close();

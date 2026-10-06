@@ -183,6 +183,12 @@ Full (default) includes loops; reduced keeps transitions only; off switches
 instantly. Reduced and off keep the desk caret lit. Visible working-duration
 labels still update once a minute.
 .TP
+.B sign_theme=light|dark
+Sign, nameplate, switch-card and font-panel colours. Default light.
+Reloads immediately and can be selected with the sun/moon switch.
+The cat artwork keeps its original colours. Automatic system-theme following
+is not supported; it would require a desktop portal and D-Bus dependency.
+.TP
 .B sign_language=auto|en|zh
 Default auto selects simplified Chinese for a zh locale, otherwise English.
 Uses nonempty LC_MESSAGES before LANG; an unset locale selects English.
@@ -207,8 +213,9 @@ shaping and combining marks are unsupported. Shared terminal processes and tmux
 cannot reliably identify a specific window or pane.
 
 .SS Switch card
-Right-click the cat or a sign to raise a card with three rows: style (fan or
-post), language, and font. The font row steps through the families that cover
+Right-click the cat or a sign to raise a card with four rows: style (fan or
+post), language, font, and theme (sun for light, moon for dark).
+Changing theme keeps the card open and recolours signs and the font panel. The font row steps through the families that cover
 the current language with its arrows or the scroll wheel. Clicking the family
 name opens a panel that lists every family in its own face, with a count, an
 All/Text/Mono filter and the four most recently chosen families first. While

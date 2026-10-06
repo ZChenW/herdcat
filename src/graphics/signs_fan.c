@@ -1,5 +1,6 @@
 #include "config/sign_options.h"
 #include "core/agent_adapters.h"
+#include "graphics/sign_palette.h"
 #include "graphics/signs.h"
 #include "signs_internal.h"
 
@@ -49,6 +50,7 @@ static void orbit_from(sign_frame_t *frame, int first, double deg, double ox,
 static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
                      sign_frame_t *frame, double pivot_x, double pivot_y,
                      double cat_scale, bool named) {
+  const sign_palette_t *palette = sign_palette(in->theme);
   bool visible = slot->present && (show_session(in, slot->session.state)) &&
                  !(in->typing && in->typing_key == slot->session.key);
   bool hovered = visible && in->has_hover && in->hover_key == slot->session.key;
@@ -89,7 +91,7 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
   for (int channel = 0; channel < 3; channel++) {
     double mixed = 0;
     for (int state = 0; state < AGENT_STATE_COUNT; state++)
-      mixed += ((FILLS[state] >> (channel * 8)) & 255) * states[state];
+      mixed += ((palette->fills[state] >> (channel * 8)) & 255) * states[state];
     fill |= (uint32_t)lround(sum ? mixed / sum : 0) << (channel * 8);
   }
   bool popping = finished(slot->session.state) &&
@@ -135,7 +137,8 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
   if (stick_h > 0.4)
     add_shape(frame, SIGN_RECT, pivot_x - 2.5 * cat_scale, pivot_y - stick_h,
               5 * cat_scale, stick_h, 2.5 * cat_scale, 1.5 * cat_scale,
-              with_alpha(PAPER, opacity), with_alpha(INK, opacity));
+              with_alpha(palette->paper, opacity),
+              with_alpha(palette->ink, opacity));
   double half_w = (codex ? 15 : 17) * plate;
   double half_h = (codex ? 15 : 13.5) * plate;
   double center_sy = len - (codex ? 13 : 13.5);
@@ -144,10 +147,10 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
   add_shape(frame, other ? SIGN_CUT : SIGN_RECT, left, top,
             half_w * 2 * cat_scale, half_h * 2 * cat_scale,
             (codex ? 15 : 9) * plate * cat_scale, 2 * plate * cat_scale,
-            with_alpha(fill, opacity), with_alpha(INK, opacity));
+            with_alpha(fill, opacity), with_alpha(palette->ink, opacity));
   if (slot->session.unread && finished(slot->session.state))
     add_unread(frame, slot->session.state, left, top, half_w * 2 * cat_scale,
-               plate * cat_scale, opacity);
+               plate * cat_scale, opacity, in);
   double icon_y = pivot_y - center_sy * cat_scale;
   for (int state = 0; state < AGENT_STATE_COUNT; state++)
     if (states[state] > .001)
@@ -164,20 +167,20 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
     sign_text_t *text = &frame->texts[frame->text_count++];
     char fallback[9];
     const char *who = agent_adapter_display(slot->session.agent, fallback);
-    *text =
-        (sign_text_t){.x = pin_x,
-                      .pixel_snap = nudging,
-                      .anchor_y = box_bottom,
-                      .gap = 8 * cat_scale,
-                      .px = 13 * cat_scale * font_ratio(in),
-                      .meta_px = 11.5 * cat_scale * font_ratio(in),
-                      .color = with_alpha(INK, opacity * appear),
-                      .meta_color = with_alpha(meta_color(slot->session.state),
-                                               opacity * appear),
-                      .above = true,
-                      .tag_scale = .96 + .04 * appear,
-                      .font_ratio = font_ratio(in),
-                      .back = with_alpha(fill, opacity * appear)};
+    *text = (sign_text_t){
+        .x = pin_x,
+        .pixel_snap = nudging,
+        .anchor_y = box_bottom,
+        .gap = 8 * cat_scale,
+        .px = 13 * cat_scale * font_ratio(in),
+        .meta_px = 11.5 * cat_scale * font_ratio(in),
+        .color = with_alpha(palette->ink, opacity * appear),
+        .meta_color =
+            with_alpha(meta_color(slot->session.state, in), opacity * appear),
+        .above = true,
+        .tag_scale = .96 + .04 * appear,
+        .font_ratio = font_ratio(in),
+        .back = with_alpha(fill, opacity * appear)};
     snprintf(text->value, sizeof(text->value), "%s", slot->session.name);
     if (slot->session.state == AGENT_STATE_WORKING) {
       int64_t elapsed = in->now_ms - slot->session.state_since_ms;

@@ -399,6 +399,37 @@ static void test_drag_config(void) {
   unlink(path);
 }
 
+static void test_sign_theme(void) {
+  config_t config = {0};
+  char path[] = "/tmp/herdcat-theme-XXXXXX";
+  int fd = mkstemp(path);
+  assert(fd >= 0);
+  close(fd);
+  write_temp_config(path, "sign_theme=dark\n");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_SUCCESS,
+                 "dark theme parses");
+  TEST_ASSERT(config.sign_theme == SIGN_THEME_DARK, "dark theme retained");
+  config_cleanup_full(&config);
+  write_temp_config(path, "sign_theme=light\n");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_SUCCESS,
+                 "light theme reload parses");
+  TEST_ASSERT(config.sign_theme == SIGN_THEME_LIGHT, "light theme retained");
+  config_cleanup_full(&config);
+  const char *invalid[] = {"sign_theme=auto", "sign_theme=unknown",
+                           "sign_theme=", "[monitor:TEST-1]\nsign_theme=dark"};
+  for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+    write_temp_config(path, invalid[i]);
+    TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_ERROR_CONFIG,
+                   "invalid or per-monitor theme rejected");
+    config_cleanup_full(&config);
+  }
+  write_temp_config(path, "sign_theme=unknown\n");
+  TEST_ASSERT_EQ(load_config(&config, path), HERDCAT_SUCCESS,
+                 "tolerant invalid theme uses default");
+  TEST_ASSERT(config.sign_theme == SIGN_THEME_LIGHT, "default is light");
+  config_cleanup_full(&config);
+  unlink(path);
+}
 static void test_sign_config(void) {
   char path[] = "/tmp/herdcat-sign-config-XXXXXX";
   int fd = mkstemp(path);
@@ -547,6 +578,7 @@ int main(void) {
   unlink(path);
   test_drag_config();
   test_sign_config();
+  test_sign_theme();
 
   printf("\nResults: %d passed, %d failed\n", tests_passed, tests_failed);
   return tests_failed > 0 ? 1 : 0;

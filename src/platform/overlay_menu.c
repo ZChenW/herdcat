@@ -17,16 +17,18 @@
 #define MENU_LEAVE_MS 800
 #define MENU_IDLE_MS  6000
 bool menu_open, menu_right_down, menu_toggle, block_drag, menu_activity;
-bool style_override, language_override;
+bool style_override, language_override, theme_override;
 size_t menu_index;
 int menu_segment_down, menu_choice;
 bool want_toggle;
 int64_t menu_leave_at, menu_idle_at, menu_tap_at;
 sign_style_t style_choice;
 sign_language_t language_choice;
+sign_theme_t theme_choice;
 unsigned menu_tap;
 void (*on_style)(sign_style_t);
 void (*on_language)(sign_language_t);
+void (*on_theme)(sign_theme_t);
 void (*on_paw)(unsigned);
 void (*on_font)(const char *, bool);
 bool font_override, font_dirty, font_pending, fonts_ready;
@@ -59,6 +61,8 @@ int segment_at(const sign_frame_t *frame, double x, double y) {
       return 1 + i;
     if (inside_rect(&frame->menu_lang[i], x, y))
       return 3 + i;
+    if (inside_rect(&frame->menu_theme[i], x, y))
+      return 8 + i;
   }
   if (inside_rect(&frame->menu_font_prev, x, y))
     return 5;
@@ -196,6 +200,17 @@ void apply_choice(const config_t *config, int64_t now_ms) {
     menu_idle_at = now_ms + MENU_IDLE_MS;
     if (on_language)
       on_language(SIGN_LANGUAGE_EN);
+    if (on_paw)
+      on_paw(2);
+  } else if ((choice == 8 || choice == 9) &&
+             (theme_override ? theme_choice : config->sign_theme) !=
+                 (choice == 8 ? SIGN_THEME_LIGHT : SIGN_THEME_DARK)) {
+    theme_choice = choice == 8 ? SIGN_THEME_LIGHT : SIGN_THEME_DARK;
+    theme_override = true;
+    menu_tap = 2;
+    menu_idle_at = now_ms + MENU_IDLE_MS;
+    if (on_theme)
+      on_theme(theme_choice);
     if (on_paw)
       on_paw(2);
   } else if (choice == 5 || choice == 6) {
@@ -340,11 +355,13 @@ bool overlay_signs_blocks_drag(void) {
 void overlay_signs_on_menu(void (*style)(sign_style_t),
                            void (*language)(sign_language_t),
                            void (*paw)(unsigned),
-                           void (*font)(const char *, bool)) {
+                           void (*font)(const char *, bool),
+                           void (*theme)(sign_theme_t)) {
   on_style = style;
   on_language = language;
   on_paw = paw;
   on_font = font;
+  on_theme = theme;
 }
 
 void overlay_signs_scroll(int32_t discrete) {
@@ -375,6 +392,7 @@ void overlay_signs_scroll(int32_t discrete) {
 void overlay_signs_use_config(void) {
   style_override = false;
   language_override = false;
+  theme_override = false;
   font_override = false;
   font_dirty = false;
   font_pending = false;

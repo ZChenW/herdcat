@@ -96,6 +96,7 @@ typedef struct {
   sign_rect_t menu_card;
   sign_rect_t menu_style[2];
   sign_rect_t menu_lang[2];
+  sign_rect_t menu_theme[2], menu_theme_thumb;
   sign_rect_t menu_style_thumb, menu_lang_thumb;
   // Font row, and the left and right arrow buttons inside it.
   sign_rect_t menu_font, menu_font_prev, menu_font_next;
@@ -119,6 +120,7 @@ typedef struct {
 typedef struct {
   sign_scalar_t open, fade, holder, holder_fade;
   sign_scalar_t style, language, style_color, language_color;
+  sign_scalar_t theme, theme_color;
   // font_in moves from 0 to 1 as the name settles. arrow is 0.8 while an
   // arrow is held and returns to 1. arrow_id is 1 for the left arrow.
   sign_scalar_t font_in, arrow;
@@ -136,6 +138,7 @@ typedef struct {
   const agent_session_view_t *sessions;
   size_t count;
   sign_style_t style;
+  sign_theme_t theme;
   sign_animations_t animations;
   sign_idle_t idle;
   bool english;

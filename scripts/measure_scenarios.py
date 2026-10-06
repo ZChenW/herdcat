@@ -123,7 +123,7 @@ def warm_font_panel(server, log, processes):
     time.sleep(.4)
     card = region()
     send(f'tap TEST-1 {card[0] + card[2] * 77 // 154} '
-         f'{card[1] + card[3] * 103 // 130} 272')
+         f'{card[1] + card[3] * 103 // 168} 272')
     wait_for(lambda: 'overlay TEST-1 herdcat-font-panel' in log.read_text(), processes)
     time.sleep(2)
     send(f'tap TEST-1 {x} {y} 273')

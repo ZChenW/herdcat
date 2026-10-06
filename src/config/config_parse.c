@@ -174,6 +174,8 @@ static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
       {"sign_style",      "fan",     SIGN_STYLE_FAN    },
       {"sign_style",      "post",    SIGN_STYLE_POST   },
       {"sign_style",      "off",     SIGN_STYLE_OFF    },
+      {"sign_theme",      "light",   SIGN_THEME_LIGHT  },
+      {"sign_theme",      "dark",    SIGN_THEME_DARK   },
       {"sign_idle",       "hover",   SIGN_IDLE_HOVER   },
       {"sign_idle",       "always",  SIGN_IDLE_ALWAYS  },
       {"sign_idle",       "never",   SIGN_IDLE_NEVER   },
@@ -191,6 +193,8 @@ static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
       continue;
     if (!strcmp(key, "sign_style"))
       config->sign_style = (sign_style_t)signs[i].number;
+    else if (!strcmp(key, "sign_theme"))
+      config->sign_theme = (sign_theme_t)signs[i].number;
     else if (!strcmp(key, "sign_idle"))
       config->sign_idle = (sign_idle_t)signs[i].number;
     else if (!strcmp(key, "sign_animations"))

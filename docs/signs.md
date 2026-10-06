@@ -55,7 +55,7 @@ not running, and it writes nothing to the terminal.
 ## Switch card
 
 Right-click the cat or a sign. The signs step down and the cat holds up a
-card with three rows. Nothing on it is labelled; each row shows its choices
+card with four rows. Nothing on it is labelled; each row shows its choices
 and an ink thumb marks the current one.
 
 - **Style**: fan or post. The card closes and the signs come back up in the
@@ -64,6 +64,8 @@ and an ink thumb marks the current one.
 - **Font**: the family name, drawn in that family, between two arrows. The
   arrows and the scroll wheel step through the families that cover the
   current language. The first entry is the system default.
+- **Theme**: sun (light) or moon (dark). Signs, nameplates, the card and
+  the font panel change together. The card stays open.
 
 A paw taps when a row changes. The card closes after 800 ms off the cat and
 card, on a second right click, or after 6 seconds idle. Clicks elsewhere on
@@ -95,7 +97,7 @@ waiting plates rise higher, sway and show their names automatically.
 
 ![Fan signs, synthetic renderer capture](screenshots/session-signs/fan.png)
 
-**Post** stacks boards on a paper-white outlined pole. Hover the cat to expand
+**Post** stacks boards on an outlined pole. Hover the cat to expand
 all selected names together. Idle signs appear on hover by default; signs close
 150 ms after leaving. Positions follow creation order, with active and recently
 updated sessions preferred when the display limit is exceeded.
@@ -132,9 +134,14 @@ This requires niri's event stream and uses activity only, never key contents.
 | `sign_font` | empty = system sans-serif; Fontconfig family, up to 127 bytes |
 | `sign_font_size` | `13`; range 10–20, metadata/desk text proportional |
 | `sign_animations` | `full`, `reduced` (transitions only), `off` (instant) |
+| `sign_theme` | `light` (default), `dark` |
 | `sign_language` | `auto`, `en`, `zh` |
 | `sign_done` | `sticky`, `timeout` |
 | `sign_typing_desk` | `1`, `0` |
+
+The cat artwork keeps its original colours in both themes. Theme selection
+is explicit: following the system theme is not supported yet; it would require
+a desktop portal and a new D-Bus dependency.
 
 All options reload through `-w` or `--reload`. `auto` uses nonempty `LC_MESSAGES`,
 then `LANG`: zh locales select simplified Chinese, others English. Use `zh` to

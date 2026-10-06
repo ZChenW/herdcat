@@ -22,6 +22,10 @@ typedef enum {
   SIGN_LANGUAGE_ZH
 } sign_language_t;
 typedef enum {
+  SIGN_THEME_LIGHT,
+  SIGN_THEME_DARK
+} sign_theme_t;
+typedef enum {
   SIGN_DONE_STICKY,
   SIGN_DONE_TIMEOUT
 } sign_done_t;

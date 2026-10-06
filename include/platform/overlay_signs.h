@@ -82,7 +82,8 @@ void overlay_signs_on_expand(void (*fn)(void));
 void overlay_signs_on_menu(void (*style)(sign_style_t style),
                            void (*language)(sign_language_t language),
                            void (*paw)(unsigned paw),
-                           void (*font)(const char *family, bool save));
+                           void (*font)(const char *family, bool save),
+                           void (*theme)(sign_theme_t theme));
 // One vertical detent. Ignored unless the pointer is over the font row.
 // A wheel over the open font panel scrolls that panel instead.
 void overlay_signs_scroll(int32_t discrete);

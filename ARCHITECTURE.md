@@ -230,8 +230,11 @@ presence of paw activity is used, never key contents. The confirmed desk top is
 
 ## Switch card, font panel and stored choices
 
-`graphics/signs.c` also lays out the switch card (style, language, font row)
+`graphics/signs.c` also lays out the switch card (style, language, font, theme rows)
 with the sign model's shapes, texts and hit rectangles.
+`graphics/sign_palette.c` supplies the shared light/dark palette to signs and
+the font panel. Theme travels with each frame input and panel model; bitmap
+keys already include colours, so switching needs no cache reset.
 `platform/overlay_menu.c` holds existing menu choices, preview restoration, save
 and close deadlines, font-panel anchors and switch-card button/scroll handling.
 `src/platform/overlay_signs_internal.h` privately shares the existing per-output

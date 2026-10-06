@@ -134,7 +134,7 @@ static int reload(void) {
   config_t old = config;
   config = next;
   if (prefs_resolve(&config.sign_style, &config.sign_language, config.sign_font,
-                    sizeof(config.sign_font)))
+                    sizeof(config.sign_font), &config.sign_theme))
     herdcat_log_warning("Menu preferences were not updated");
   overlay_signs_use_config();
   sign_policy();
@@ -562,6 +562,12 @@ static void menu_language(sign_language_t language) {
   config.sign_language = language;
   wayland_update_config(&config);
 }
+static void menu_theme(sign_theme_t theme) {
+  if (prefs_choose_theme(theme))
+    herdcat_log_warning("Menu theme was not saved");
+  config.sign_theme = theme;
+  wayland_update_config(&config);
+}
 static void menu_paw(unsigned paw) {
   animation_tap(paw, 220);
 }
@@ -580,7 +586,7 @@ static int run_application(bool watch, herdcat_error_t result) {
     goto cleanup;
   }
   if (prefs_resolve(&config.sign_style, &config.sign_language, config.sign_font,
-                    sizeof(config.sign_font)))
+                    sizeof(config.sign_font), &config.sign_theme))
     herdcat_log_warning("Menu preferences were ignored");
   if (instance_lock() < 0) {
     herdcat_log_error("Cannot lock instance: %s", strerror(errno));
@@ -597,7 +603,8 @@ static int run_application(bool watch, herdcat_error_t result) {
   session_store_load(monotonic_ms(), config.agent_done_timeout);
   focus_watch_init();
   overlay_signs_on_expand(discover_expanded);
-  overlay_signs_on_menu(menu_style, menu_language, menu_paw, menu_font);
+  overlay_signs_on_menu(menu_style, menu_language, menu_paw, menu_font,
+                        menu_theme);
   agent_watch_on_ready(extra_ready);
   if (watch && config_watcher_init(&watcher, config_path, changed) == 0) {
     config_watcher_start(&watcher);

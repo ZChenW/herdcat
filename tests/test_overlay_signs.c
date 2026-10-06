@@ -31,32 +31,32 @@ static void geometry(void) {
   config_t config = config_of(110, 50, 10);
   int height = overlay_signs_height(&config);
   TEST_ASSERT(config.sign_style == SIGN_STYLE_POST);
-  TEST_ASSERT(height == 218);
-  TEST_ASSERT(overlay_signs_cat_y(&config, height) == 104);
+  TEST_ASSERT(height == 234);
+  TEST_ASSERT(overlay_signs_cat_y(&config, height) == 120);
   config.cat_y_offset = -20;
-  TEST_ASSERT(overlay_signs_cat_y(&config, height) == 84);
+  TEST_ASSERT(overlay_signs_cat_y(&config, height) == 100);
   config.cat_y_offset = -1000;
   TEST_ASSERT(overlay_signs_cat_y(&config, height) == 0);
   config_t room = config_of(110, 120, 0);
   int tall = overlay_signs_height(&room);
-  TEST_ASSERT(tall == 284);
-  TEST_ASSERT(overlay_signs_cat_y(&room, tall) == 170);
+  TEST_ASSERT(tall == 300);
+  TEST_ASSERT(overlay_signs_cat_y(&room, tall) == 186);
   config_t tight = config_of(110, 110, 0);
   int grown = overlay_signs_height(&tight);
-  TEST_ASSERT(grown == 278);
-  TEST_ASSERT(overlay_signs_cat_y(&tight, grown) == 164);
+  TEST_ASSERT(grown == 294);
+  TEST_ASSERT(overlay_signs_cat_y(&tight, grown) == 180);
   config_t fan = config_of(110, 110, 0);
   fan.sign_style = SIGN_STYLE_FAN;
   int fan_height = overlay_signs_height(&fan);
-  TEST_ASSERT(fan_height == 256);
-  TEST_ASSERT(overlay_signs_cat_y(&fan, fan_height) == 142);
-  TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 110) == 142);
-  TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 110) - 136 >= 6);
-  TEST_ASSERT(sign_clearance(SIGN_STYLE_POST, 110) - 136 >= 6);
+  TEST_ASSERT(fan_height == 294);
+  TEST_ASSERT(overlay_signs_cat_y(&fan, fan_height) == 180);
+  TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 110) == 180);
+  TEST_ASSERT(sign_clearance(SIGN_STYLE_FAN, 110) - 174 >= 6);
+  TEST_ASSERT(sign_clearance(SIGN_STYLE_POST, 110) - 174 >= 6);
   config_t raised = config_of(110, 120, 0);
   raised.sign_style = SIGN_STYLE_FAN;
-  TEST_ASSERT(overlay_signs_height(&raised) == 262);
-  TEST_ASSERT(overlay_signs_cat_y(&raised, 262) == 148);
+  TEST_ASSERT(overlay_signs_height(&raised) == 300);
+  TEST_ASSERT(overlay_signs_cat_y(&raised, 300) == 186);
   int x = -4, y = -8;
   drag_clamp(&x, &y, 1000, 200, 800, fan_height);
   TEST_ASSERT(x == 0 && y == 0);
@@ -162,8 +162,8 @@ static void open_and_close(void) {
   config_t config = config_of(40, 50, 10);
   int height = overlay_signs_height(&config);
   int cat_y = overlay_signs_cat_y(&config, height);
-  TEST_ASSERT(height == 110);
-  TEST_ASSERT(cat_y == 68);
+  TEST_ASSERT(height == 116);
+  TEST_ASSERT(cat_y == 74);
   TEST_ASSERT(agent_sessions_apply(0x21, "claude", AGENT_EVENT_DONE, 11, 1000,
                                    0, NULL) == 0);
   TEST_ASSERT(agent_sessions_apply(0x22, "codex", AGENT_EVENT_WORKING, 22, 1000,
@@ -567,7 +567,7 @@ static void switch_card(void) {
   begin();
   menu_config = &config;
   menu_style_n = menu_language_n = menu_paw_n = 0;
-  overlay_signs_on_menu(take_style, take_language, take_paw, NULL);
+  overlay_signs_on_menu(take_style, take_language, take_paw, NULL, NULL);
   config = config_of(110, 120, 0);
   config.sign_style = SIGN_STYLE_FAN;
   config.sign_language = SIGN_LANGUAGE_EN;
@@ -643,7 +643,7 @@ static void switch_card(void) {
   TEST_ASSERT(!overlay_signs_frame(0)->menu_open);
 
   begin();
-  overlay_signs_on_menu(NULL, NULL, NULL, NULL);
+  overlay_signs_on_menu(NULL, NULL, NULL, NULL, NULL);
   config = config_of(110, 120, 0);
   config.sign_style = SIGN_STYLE_FAN;
   config.sign_language = SIGN_LANGUAGE_EN;
@@ -693,15 +693,15 @@ static void font_row(void) {
   config.sign_animations = SIGN_ANIM_OFF;
   live_n = save_n = 0;
   live_font[0] = saved_font[0] = '\0';
-  overlay_signs_on_menu(NULL, NULL, NULL, take_font);
+  overlay_signs_on_menu(NULL, NULL, NULL, take_font, NULL);
   int height = overlay_signs_height(&config);
   overlay_signs_step(0, &config, 100, 199, height, false, 1000);
   int cat_y = overlay_signs_cat_y(&config, height);
   right_click(120, cat_y + 20);
   overlay_signs_step(0, &config, 100, 199, height, false, 1000);
   const sign_frame_t *frame = overlay_signs_frame(0);
-  TEST_ASSERT(frame->menu_open && frame->menu_card.h == 130);
-  TEST_ASSERT(frame->menu_card.y == cat_y - 136);
+  TEST_ASSERT(frame->menu_open && frame->menu_card.h == 168);
+  TEST_ASSERT(frame->menu_card.y == cat_y - 174);
   TEST_ASSERT(frame->menu_font.w == 130 && frame->menu_font.h == 30);
   TEST_ASSERT(frame->menu_font_prev.w == 26 && frame->menu_font_next.w == 26);
   TEST_ASSERT(frame->menu_font_prev.x == frame->menu_font.x);
@@ -776,6 +776,8 @@ static bool stub_open, stub_armed, stub_covers, stub_toggled;
 static bool stub_has_choice;
 static char stub_choice[128], stub_selected[128];
 static const char *panel_hover;
+static font_panel_anchor_t panel_anchor;
+static sign_theme_t panel_theme;
 static int stub_close_n, stub_wheel_n;
 bool font_panel_surface_is_open(void) {
   return stub_open;
@@ -788,8 +790,8 @@ void font_panel_surface_sync(size_t index, const config_t *config,
                              font_panel_anchor_t card, int surface_h,
                              int64_t now_ms, int *timeout_ms, bool toggle) {
   (void)index;
-  (void)config;
-  (void)card;
+  panel_anchor = card;
+  panel_theme = config->sign_theme;
   (void)surface_h;
   (void)now_ms;
   (void)timeout_ms;
@@ -857,7 +859,7 @@ static void font_name_button(void) {
   config.sign_language = SIGN_LANGUAGE_EN;
   config.sign_animations = SIGN_ANIM_OFF;
   live_n = save_n = 0;
-  overlay_signs_on_menu(NULL, NULL, NULL, take_font);
+  overlay_signs_on_menu(NULL, NULL, NULL, take_font, NULL);
   int height = 0, cat_y = 0;
   open_card(&config, &height, &cat_y);
   const sign_frame_t *frame = overlay_signs_frame(0);
@@ -985,7 +987,7 @@ static void open_font_flow(config_t *config, int *height, char *original,
   snprintf(config->sign_font, sizeof(config->sign_font), "%s", original);
   TEST_ASSERT(text_set_family(original) == 0);
   flow_config = config;
-  overlay_signs_on_menu(NULL, NULL, NULL, flow_font);
+  overlay_signs_on_menu(NULL, NULL, NULL, flow_font, NULL);
   TEST_ASSERT(agent_sessions_apply(0x91, "claude", AGENT_EVENT_WAITING, 42, 0,
                                    0, NULL) == 0);
   *height = overlay_signs_height(config);
@@ -1157,6 +1159,65 @@ static void interleaved_outputs(void) {
   EXPECT_CONTRACT(raised->cat_lift == 8 && quiet->cat_lift == 0);
   begin();
 }
+static int theme_choices;
+static sign_theme_t last_theme;
+static void take_theme(sign_theme_t theme) {
+  theme_choices++;
+  last_theme = theme;
+}
+static void theme_switch_and_reload(void) {
+  begin();
+  config_t config = config_of(110, 120, 0);
+  config.sign_style = SIGN_STYLE_FAN;
+  config.sign_animations = SIGN_ANIM_OFF;
+  overlay_signs_on_menu(NULL, NULL, NULL, NULL, take_theme);
+  theme_choices = 0;
+  int height = overlay_signs_height(&config);
+  int cat_y = overlay_signs_cat_y(&config, height);
+  overlay_signs_step(0, &config, 100, cat_y, height, false, 1000);
+  right_click(120, cat_y + 20);
+  overlay_signs_step(0, &config, 100, cat_y, height, false, 1000);
+  const sign_frame_t *frame = overlay_signs_frame(0);
+  sign_rect_t light = frame->menu_theme[0], dark = frame->menu_theme[1];
+  TEST_ASSERT(frame->menu_card.y >= 6);
+  TEST_ASSERT(frame->menu_card.y + frame->menu_card.h == cat_y - 6);
+  click_rect(dark);
+  overlay_signs_step_t step =
+      overlay_signs_step(0, &config, 100, cat_y, height, false, 1100);
+  TEST_ASSERT(step.redraw && theme_choices == 1 &&
+              last_theme == SIGN_THEME_DARK);
+  frame = overlay_signs_frame(0);
+  TEST_ASSERT(frame->menu_open && frame->menu_theme_thumb.x == dark.x);
+  TEST_ASSERT(panel_theme == SIGN_THEME_DARK);
+  TEST_ASSERT(panel_anchor.y == frame->menu_card.y &&
+              panel_anchor.h == frame->menu_card.h);
+  click_rect(dark);
+  overlay_signs_step(0, &config, 100, cat_y, height, false, 1200);
+  TEST_ASSERT(theme_choices == 1);
+  click_rect(light);
+  overlay_signs_step(0, &config, 100, cat_y, height, false, 1300);
+  TEST_ASSERT(theme_choices == 2 && last_theme == SIGN_THEME_LIGHT);
+  click_rect(dark);
+  overlay_signs_step(0, &config, 100, cat_y, height, false, 1400);
+  TEST_ASSERT(theme_choices == 3);
+  // Reload discards the UI override and updates the card and panel together.
+  overlay_signs_use_config();
+  step = overlay_signs_step(0, &config, 100, cat_y, height, false, 1500);
+  TEST_ASSERT(step.redraw && panel_theme == SIGN_THEME_LIGHT);
+  TEST_ASSERT(overlay_signs_frame(0)->menu_theme_thumb.x == light.x + 4);
+  overlay_signs_step_t quiet =
+      overlay_signs_step(0, &config, 100, cat_y, height, false, 1600);
+  TEST_ASSERT(!quiet.redraw && !quiet.frame);
+  // Releasing on the other half never applies a choice.
+  overlay_signs_pointer(0, dark.x + 5, dark.y + 5);
+  TEST_ASSERT(overlay_signs_press(0));
+  overlay_signs_pointer(0, light.x + 5, light.y + 5);
+  overlay_signs_release(false, NULL, NULL, NULL);
+  overlay_signs_step(0, &config, 100, cat_y, height, false, 1700);
+  TEST_ASSERT(theme_choices == 3);
+  begin();
+  overlay_signs_on_menu(NULL, NULL, NULL, NULL, NULL);
+}
 int main(int argc, char **argv) {
   // Focused entry points preserve the same assertions used by make test.
   if (argc == 2) {
@@ -1173,6 +1234,7 @@ int main(int argc, char **argv) {
     return contract_failures ? EXIT_FAILURE : EXIT_SUCCESS;
   }
   TEST_ASSERT(argc == 1);
+  theme_switch_and_reload();
   geometry();
   quiet_pole();
   working_dots();

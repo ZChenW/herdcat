@@ -15,14 +15,16 @@
 #define PREFS_FILE_MAX 4096
 
 typedef struct {
-  bool style_set, language_set, font_set;
+  bool style_set, language_set, font_set, theme_set;
   sign_style_t style, style_config;
+  sign_theme_t theme, theme_config;
   sign_language_t language, language_config;
   char font[128], font_config[128];
 } prefs_t;
 
 static bool have_config;
 static sign_style_t seen_style;
+static sign_theme_t seen_theme;
 static sign_language_t seen_language;
 static char seen_font[128];
 
@@ -113,6 +115,22 @@ static const char *language_text(sign_language_t value) {
     return "auto";
   return NULL;
 }
+static const char *theme_text(sign_theme_t value) {
+  if (value == SIGN_THEME_LIGHT)
+    return "light";
+  if (value == SIGN_THEME_DARK)
+    return "dark";
+  return NULL;
+}
+static bool parse_theme(const char *text, sign_theme_t *value) {
+  if (!strcmp(text, "light"))
+    *value = SIGN_THEME_LIGHT;
+  else if (!strcmp(text, "dark"))
+    *value = SIGN_THEME_DARK;
+  else
+    return false;
+  return true;
+}
 static bool font_text(const char *text) {
   if (!text || strlen(text) >= 128)
     return false;
@@ -187,6 +205,10 @@ static int read_prefs(int dir, prefs_t *prefs) {
       ok = parse_language(choice, &next_prefs.language, true) &&
            parse_language(config, &next_prefs.language_config, false);
       next_prefs.language_set = ok;
+    } else if (ok && !strcmp(key, "sign_theme")) {
+      ok = parse_theme(choice, &next_prefs.theme) &&
+           parse_theme(config, &next_prefs.theme_config);
+      next_prefs.theme_set = ok;
     } else if (ok && !strcmp(key, "sign_font")) {
       ok = font_text(choice) && font_text(config);
       if (ok) {
@@ -226,6 +248,10 @@ static int write_prefs(int dir, const prefs_t *prefs) {
       dprintf(fd, "sign_language\t%s\t%s\n", language_text(prefs->language),
               language_text(prefs->language_config)) < 0)
     result = -1;
+  if (!result && prefs->theme_set &&
+      dprintf(fd, "sign_theme\t%s\t%s\n", theme_text(prefs->theme),
+              theme_text(prefs->theme_config)) < 0)
+    result = -1;
   if (!result && prefs->font_set &&
       dprintf(fd, "sign_font\t%s\t%s\n", prefs->font, prefs->font_config) < 0)
     result = -1;
@@ -240,11 +266,13 @@ static int write_prefs(int dir, const prefs_t *prefs) {
   return result;
 }
 int prefs_resolve(sign_style_t *style, sign_language_t *language, char *font,
-                  size_t font_size) {
-  if (!style || !language || !font || font_size < 2 ||
-      strlen(font) >= font_size || strlen(font) >= sizeof(seen_font))
+                  size_t font_size, sign_theme_t *theme) {
+  if (!style || !language || !theme || !theme_text(*theme) || !font ||
+      font_size < 2 || strlen(font) >= font_size ||
+      strlen(font) >= sizeof(seen_font))
     return -1;
   seen_style = *style;
+  seen_theme = *theme;
   seen_language = *language;
   snprintf(seen_font, sizeof(seen_font), "%s", font);
   have_config = true;
@@ -270,6 +298,12 @@ int prefs_resolve(sign_style_t *style, sign_language_t *language, char *font,
     prefs.language_set = false;
     stale = true;
   }
+  if (prefs.theme_set && prefs.theme_config == *theme)
+    *theme = prefs.theme;
+  else if (prefs.theme_set) {
+    prefs.theme_set = false;
+    stale = true;
+  }
   if (prefs.font_set && !strcmp(prefs.font_config, font))
     snprintf(font, font_size, "%s", prefs.font);
   else if (prefs.font_set) {
@@ -282,13 +316,16 @@ int prefs_resolve(sign_style_t *style, sign_language_t *language, char *font,
   close(dir);
   return wrote;
 }
-static int choose(bool style, int value) {
+static int choose(int kind, int value) {
   if (!have_config)
     return -1;
-  if (style) {
+  if (kind == 0) {
     if (value != SIGN_STYLE_FAN && value != SIGN_STYLE_POST)
       return -1;
-  } else if (value != SIGN_LANGUAGE_EN && value != SIGN_LANGUAGE_ZH) {
+  } else if ((kind == 1 && value != SIGN_LANGUAGE_EN &&
+              value != SIGN_LANGUAGE_ZH) ||
+             (kind == 2 && value != SIGN_THEME_LIGHT &&
+              value != SIGN_THEME_DARK)) {
     return -1;
   }
   int dir = state_dir(true);
@@ -302,10 +339,14 @@ static int choose(bool style, int value) {
   }
   if (loaded > 0)
     memset(&prefs, 0, sizeof(prefs));
-  if (style) {
+  if (kind == 0) {
     prefs.style_set = true;
     prefs.style = (sign_style_t)value;
     prefs.style_config = seen_style;
+  } else if (kind == 2) {
+    prefs.theme_set = true;
+    prefs.theme = (sign_theme_t)value;
+    prefs.theme_config = seen_theme;
   } else {
     prefs.language_set = true;
     prefs.language = (sign_language_t)value;
@@ -316,10 +357,13 @@ static int choose(bool style, int value) {
   return wrote;
 }
 int prefs_choose_style(sign_style_t chosen) {
-  return choose(true, (int)chosen);
+  return choose(0, (int)chosen);
 }
 int prefs_choose_language(sign_language_t chosen) {
-  return choose(false, (int)chosen);
+  return choose(1, (int)chosen);
+}
+int prefs_choose_theme(sign_theme_t chosen) {
+  return choose(2, (int)chosen);
 }
 int prefs_choose_font(const char *family) {
   if (!have_config)

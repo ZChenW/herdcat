@@ -1,5 +1,6 @@
 #include "config/sign_options.h"
 #include "core/agent_adapters.h"
+#include "graphics/sign_palette.h"
 #include "graphics/signs.h"
 #include "signs_internal.h"
 
@@ -73,6 +74,30 @@ static void glyph_post(sign_frame_t *frame, double ox, double oy, double scale,
   glyph_rect(frame, ox, oy, scale, 2.5, 9.5, 9, 5, 1.6, 0, color);
 }
 
+static void glyph_sun(sign_frame_t *frame, double ox, double oy, double scale,
+                      uint32_t color) {
+  add_shape(frame, SIGN_RECT, ox + 9 * scale, oy + 5 * scale, 8 * scale,
+            8 * scale, 4 * scale, 1.8 * scale, 0, color);
+  for (int i = 0; i < 8; i++) {
+    double angle = i * 3.141592653589793 / 4;
+    glyph_line(frame, ox, oy, scale, 13 + cos(angle) * 6.5,
+               9 + sin(angle) * 6.5, 13 + cos(angle) * 8, 9 + sin(angle) * 8,
+               color);
+  }
+}
+static void glyph_moon(sign_frame_t *frame, double ox, double oy, double scale,
+                       uint32_t color) {
+  // Rounded segments trace a crescent without painting over the moving thumb.
+  for (int i = 0; i < 12; i++) {
+    double t1 = i / 12.0, t2 = (i + 1) / 12.0;
+    double a1 = (-.5 - t1) * 3.141592653589793;
+    double a2 = (-.5 - t2) * 3.141592653589793;
+    glyph_line(frame, ox, oy, scale, 13 + 7 * cos(a1), 9 + 7 * sin(a1),
+               13 + 7 * cos(a2), 9 + 7 * sin(a2), color);
+    glyph_line(frame, ox, oy, scale, 13 - 8 * t1 * (1 - t1), 2 + 14 * t1,
+               13 - 8 * t2 * (1 - t2), 2 + 14 * t2, color);
+  }
+}
 static void place_card(sign_shape_t *shape, double ox, double oy, double appear,
                        double cat_scale) {
   double fitted = 0.88 + 0.12 * appear;
@@ -117,6 +142,7 @@ static void note_font(signs_t *model, const sign_input_t *in,
 
 void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
                double scale) {
+  const sign_palette_t *palette = sign_palette(in->theme);
   if (in->menu_tap == 1 || in->menu_tap == 2)
     frame->menu_paw = in->menu_tap;
   bool was_closed = model->menu.open.target == 0 &&
@@ -126,6 +152,8 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
     snap(&model->menu.language, in->menu_english ? 1 : 0);
     snap(&model->menu.style_color, in->menu_post ? 1 : 0);
     snap(&model->menu.language_color, in->menu_english ? 1 : 0);
+    snap(&model->menu.theme, in->theme == SIGN_THEME_DARK ? 1 : 0);
+    snap(&model->menu.theme_color, in->theme == SIGN_THEME_DARK ? 1 : 0);
     snap(&model->menu.font_in, 1);
     snap(&model->menu.arrow, 1);
     snprintf(model->menu.font_label, sizeof(model->menu.font_label), "%s",
@@ -154,38 +182,47 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
                            &BEZIER_EASE, in, frame);
   double lang_color = aim(&model->menu.language_color, in->menu_english ? 1 : 0,
                           180, &BEZIER_EASE, in, frame);
+  double theme_pos =
+      aim(&model->menu.theme, in->theme == SIGN_THEME_DARK ? 1 : 0, 280,
+          &BEZIER_MOVE, in, frame);
+  double theme_color =
+      aim(&model->menu.theme_color, in->theme == SIGN_THEME_DARK ? 1 : 0, 180,
+          &BEZIER_EASE, in, frame);
   double holder_h = 54 * scale * holder;
   if (holder_h > 0.4 && holder_fade > 0.01) {
     add_shape(frame, SIGN_RECT, in->cat_x + 97 * scale, in->cat_y - 6 * scale,
               5 * scale, holder_h, 2.5 * scale, 1.5 * scale,
-              with_alpha(PAPER, holder_fade), with_alpha(INK, holder_fade));
+              with_alpha(palette->paper, holder_fade),
+              with_alpha(palette->ink, holder_fade));
   }
   if (appear <= 0.001 && fade <= 0.01)
     return;
   double card_x = in->cat_x + 22 * scale;
-  double card_y = in->cat_y - 136 * scale;
+  double card_y = in->cat_y - 174 * scale;
   double card_w = 154 * scale;
-  double card_h = 130 * scale;
+  double card_h = 168 * scale;
   double origin_x = card_x + card_w / 2;
   double origin_y = card_y + card_h;
   int from = frame->shape_count;
   add_shape(frame, SIGN_RECT, card_x, card_y, card_w, card_h, 14 * scale,
-            2 * scale, with_alpha(PAPER, fade), with_alpha(INK, fade));
+            2 * scale, with_alpha(palette->paper, fade),
+            with_alpha(palette->ink, fade));
   double track_x = card_x + 12 * scale;
   double track_w = 130 * scale;
   double track_h = 30 * scale;
-  double rows[2] = {card_y + 12 * scale, card_y + 50 * scale};
+  double rows[3] = {card_y + 12 * scale, card_y + 50 * scale,
+                    card_y + 126 * scale};
   double font_y = card_y + 88 * scale;
-  double positions[2] = {style_pos, lang_pos};
-  double colors[2] = {style_color, lang_color};
-  for (int row = 0; row < 2; row++) {
+  double positions[3] = {style_pos, lang_pos, theme_pos};
+  double colors[3] = {style_color, lang_color, theme_color};
+  for (int row = 0; row < 3; row++) {
     add_shape(frame, SIGN_RECT, track_x, rows[row], track_w, track_h,
-              11 * scale, 2 * scale, with_alpha(PAPER, fade),
-              with_alpha(INK, fade));
+              11 * scale, 2 * scale, with_alpha(palette->paper, fade),
+              with_alpha(palette->ink, fade));
     double thumb_x = track_x + (4 + positions[row] * 61) * scale;
     double thumb_y = rows[row] + 4 * scale;
     add_shape(frame, SIGN_RECT, thumb_x, thumb_y, 61 * scale, 22 * scale,
-              7 * scale, 0, with_alpha(INK, fade), 0);
+              7 * scale, 0, with_alpha(palette->ink, fade), 0);
   }
   double pad_x = track_x + 2 * scale;
   double pad_w = 126 * scale;
@@ -193,19 +230,25 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
   double cell = pad_w / 2;
   double icon_w = 26 * scale;
   double icon_h = 18 * scale;
-  for (int row = 0; row < 2; row++) {
+  for (int row = 0; row < 3; row++) {
     double icon_y = rows[row] + 2 * scale + (pad_h - icon_h) / 2;
-    uint32_t left = with_alpha(mix_rgb(PAPER, INK, colors[row]), fade);
-    uint32_t right = with_alpha(mix_rgb(INK, PAPER, colors[row]), fade);
+    uint32_t left =
+        with_alpha(mix_rgb(palette->paper, palette->ink, colors[row]), fade);
+    uint32_t right =
+        with_alpha(mix_rgb(palette->ink, palette->paper, colors[row]), fade);
     double left_x = pad_x + (cell - icon_w) / 2;
     double right_x = pad_x + cell + (cell - icon_w) / 2;
     if (row == 0) {
       glyph_fan(frame, left_x, icon_y, scale, left);
       glyph_post(frame, right_x, icon_y, scale, right);
+    } else if (row == 2) {
+      glyph_sun(frame, left_x, icon_y, scale, left);
+      glyph_moon(frame, right_x, icon_y, scale, right);
     }
   }
   add_shape(frame, SIGN_RECT, track_x, font_y, track_w, track_h, 11 * scale,
-            2 * scale, with_alpha(PAPER, fade), with_alpha(INK, fade));
+            2 * scale, with_alpha(palette->paper, fade),
+            with_alpha(palette->ink, fade));
   note_font(model, in, font_label(in));
   double enter =
       clamp_unit(aim(&model->menu.font_in, 1, 200, &BEZIER_SLIDE, in, frame));
@@ -219,7 +262,7 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
   } else {
     arrow_scale = aim(&model->menu.arrow, 1, 180, &BEZIER_POP, in, frame);
   }
-  uint32_t ink = with_alpha(INK, fade);
+  uint32_t ink = with_alpha(palette->ink, fade);
   double side = 26 * scale;
   for (int end = 0; end < 2; end++) {
     bool pressed = model->menu.arrow_id == end + 1;
@@ -235,7 +278,7 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
   if (in->menu_font_hot)
     add_shape(frame, SIGN_RECT, track_x + side, font_y + 2 * scale,
               track_w - side * 2, track_h - 4 * scale, 7 * scale, 0,
-              with_alpha(0xffe3e8f0U, fade), 0);
+              with_alpha(palette->hover, fade), 0);
   for (int i = from; i < frame->shape_count; i++) {
     place_card(&frame->shapes[i], origin_x, origin_y, appear, scale);
     include_bounds(frame, frame->shapes[i].x, frame->shapes[i].y,
@@ -244,8 +287,10 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
   frame->menu_open = true;
   frame->menu_card = place_rect(card_x, card_y, card_w, card_h, origin_x,
                                 origin_y, appear, scale);
-  for (int row = 0; row < 2; row++) {
-    sign_rect_t *halves = row == 0 ? frame->menu_style : frame->menu_lang;
+  for (int row = 0; row < 3; row++) {
+    sign_rect_t *halves = row == 0   ? frame->menu_style
+                          : row == 1 ? frame->menu_lang
+                                     : frame->menu_theme;
     halves[0] = place_rect(track_x, rows[row], track_w / 2, track_h, origin_x,
                            origin_y, appear, scale);
     halves[1] = place_rect(track_x + track_w / 2, rows[row], track_w / 2,
@@ -256,8 +301,10 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
                    origin_x, origin_y, appear, scale);
     if (row == 0)
       frame->menu_style_thumb = thumb;
-    else
+    else if (row == 1)
       frame->menu_lang_thumb = thumb;
+    else
+      frame->menu_theme_thumb = thumb;
   }
   frame->menu_font = place_rect(track_x, font_y, track_w, track_h, origin_x,
                                 origin_y, appear, scale);
@@ -279,8 +326,9 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
     double top = origin_y + (y - origin_y) * fitted + drop;
     double width = (track_w / 2) * fitted;
     double height = track_h * fitted;
-    uint32_t color = half == 0 ? mix_rgb(PAPER, INK, lang_color)
-                               : mix_rgb(INK, PAPER, lang_color);
+    uint32_t color = half == 0
+                         ? mix_rgb(palette->paper, palette->ink, lang_color)
+                         : mix_rgb(palette->ink, palette->paper, lang_color);
     double line_h = 13 * scale * ratio * fitted;
     double border = 2 * scale * fitted;
     double content_h = height - border * 2;
@@ -315,7 +363,7 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
                         .clip_y = top,
                         .clip_h = height,
                         .px = line_h,
-                        .color = with_alpha(INK, fade * enter),
+                        .color = with_alpha(palette->ink, fade * enter),
                         .above = true,
                         .center = true,
                         .slide = shift * fitted};

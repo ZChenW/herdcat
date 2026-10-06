@@ -29,7 +29,9 @@ static void write_text(const char *text) {
 }
 static char font_buf[128];
 static void resolve_ok(sign_style_t *style, sign_language_t *language) {
-  TEST_ASSERT(prefs_resolve(style, language, font_buf, sizeof(font_buf)) == 0);
+  sign_theme_t theme = SIGN_THEME_LIGHT;
+  TEST_ASSERT(
+      prefs_resolve(style, language, font_buf, sizeof(font_buf), &theme) == 0);
 }
 static char *slurp(void) {
   char path[512];
@@ -154,6 +156,49 @@ static void font_spaces(void) {
   TEST_ASSERT(strstr(text, "sign_font\t\tSource Han Sans\n"));
   free(text);
 }
+static void theme_round_trip(void) {
+  use_root();
+  write_text("sign_style\tpost\tfan\nsign_font\tNoto Sans\t\n");
+  sign_style_t style = SIGN_STYLE_FAN;
+  sign_language_t language = SIGN_LANGUAGE_AUTO;
+  sign_theme_t theme = SIGN_THEME_LIGHT;
+  font_buf[0] = '\0';
+  TEST_ASSERT(prefs_resolve(&style, &language, font_buf, sizeof(font_buf),
+                            &theme) == 0);
+  TEST_ASSERT(theme == SIGN_THEME_LIGHT);
+  TEST_ASSERT(prefs_choose_theme(SIGN_THEME_DARK) == 0);
+  TEST_ASSERT(prefs_choose_theme((sign_theme_t)2) == -1);
+  char *text = slurp();
+  TEST_ASSERT(strstr(text, "sign_theme\tdark\tlight\n"));
+  TEST_ASSERT(strstr(text, "sign_style\tpost\tfan\n"));
+  TEST_ASSERT(strstr(text, "sign_font\tNoto Sans\t\n"));
+  free(text);
+  style = SIGN_STYLE_FAN;
+  font_buf[0] = '\0';
+  TEST_ASSERT(prefs_resolve(&style, &language, font_buf, sizeof(font_buf),
+                            &theme) == 0);
+  TEST_ASSERT(theme == SIGN_THEME_DARK);
+  TEST_ASSERT(prefs_choose_theme(SIGN_THEME_LIGHT) == 0);
+  theme = SIGN_THEME_LIGHT;
+  TEST_ASSERT(prefs_resolve(&style, &language, font_buf, sizeof(font_buf),
+                            &theme) == 0);
+  TEST_ASSERT(theme == SIGN_THEME_LIGHT);
+  // An explicit config edit invalidates the stored override permanently.
+  theme = SIGN_THEME_DARK;
+  TEST_ASSERT(prefs_resolve(&style, &language, font_buf, sizeof(font_buf),
+                            &theme) == 0);
+  TEST_ASSERT(theme == SIGN_THEME_DARK);
+  text = slurp();
+  TEST_ASSERT(!strstr(text, "sign_theme"));
+  free(text);
+  write_text("sign_theme\tbogus\tlight\n");
+  theme = SIGN_THEME_LIGHT;
+  TEST_ASSERT(prefs_resolve(&style, &language, font_buf, sizeof(font_buf),
+                            &theme) == 0);
+  TEST_ASSERT(theme == SIGN_THEME_LIGHT);
+  TEST_ASSERT(prefs_choose_theme(SIGN_THEME_DARK) == -1);
+  write_text("");
+}
 static void home_fallback(void) {
   TEST_ASSERT(unsetenv("XDG_STATE_HOME") == 0);
   TEST_ASSERT(setenv("HOME", root, 1) == 0);
@@ -180,6 +225,7 @@ int main(void) {
   corrupt_ignored();
   old_format();
   font_spaces();
+  theme_round_trip();
   home_fallback();
   if (saved_home)
     setenv("HOME", saved_home, 1);

@@ -2,6 +2,7 @@
 
 #include "config/sign_options.h"
 #include "core/agent_adapters.h"
+#include "graphics/sign_palette.h"
 #include "signs_internal.h"
 
 #include <math.h>
@@ -9,10 +10,6 @@
 #include <string.h>
 
 // Indexed by agent_state_t. Error is darker than waiting, not only redder.
-const uint32_t FILLS[AGENT_STATE_COUNT] = {0xfff8fafc, 0xffd9ebff, 0xffffe4a3,
-                                           0xffc7f1d6, 0xffffbcae};
-static const uint32_t ICONS[AGENT_STATE_COUNT] = {
-    0xff8b93a1, 0xff24558f, 0xff71430b, 0xff22643d, 0xff8a2415};
 
 const sign_bezier_t BEZIER_MOVE = {.34, 1.4, .64, 1};
 const sign_bezier_t BEZIER_WIDTH = {.34, 1.3, .64, 1};
@@ -128,9 +125,10 @@ bool finished(agent_state_t state) {
   return state == AGENT_STATE_DONE || state == AGENT_STATE_ERROR;
 }
 // Meta text takes the icon colour on the two states that ask for attention.
-uint32_t meta_color(agent_state_t state) {
+uint32_t meta_color(agent_state_t state, const sign_input_t *in) {
+  const sign_palette_t *palette = sign_palette(in->theme);
   bool urgent = state == AGENT_STATE_WAITING || state == AGENT_STATE_ERROR;
-  return urgent ? ICONS[state] & 0xffffffU : 0x4a5261;
+  return urgent ? palette->icons[state] & 0xffffffU : palette->secondary;
 }
 const char *done_label(const sign_input_t *in, bool fan,
                        const agent_session_view_t *session) {
@@ -169,14 +167,16 @@ void add_shape(sign_frame_t *frame, sign_shape_kind_t kind, double x, double y,
   include_bounds(frame, x, y, w, h);
 }
 void add_unread(sign_frame_t *frame, agent_state_t state, double x, double y,
-                double w, double scale, double opacity) {
+                double w, double scale, double opacity,
+                const sign_input_t *in) {
+  const sign_palette_t *palette = sign_palette(in->theme);
   if (scale <= 0) {
     return;
   }
   double dot = 9 * scale;
   add_shape(frame, SIGN_RECT, x + w - 4 * scale, y - 5 * scale, dot, dot,
-            dot / 2, 2 * scale, with_alpha(ICONS[state], opacity),
-            with_alpha(INK, opacity));
+            dot / 2, 2 * scale, with_alpha(palette->icons[state], opacity),
+            with_alpha(palette->ink, opacity));
 }
 void wake_at(sign_frame_t *frame, int64_t when) {
   frame->animating = true;
@@ -207,7 +207,8 @@ sign_rect_t cover(double x, double y, double w, double h) {
 }
 void add_icon(sign_frame_t *frame, agent_state_t state, double cx, double cy,
               double scale, double opacity, const sign_input_t *in) {
-  uint32_t color = with_alpha(ICONS[state], opacity);
+  const sign_palette_t *palette = sign_palette(in->theme);
+  uint32_t color = with_alpha(palette->icons[state], opacity);
   if (state == AGENT_STATE_WORKING) {
     int64_t now = 0;
     if (in->animations == SIGN_ANIM_FULL) {
@@ -277,6 +278,7 @@ void signs_focus_failed(signs_t *model, uint64_t key, int64_t now) {
 }
 static void emit_desk(sign_frame_t *frame, const sign_input_t *in, double scale,
                       double lift, double fade) {
+  const sign_palette_t *palette = sign_palette(in->theme);
   if (fade <= 0.01 || scale <= 0)
     return;
   double span = DESK_LIFT * scale;
@@ -292,7 +294,7 @@ static void emit_desk(sign_frame_t *frame, const sign_input_t *in, double scale,
   double w = 164 * scale;
   double h = 26 * scale;
   add_shape(frame, SIGN_RECT, x, y, w, h, 8 * scale, 2 * scale,
-            with_alpha(PAPER, fade), with_alpha(INK, fade));
+            with_alpha(palette->paper, fade), with_alpha(palette->ink, fade));
   if (frame->text_count >= SIGN_MAX_TEXTS)
     return;
   sign_text_t *text = &frame->texts[frame->text_count++];
@@ -306,13 +308,13 @@ static void emit_desk(sign_frame_t *frame, const sign_input_t *in, double scale,
                         .clip_h = 22 * scale,
                         .px = 12 * scale * ratio,
                         .gap = 6 * scale,
-                        .color = with_alpha(INK, fade),
+                        .color = with_alpha(palette->ink, fade),
                         .caret = true};
   int64_t phase = in->now_ms % 1000;
   if (phase < 0)
     phase += 1000;
   bool blink = in->animations != SIGN_ANIM_FULL || phase < 500;
-  text->meta_color = with_alpha(INK, blink ? fade : 0);
+  text->meta_color = with_alpha(palette->ink, blink ? fade : 0);
   snprintf(text->value, sizeof(text->value), "%s", in->desk_name);
 }
 
@@ -342,6 +344,8 @@ void signs_frame(signs_t *model, const sign_input_t *in, sign_frame_t *frame) {
     model->initialized = true;
     model->pole.from = model->pole.target = 50;
   }
+
+  const sign_palette_t *palette = sign_palette(in->theme);
   double scale = in->cat_height / 110.0;
   int move_ms = in->desk_snap ? 0 : DESK_MOVE_MS;
   int fade_ms = in->desk_snap ? 0 : DESK_FADE_MS;
@@ -389,10 +393,11 @@ void signs_frame(signs_t *model, const sign_input_t *in, sign_frame_t *frame) {
     // Outer width 6, centered on the same axis. The cap sits 6px above the
     // pole top: its padding edge is 2px in, and CSS top is -8.
     add_shape(frame, SIGN_RECT, pole_x - 3 * scale, cat_bottom - pole,
-              6 * scale, pole, 3 * scale, 2 * scale, PAPER, INK);
+              6 * scale, pole, 3 * scale, 2 * scale, palette->paper,
+              palette->ink);
     add_shape(frame, SIGN_RECT, pole_x - 5 * scale,
               cat_bottom - pole - 6 * scale, 10 * scale, 10 * scale, 5 * scale,
-              2 * scale, PAPER, INK);
+              2 * scale, palette->paper, palette->ink);
     for (int pass = 0; pass < 2; pass++) {
       for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
         sign_slot_t *slot = &model->slots[i];

@@ -14,8 +14,9 @@ parser.add_argument('--sign-style', choices=('fan', 'post', 'off'), default='fan
 style = parser.parse_args().sign_style
 # A 40px cat in a 50px bar has enough desk space already.
 # Fan and post follow sign_clearance(): (cat_height * design + 109) / 110.
-# Fan design is 142, which is 52px at the default 40px cat.
-clearance = {'fan': 52, 'post': 60, 'off': 0}[style]
+# Both designs are 180 since the switch card has four rows, which is 66px at
+# the default 40px cat.
+clearance = {'fan': 66, 'post': 66, 'off': 0}[style]
 max_margin = 600 - (50 + clearance)
 
 

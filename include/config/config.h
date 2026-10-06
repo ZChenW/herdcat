@@ -70,6 +70,7 @@ typedef struct {
 
   // Session signs (global, including shared font and completion policy).
   sign_style_t sign_style;
+  sign_theme_t sign_theme;
   int sign_max;
   sign_idle_t sign_idle;
   char sign_font[128];
