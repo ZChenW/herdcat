@@ -29,6 +29,7 @@ typedef struct {
   uint64_t focused;
   // The title of an upserted window starts with the at-rest mark.
   bool resting;
+  char title[AGENT_TERMINAL_TITLE_MAX + 1];
 } focus_watch_event_t;
 
 // 0 ignored, 1 parsed, -1 malformed or longer than 65536 bytes.

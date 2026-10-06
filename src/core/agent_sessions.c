@@ -15,10 +15,7 @@ typedef struct {
   char agent[AGENT_NAME_MAX + 1];
   agent_state_t state;
   pid_t pid;
-  bool kitty;
-  pid_t kitty_pid;
-  uint64_t kitty_window;
-  char kitty_listen[128];
+  agent_terminal_t terminals[2];
   int64_t updated_ms;
   int64_t done_until_ms;
   bool unread;
@@ -325,10 +322,7 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   if (pid > 0 && pid != s->pid) {
     s->pid = pid;
     s->watched = false;
-    s->kitty = false;
-    s->kitty_pid = 0;
-    s->kitty_window = 0;
-    s->kitty_listen[0] = '\0';
+    memset(s->terminals, 0, sizeof(s->terminals));
   }
   agent_state_t previous = s->state;
   switch (event) {
@@ -490,12 +484,15 @@ static bool kitty_listen_ok(const char *listen, size_t capacity) {
 void agent_sessions_set_kitty(uint64_t key, pid_t kitty_pid, uint64_t window,
                               const char *listen) {
   agent_session_t *s = find_session(key);
-  if (!s || s->pid <= 0 || !kitty_listen_ok(listen, sizeof(s->kitty_listen)))
+  if (!s || s->pid <= 0 ||
+      !kitty_listen_ok(listen, sizeof(s->terminals[0].socket)))
     return;
-  snprintf(s->kitty_listen, sizeof(s->kitty_listen), "%s", listen);
-  s->kitty_window = window;
-  s->kitty_pid = kitty_pid > 1 && kitty_pid <= 4194304 ? kitty_pid : 0;
-  s->kitty = true;
+  snprintf(s->terminals[0].socket, sizeof(s->terminals[0].socket), "%s",
+           listen);
+  s->terminals[0].pane = window;
+  s->terminals[0].client_pid =
+      kitty_pid > 1 && kitty_pid <= 4194304 ? kitty_pid : 0;
+  s->terminals[0].kind = TERMINAL_KITTY;
 }
 
 bool agent_sessions_kitty(pid_t pid, uint64_t *window, char *listen,
@@ -504,13 +501,13 @@ bool agent_sessions_kitty(pid_t pid, uint64_t *window, char *listen,
     return false;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     const agent_session_t *s = &sessions[i];
-    if (!s->used || s->pid != pid || !s->kitty)
+    if (!s->used || s->pid != pid || !s->terminals[0].socket[0])
       continue;
-    size_t n = strlen(s->kitty_listen);
+    size_t n = strlen(s->terminals[0].socket);
     if (n >= capacity)
       return false;
-    *window = s->kitty_window;
-    memcpy(listen, s->kitty_listen, n + 1);
+    *window = s->terminals[0].pane;
+    memcpy(listen, s->terminals[0].socket, n + 1);
     return true;
   }
   return false;
@@ -720,16 +717,20 @@ int agent_sessions_snapshot(agent_session_view_t *out, size_t capacity) {
     const agent_session_t *s = &sessions[i];
     if (!s->used)
       continue;
-    agent_session_view_t v = {.key = s->key,
-                              .order = s->order,
-                              .state = s->state,
-                              .pid = s->pid,
-                              .created_ms = s->created_ms,
-                              .state_since_ms = s->state_since_ms,
-                              .updated_ms = s->updated_ms,
-                              .unread = s->unread,
-                              .kitty_pid = s->kitty ? s->kitty_pid : 0,
-                              .kitty_window = s->kitty ? s->kitty_window : 0};
+    agent_session_view_t v = {
+        .key = s->key,
+        .order = s->order,
+        .state = s->state,
+        .pid = s->pid,
+        .created_ms = s->created_ms,
+        .state_since_ms = s->state_since_ms,
+        .updated_ms = s->updated_ms,
+        .unread = s->unread,
+        .kitty_pid = s->terminals[0].socket[0] ? s->terminals[0].client_pid : 0,
+        .kitty_window = s->terminals[0].socket[0] ? s->terminals[0].pane : 0};
+    v.terminal = s->terminals[1];
+    if (!v.terminal.socket[0] && v.terminal.kind != TERMINAL_GHOSTTY)
+      v.terminal.kind = TERMINAL_NONE;
     memcpy(v.agent, s->agent, sizeof(v.agent));
     memcpy(v.name, s->name, sizeof(v.name));
     size_t j = count++;
@@ -783,4 +784,49 @@ void agent_sessions_fail(uint64_t key, int64_t now_ms) {
   if (s)
     agent_sessions_apply(key, s->agent, AGENT_EVENT_FAIL, 0, now_ms,
                          applied_done_timeout, NULL);
+}
+
+pid_t agent_sessions_terminal_pid(uint64_t key) {
+  const agent_session_t *s = find_session(key);
+  if (!s)
+    s = find_alias(key);
+  return s ? s->pid : 0;
+}
+void agent_sessions_set_terminal(uint64_t key, const agent_terminal_t *t) {
+  agent_session_t *s = find_session(key);
+  if (!s)
+    s = find_alias(key);
+  if (!s || s->pid <= 1 || !t || t->kind < TERMINAL_TMUX ||
+      t->kind > TERMINAL_GHOSTTY)
+    return;
+  if (s->terminals[1].kind == t->kind && s->terminals[1].pane == t->pane &&
+      !strcmp(s->terminals[1].socket, t->socket))
+    return;
+  s->terminals[1] = *t;
+}
+bool agent_sessions_terminal(pid_t pid, agent_terminal_t *t, char *name,
+                             size_t capacity) {
+  if (!t || pid <= 1)
+    return false;
+  for (size_t i = 0; i < AGENT_SESSIONS_MAX; i++) {
+    const agent_session_t *s = &sessions[i];
+    if (!s->used || s->pid != pid)
+      continue;
+    if (!s->terminals[1].socket[0] && s->terminals[1].kind != TERMINAL_GHOSTTY)
+      continue;
+    *t = s->terminals[1];
+    if (name && capacity)
+      snprintf(name, capacity, "%s", s->name);
+    return true;
+  }
+  return false;
+}
+void agent_sessions_terminal_resolved(pid_t pid, const agent_terminal_t *t) {
+  for (size_t i = 0; i < AGENT_SESSIONS_MAX; i++) {
+    agent_session_t *s = &sessions[i];
+    if (s->used && s->pid == pid && s->terminals[1].kind == t->kind &&
+        s->terminals[1].pane == t->pane &&
+        !strcmp(s->terminals[1].socket, t->socket))
+      s->terminals[1] = *t;
+  }
 }

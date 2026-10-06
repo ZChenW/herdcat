@@ -1,5 +1,7 @@
 #ifndef HERDCAT_FOCUS_H
 #define HERDCAT_FOCUS_H
+#include "platform/agent_terminal.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -11,6 +13,7 @@ typedef struct {
   // Nonzero while the title starts with the mark an agent shows at rest.
   // The parser stores 1; focus_watch replaces it with when that began.
   int64_t resting_since_ms;
+  char title[AGENT_TERMINAL_TITLE_MAX + 1];
 } focus_window_t;
 typedef enum {
   FOCUS_PENDING,
@@ -23,7 +26,41 @@ int focus_parse_windows(const char *json, size_t length, focus_window_t *out,
                         size_t capacity);
 bool focus_find_window(pid_t pid, const focus_window_t *windows, size_t count,
                        uint64_t *id);
+// Same nearest ancestor, with title ranking among windows of that process.
+bool focus_find_window_title(pid_t pid, const focus_window_t *windows,
+                             size_t count, const char *title, bool contains,
+                             uint64_t *id);
+// Selects only among candidates with the supplied pid. Ghostty requires one
+// unique substring match; ordinary titles rank exact before prefix/suffix.
+bool focus_pick_window(pid_t pid, const focus_window_t *windows, size_t count,
+                       const char *title, bool contains, uint64_t *id);
+bool focus_terminal_window(pid_t pid, const agent_terminal_t *terminal,
+                           const char *name, const focus_window_t *windows,
+                           size_t count, uint64_t *id);
+typedef struct {
+  uint64_t pane;
+  uint64_t window;
+  bool has_window;
+  char title[AGENT_TERMINAL_TITLE_MAX + 1];
+} focus_wezterm_pane_t;
+int focus_parse_wezterm(const char *json, size_t length, bool clients,
+                        focus_wezterm_pane_t *out, size_t capacity);
+typedef bool (*focus_terminal_fn)(pid_t pid, agent_terminal_t *terminal,
+                                  char *name, size_t capacity);
+typedef void (*focus_terminal_note_fn)(pid_t pid,
+                                       const agent_terminal_t *terminal);
+void focus_set_terminal(focus_terminal_fn lookup, focus_terminal_note_fn note);
+typedef void (*focus_current_fn)(pid_t pid, uint64_t window, const char *socket,
+                                 const focus_wezterm_pane_t *panes,
+                                 size_t count);
+void focus_set_current(focus_current_fn note);
+bool focus_tmux_client(const char *text, const char *session, pid_t *pid,
+                       char *tty, size_t capacity);
+// Background discovery shares the one command job and adds no periodic wake.
+void focus_terminal_resolve(pid_t pid);
+void focus_wezterm_current(pid_t pid, uint64_t window);
 #ifdef TEST_BUILD
+void focus_test_available(bool available);
 void focus_reset_stat_reads(void);
 unsigned focus_stat_reads(void);
 #endif

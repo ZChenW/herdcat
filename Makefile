@@ -139,7 +139,7 @@ install: $(TARGET)
 	install -Dm644 herdcat.conf.example $(DESTDIR)$(PREFIX)/share/herdcat/herdcat.conf.example
 	install -Dm755 scripts/find_input_devices.sh $(DESTDIR)$(PREFIX)/bin/herdcat-find-devices
 	install -Dm755 scripts/herdcat-setup $(DESTDIR)$(PREFIX)/bin/herdcat-setup
-	@for file in integrations/hooks/* integrations/pi/herdcat.ts integrations/opencode/index.js; do \
+	@for file in integrations/hooks/* integrations/pi/herdcat.ts integrations/opencode/index.js integrations/kitty/* integrations/tmux/*; do \
 		install -Dm644 $$file $(DESTDIR)$(PREFIX)/share/herdcat/$$file || exit 1; \
 	done
 	install -Dm644 man/herdcat.1 $(DESTDIR)$(PREFIX)/share/man/man1/herdcat.1
@@ -148,10 +148,10 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat-find-devices
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat-setup
-	@for file in integrations/hooks/* integrations/pi/herdcat.ts integrations/opencode/index.js; do \
+	@for file in integrations/hooks/* integrations/pi/herdcat.ts integrations/opencode/index.js integrations/kitty/* integrations/tmux/*; do \
 		rm -f $(DESTDIR)$(PREFIX)/share/herdcat/$$file; \
 	done
-	-rmdir $(DESTDIR)$(PREFIX)/share/herdcat/integrations/hooks $(DESTDIR)$(PREFIX)/share/herdcat/integrations/pi $(DESTDIR)$(PREFIX)/share/herdcat/integrations/opencode $(DESTDIR)$(PREFIX)/share/herdcat/integrations
+	-rmdir $(DESTDIR)$(PREFIX)/share/herdcat/integrations/hooks $(DESTDIR)$(PREFIX)/share/herdcat/integrations/pi $(DESTDIR)$(PREFIX)/share/herdcat/integrations/opencode $(DESTDIR)$(PREFIX)/share/herdcat/integrations/kitty $(DESTDIR)$(PREFIX)/share/herdcat/integrations/tmux $(DESTDIR)$(PREFIX)/share/herdcat/integrations
 	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/herdcat.1
 	rm -f $(DESTDIR)$(PREFIX)/share/herdcat/herdcat.conf.example
 	-rmdir $(DESTDIR)$(PREFIX)/share/herdcat
@@ -242,6 +242,9 @@ $(BUILDDIR)/test_fullscreen_state: $(TESTDIR)/test_fullscreen_state.c | $(OBJDIR
 $(BUILDDIR)/test_runtime: $(TESTDIR)/test_runtime.c src/core/control.c src/config/config_watcher.c $(CONFIG_TEST_DEPS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
+$(BUILDDIR)/test_terminal_focus: tests/test_terminal_focus.c src/core/agent_sessions.c src/core/agent_state.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
 $(BUILDDIR)/test_focus: tests/test_focus.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
@@ -275,7 +278,7 @@ $(BUILDDIR)/test_theme_pixels: tests/test_theme_pixels.c src/graphics/font_panel
 $(BUILDDIR)/test_sign_palette: tests/test_sign_palette.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-TEST_BINARIES = $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
+TEST_BINARIES = $(BUILDDIR)/test_terminal_focus $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
 
 $(BUILDDIR)/test_drag: tests/test_drag.c src/platform/drag.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
@@ -283,7 +286,7 @@ $(BUILDDIR)/test_drag: tests/test_drag.c src/platform/drag.c src/utils/error.c $
 $(BUILDDIR)/test_prefs: tests/test_prefs.c src/platform/prefs.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_agent_hook: tests/test_agent_hook.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_agent_hook: tests/test_agent_hook.c src/core/agent_hook.c src/platform/agent_terminal.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(BUILDDIR)/test_agent_watch: tests/test_agent_watch.c src/platform/agent_watch.c $(PROJECT_HEADERS) | $(OBJDIR)
@@ -313,6 +316,9 @@ test: $(TEST_BINARIES)
 		echo "--- $$(basename $$t) ---"; \
 		$$t || failures=$$((failures + 1)); \
 	done; \
+	echo "--- test_terminal_commands.py ---"; \
+	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_terminal_commands.py || \
+		failures=$$((failures + 1)); \
 	echo "--- test_kitty_watcher.py ---"; \
 	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_kitty_watcher.py || \
 		failures=$$((failures + 1)); \
@@ -369,8 +375,8 @@ $(BUILDDIR)/test_input: tests/test_input.c src/platform/input.c src/utils/error.
 $(BUILDDIR)/test_nanosvg: tests/test_nanosvg.c lib/nanosvg.h lib/nanosvgrast.h tests/test_helpers.h | $(OBJDIR)
 	$(CC) -std=c2x -Ilib -Itests $(filter -fsanitize=%,$(TEST_CFLAGS)) $< -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_agent_adapters: tests/test_agent_adapters.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_agent_adapters: tests/test_agent_adapters.c src/core/agent_hook.c src/platform/agent_terminal.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_transcript: tests/test_transcript.c src/core/agent_transcript.c src/platform/transcript_watch.c src/platform/agent_watch.c src/core/agent_hook.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_state.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_transcript: tests/test_transcript.c src/core/agent_transcript.c src/platform/transcript_watch.c src/platform/agent_watch.c src/core/agent_hook.c src/platform/agent_terminal.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_state.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)

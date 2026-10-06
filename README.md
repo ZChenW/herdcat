@@ -11,7 +11,7 @@ A desktop cat for Wayland that herds your coding agents: it types along with you
 
 - 🪧 One sign per agent session, with its name and state
 - 🚦 Working, waiting for approval, done, stopped on error and idle at a glance
-- 🖱️ Click a sign to jump to that session's terminal (niri, kitty splits)
+- 🖱️ Click a sign to jump to that session's terminal (niri; pane focus in kitty, tmux and WezTerm)
 - 🔔 Finished sessions stay up until you have looked at them
 - ⌨️ The sign of the terminal you type in comes down under the paws
 - 🎴 Two styles, fan and signpost; right-click to switch style, language and font
@@ -164,7 +164,7 @@ herdcat --watch-config
 <details>
 <summary>Clicking a sign does not focus the terminal</summary>
 
-Jumping to a window needs niri. Focusing a single kitty split also needs kitty remote control, see [docs/signs.md](docs/signs.md).
+Jumping to a window needs niri; pane focus supports kitty, tmux and WezTerm. Ghostty supports window focus only. See [docs/signs.md](docs/signs.md) for setup and limits.
 
 </details>
 

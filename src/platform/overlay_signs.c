@@ -547,7 +547,10 @@ static void note_split_click(pid_t pid, uint64_t key) {
   focus_window_t windows[FOCUS_WATCH_WINDOW_MAX];
   size_t count = focus_watch_windows(windows, FOCUS_WATCH_WINDOW_MAX);
   uint64_t id = 0;
-  if (!focus_find_window(pid, windows, count, &id) || !id)
+  agent_terminal_t terminal = {.kind = TERMINAL_NONE};
+  char name[48] = {0};
+  agent_sessions_terminal(pid, &terminal, name, sizeof(name));
+  if (!focus_terminal_window(pid, &terminal, name, windows, count, &id) || !id)
     return;
   focus_current_click(id, key);
 }

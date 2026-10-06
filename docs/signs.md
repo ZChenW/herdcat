@@ -7,7 +7,8 @@ Missing window targets shake briefly. The cat keeps its typing and sleep frames.
 
 A kitty split is focused too when that session's process has both
 `KITTY_WINDOW_ID` and `KITTY_LISTEN_ON`. Add these lines to kitty.conf
-yourself; this program does not edit that file:
+manually, or use `herdcat setup kitty --yes` to install the watcher and a
+marked block with restricted remote control:
 
 ```
 allow_remote_control password
@@ -51,6 +52,70 @@ same `pane` request on herdcat's control socket. It does not start a
 process and does not use `kitten @`, so it needs no extra remote-control
 permission. It gives up within a few tens of milliseconds when the cat is
 not running, and it writes nothing to the terminal.
+
+## Terminal support
+
+| Terminal | Window focus | Pane focus | Current pane | Terminal configuration |
+|---|---|---|---|---|
+| kitty | Yes | Yes | Watcher reports | Restricted remote control and watcher (`setup kitty`) |
+| tmux | Yes, through an attached client | Yes, across sessions/windows | Three global hooks | `setup tmux` |
+| WezTerm | Yes, title disambiguation for shared GUI processes | Yes, across tabs/windows | On-demand CLI query | None |
+| Ghostty | Yes; unique session-name title match, otherwise first candidate | Unavailable | Unavailable | None |
+
+The closest matching process ancestor still supplies the system window. For
+WezTerm, a click activates the pane first, then compares its title with niri's
+windows, removing a leading `[i/n] `. Exact matches win over prefix/suffix
+matches; an ambiguous or missing title falls back to the first window. Titles
+are bounded to 96 bytes and used only in memory. Identical titles cannot identify
+a system window reliably. Ghostty uses a title only when exactly one candidate
+contains the session name (the repository root name). It has no external
+interface for selecting a tab or split; several sessions in one window share
+window-level focus and acknowledgement.
+
+For tmux, herdcat finds the pane's session and chooses its most recently active
+attached client. It focuses that client's niri window, then switches that client
+to the pane. A detached session with no client shakes the sign as a missing
+target. Inside kitty, it also focuses the client's kitty split before switching
+tmux. Default tmux titles do not track panes, so **tmux has no title-based Escape
+cancellation detection**; transcript/hook signals and existing timeout fallback
+remain. A shared GUI process with several windows and no distinguishing title
+still falls back to its first window (including tmux hosted by such a GUI).
+
+```sh
+herdcat setup tmux kitty --dry-run
+herdcat setup tmux kitty --yes
+herdcat setup tmux kitty --status
+herdcat setup --remove tmux kitty --yes
+```
+
+Setup uses the existing `~/.tmux.conf` when present, otherwise
+`${XDG_CONFIG_HOME:-~/.config}/tmux/tmux.conf`. It appends a marked `source-file`
+block with three hooks: `window-pane-changed`, `session-window-changed` and
+`client-session-changed`. Hook array entry 7313 preserves unrelated entries.
+Run `tmux source-file <your tmux.conf>` or restart tmux after installation;
+restart after removal to clear the already-loaded hooks. No `focus-events`
+setting is required. For manual setup, source
+[`integrations/tmux/herdcat.conf`](../integrations/tmux/herdcat.conf).
+
+Kitty setup copies `herdcat_watcher.py` beside kitty.conf and appends three
+managed directives: restricted remote control, an include of the focus-only
+socket settings, and the watcher. Other watchers are retained. Restart kitty
+after installation/removal; the socket and process environment require a new
+instance. Both adapters use the same backup, dry-run, idempotency and removal
+receipts as agent setup; paths and unrelated configuration survive removal.
+
+WezTerm needs `wezterm` in herdcat's PATH and the pane's
+`WEZTERM_PANE`/`WEZTERM_UNIX_SOCKET` environment. Commands use the reported
+instance socket without changing herdcat's environment. `list-clients` runs
+only when a WezTerm system window gains focus, or a key press needs to identify
+one of several sessions in that window. Requests for one window are deduplicated
+for 500 ms. There is no timer or thread polling for pane switches. A query that
+fails, or CLI clients whose current panes cannot be distinguished, acknowledges
+no pane. A key press waits for the asynchronous reply before assigning its typing
+board. Switching panes without typing or changing system-window focus is not
+observed until the next such trigger; clicking a sign always acknowledges that
+sign. Mux window mappings learned from a current-pane reply keep inactive panes
+in their system window even when their titles differ.
 
 ## Switch card
 
@@ -110,7 +175,8 @@ background; they contain no desktop content.
 Unread completions stay green with a dot until you visit their window, click
 the sign, submit again or end the session. Visiting/clicking starts the normal
 completion timer. A completion in the focused window is already seen. When a
-kitty split report is available, only that split is seen. Without niri focus
+kitty/tmux split report or WezTerm current-pane query is available, only that
+split is seen. Without niri focus
 tracking, completions remain unread until clicked or submitted again.
 
 A turn that stops on an error (quota used up, API failure) turns coral with a
@@ -153,7 +219,7 @@ original surface height, cat-only input region and whole-cat agent artwork;
 `sign_done` still applies. The temporary `HERDCAT_SIGN_STYLE` override is gone.
 
 FreeType and Fontconfig are required. Only niri supports terminal jumping and
-focus tracking. tmux panes stay on the shared window. A kitty click reaches the
+focus tracking. A kitty click reaches the
 matching split only when the socket above is set. Without a split report, kitty
 splits still share that window: the desk takes the newest session, and focusing
 the window marks every session in it seen. Text supports Latin and CJK with

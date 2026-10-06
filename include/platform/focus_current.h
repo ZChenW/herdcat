@@ -22,6 +22,11 @@ bool focus_pane_fields(const char *pid_text, const char *split_text, pid_t *pid,
 // "pane <pid> <split>" and nothing else.
 bool focus_pane_parse(const char *request, pid_t *pid, uint64_t *split);
 
+// tmux client reports use their own namespace and permit pane zero.
+bool focus_tmux_pane_fields(const char *pid_text, const char *split_text,
+                            pid_t *pid, uint64_t *split);
+bool focus_tmux_pane_set(pid_t pid, uint64_t split);
+bool focus_tmux_pane_set_socket(pid_t pid, uint64_t split, const char *socket);
 void focus_pane_reset(void);
 // Rejects pid <= 1 and a zero split. At most FOCUS_PANE_MAX processes.
 bool focus_pane_set(pid_t pid, uint64_t split);
@@ -59,4 +64,17 @@ int focus_current_query(uint64_t focused, const focus_window_t *windows,
                         uint64_t clicked_window, uint64_t clicked_key,
                         uint64_t *keys, size_t capacity, uint64_t *chosen);
 
+// Unique current pane among CLI clients; known system-window mappings resolve
+// clients from other windows. Ambiguity returns false.
+bool focus_current_wezterm_pane(uint64_t window, const char *socket,
+                                const agent_session_view_t *sessions,
+                                size_t count, const focus_wezterm_pane_t *panes,
+                                size_t pane_count, uint64_t *pane);
+// Update an in-memory snapshot: a current-pane reply maps its whole mux
+// window, while ordinary list/focus replies retain the target's fresh title.
+void focus_current_wezterm_resolve(pid_t pid, const agent_terminal_t *terminal,
+                                   const focus_window_t *windows,
+                                   size_t windows_count,
+                                   agent_session_view_t *sessions,
+                                   size_t count);
 #endif

@@ -2,6 +2,7 @@
 #include "core/agent_hook.h"
 
 #include "core/control.h"
+#include "platform/agent_terminal.h"
 #include "utils/utf8.h"
 
 #include <dirent.h>
@@ -796,6 +797,14 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
     return 0;
   }
   int sent = control_request(request);
+  if (!sent && pid > 1 && event != AGENT_EVENT_END) {
+    agent_terminal_t terminal;
+    char message[384];
+    if (agent_terminal_environment(&terminal) &&
+        agent_terminal_message(message, sizeof(message),
+                               agent_hook_key(agent, &scanner), &terminal))
+      control_request(message);
+  }
   if (!sent && metadata) {
     if (!strcmp(agent, adapter->name) &&
         (adapter->interrupt_source == AGENT_SIGNAL_TRANSCRIPT ||

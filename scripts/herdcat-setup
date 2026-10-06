@@ -376,6 +376,10 @@ class Adapter:
 
 
 ADAPTERS = (
+    Adapter('tmux', ('tmux',), '.config/tmux', 'tmux.conf', 'terminal',
+            'tmux/herdcat.conf'),
+    Adapter('kitty', ('kitty',), '.config/kitty', 'kitty.conf', 'terminal',
+            'kitty/herdcat.conf'),
     Adapter('claude', ('claude',), '.claude', 'settings.json', 'json',
             'hooks/claude-code.settings.json', 'CLAUDE_CONFIG_DIR'),
     Adapter('codex', ('codex',), '.codex', 'hooks.json', 'json',
@@ -406,8 +410,8 @@ def integrations_dir():
 
 def base_dir(adapter):
     home = Path(os.environ.get('HOME') or Path.home())
-    if adapter.name == 'opencode':
-        return Path(os.environ.get('XDG_CONFIG_HOME') or home / '.config') / 'opencode'
+    if adapter.name in ('opencode', 'kitty', 'tmux'):
+        return Path(os.environ.get('XDG_CONFIG_HOME') or home / '.config') / adapter.name
     if adapter.env_home and os.environ.get(adapter.env_home):
         return Path(os.environ[adapter.env_home]).expanduser().absolute()
     if adapter.name == 'pi' and os.environ.get('PI_CODING_AGENT_DIR'):
@@ -417,6 +421,10 @@ def base_dir(adapter):
 
 def target_path(adapter):
     base = base_dir(adapter)
+    if adapter.name == 'tmux':
+        legacy = Path(os.environ.get('HOME') or Path.home()) / '.tmux.conf'
+        if legacy.exists() or legacy.is_symlink():
+            return legacy
     if adapter.name == 'pi' and os.environ.get('PI_CODING_AGENT_DIR'):
         return base / 'extensions/herdcat.ts'
     if adapter.name == 'opencode':
@@ -428,7 +436,7 @@ def target_path(adapter):
 
 
 def installed(adapter):
-    return base_dir(adapter).is_dir() or any(shutil.which(c) for c in adapter.commands)
+    return target_path(adapter).exists() or base_dir(adapter).is_dir() or any(shutil.which(c) for c in adapter.commands)
 
 
 def state_dir():
@@ -537,10 +545,49 @@ def make_change(agent, path, after, baseline, found, remove):
     return Change(path, resolved, before, after, baseline, mode, receipt, previous)
 
 
+def terminal_text(before, body, remove):
+    text = (before or b'').decode()
+    pattern = re.compile(r'(?m)^# >>> herdcat >>>\r?\n.*?^# <<< herdcat <<<(?:\r?\n|$)', re.S)
+    matches = list(pattern.finditer(text))
+    if (text.count(BEGIN) != len(matches) or text.count(END) != len(matches)
+            or len(matches) > 1):
+        raise SetupError('invalid managed terminal block')
+    baseline = pattern.sub('', text).encode()
+    if remove:
+        return baseline, baseline, bool(matches)
+    block = BEGIN + '\n' + body.rstrip() + '\n' + END + '\n'
+    if matches and matches[0].group() == block:
+        return before, baseline, True
+    separator = '' if not baseline or baseline.endswith(b'\n') else '\n'
+    return baseline + (separator + block).encode(), baseline, bool(matches)
+
+
 def prepare(adapter, templates, remove):
     path = target_path(adapter)
     _, before, _ = read_file(path)
     source = (templates / adapter.template).read_bytes()
+    if adapter.kind == 'terminal':
+        template_path = str((templates / adapter.template).resolve())
+        if any(c in template_path for c in '\n\r\x00'):
+            raise SetupError('unsafe integration path')
+        directive = 'source-file' if adapter.name == 'tmux' else 'include'
+        quoted = json.dumps(template_path, ensure_ascii=False)
+        if adapter.name == 'tmux':
+            quoted = quoted.replace('$', r'\$')
+        body = f'{directive} {quoted}\n'
+        if adapter.name == 'kitty':
+            body = 'allow_remote_control password\n' + body + 'watcher herdcat_watcher.py\n'
+        after, baseline, found = terminal_text(before, body, remove)
+        config = make_change(adapter.name, path, after, baseline, found, remove)
+        if adapter.name == 'tmux':
+            return [config]
+        watcher = path.parent / 'herdcat_watcher.py'
+        _, old, _ = read_file(watcher)
+        if old and b'def send_pane(' not in old:
+            raise SetupError('herdcat_watcher.py is not a herdcat watcher')
+        source = (templates / 'kitty/herdcat_watcher.py').read_bytes()
+        return [config, make_change(adapter.name, watcher, None if remove else source,
+                                    None, bool(old), remove)]
     if adapter.kind == 'json':
         after, baseline, found = merge_hooks(before, load_json(source.decode()), remove)
     elif adapter.kind == 'kimi':
@@ -728,6 +775,14 @@ def main(argv=None):
             print(adapter.name + ': ' + tr('write failed; check backups under ', '写入失败；检查备份目录 ') +
                   str(state_dir() / 'backups'), file=sys.stderr)
             failed = True
+    if 'tmux' in done:
+        print(tr('Reload with tmux source-file <your tmux.conf> or restart tmux. '
+                 'Removal needs a tmux restart to clear the global hooks.',
+                 '用 tmux source-file <你的 tmux.conf> 重新加载，或重启 tmux。'
+                 '撤销后重启 tmux 才会清除全局 hooks。'))
+    if 'kitty' in done:
+        print(tr('Restart kitty; listen_on and watchers need new windows/processes.',
+                 '请重启 kitty；listen_on 和 watcher 需要新的窗口/进程。'))
     if done:
         print(tr('Restart/reload open agents to load the changes.', '请重启/重新加载已打开的 agent。'))
         if 'codex' in done and not args.remove:

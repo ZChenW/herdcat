@@ -3,6 +3,7 @@
 
 #include "core/agent_state.h"
 #include "core/agent_transcript.h"
+#include "platform/agent_terminal.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -38,6 +39,7 @@ typedef struct {
   // Kitty process and split. Both stay 0 until a socket is stored.
   pid_t kitty_pid;
   uint64_t kitty_window;
+  agent_terminal_t terminal;
 } agent_session_view_t;
 
 int agent_sessions_set_name(uint64_t key, const char *name);
@@ -87,6 +89,14 @@ void agent_sessions_set_kitty(uint64_t key, pid_t kitty_pid, uint64_t window,
                               const char *listen);
 bool agent_sessions_kitty(pid_t pid, uint64_t *window, char *listen,
                           size_t capacity);
+// Terminal metadata can update an existing alias without adopting its key.
+pid_t agent_sessions_terminal_pid(uint64_t key);
+void agent_sessions_set_terminal(uint64_t key,
+                                 const agent_terminal_t *terminal);
+bool agent_sessions_terminal(pid_t pid, agent_terminal_t *terminal, char *name,
+                             size_t capacity);
+void agent_sessions_terminal_resolved(pid_t pid,
+                                      const agent_terminal_t *terminal);
 agent_state_t agent_sessions_resolve(void);
 int64_t agent_sessions_next_deadline(int stale_timeout_s);
 int agent_sessions_count(void);

@@ -62,7 +62,8 @@ herdcat setup --remove claude codex --yes
 ```
 
 Agent names are `claude`, `codex`, `grok`, `cursor`, `copilot`, `kimi`, `pi`, and
-`opencode`. Without names, setup selects agents whose executable is in `PATH`
+`opencode`. Terminal adapters `tmux` and `kitty` are also available; see
+[terminal support](signs.md#terminal-support). Without names, setup selects agents whose executable is in `PATH`
 or whose configuration directory exists. Explicit names also allow preparing
 configuration before installing an agent. Confirmation defaults to no; a
 non-interactive terminal must supply `--yes`. `--dry-run` and `--status` never

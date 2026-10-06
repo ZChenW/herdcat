@@ -4,6 +4,7 @@
 #include "core/agent_adapters.h"
 #include "platform/agent_watch.h"
 #include "platform/focus_current.h"
+#include "utils/json_string.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -220,7 +221,8 @@ static bool rest_mark(const char *title, size_t n) {
          (n >= 6 && !memcmp(title, "\\u2733", 6));
 }
 static int window_fields(json_t *j, uint64_t *id, uint64_t *pid, bool *has_pid,
-                         bool *is_focused, bool *resting) {
+                         bool *is_focused, bool *resting, char *stored_title) {
+  stored_title[0] = 0;
   *id = 0;
   *resting = false;
   *pid = 0;
@@ -264,6 +266,8 @@ static int window_fields(json_t *j, uint64_t *id, uint64_t *pid, bool *has_pid,
         if (!key_string(j, &title, &length))
           return -1;
         *resting = rest_mark(title, length);
+        json_string_copy(title, length, stored_title,
+                         AGENT_TERMINAL_TITLE_MAX + 1);
       } else if (!value(j, 1)) {
         return -1;
       }
@@ -351,7 +355,8 @@ int focus_watch_parse(const char *line, size_t length,
     }
     uint64_t id = 0, pid = 0;
     bool has_pid = false, is_focused = false, resting = false;
-    if (window_fields(&j, &id, &pid, &has_pid, &is_focused, &resting) < 0 ||
+    if (window_fields(&j, &id, &pid, &has_pid, &is_focused, &resting,
+                      event->title) < 0 ||
         !take(&j, '}')) {
       return -1;
     }
@@ -378,7 +383,9 @@ int focus_watch_parse(const char *line, size_t length,
       do {
         uint64_t id = 0, pid = 0;
         bool has_pid = false, is_focused = false, resting = false;
-        if (window_fields(&j, &id, &pid, &has_pid, &is_focused, &resting) < 0) {
+        char title[AGENT_TERMINAL_TITLE_MAX + 1];
+        if (window_fields(&j, &id, &pid, &has_pid, &is_focused, &resting,
+                          title) < 0) {
           return -1;
         }
         if (is_focused && id) {
@@ -386,7 +393,9 @@ int focus_watch_parse(const char *line, size_t length,
           event->focused = id;
         }
         if (has_pid && pid && out && (size_t)count < capacity) {
-          out[count] = (focus_window_t){id, (pid_t)pid, resting ? 1 : 0};
+          out[count] = (focus_window_t){
+              .id = id, .pid = (pid_t)pid, .resting_since_ms = resting ? 1 : 0};
+          memcpy(out[count].title, title, sizeof(title));
         }
         if (has_pid && pid) {
           count++;
@@ -459,6 +468,7 @@ static void apply_event(const focus_watch_event_t *event,
     for (size_t i = 0; i < window_count; i++) {
       if (windows[i].id == event->id) {
         windows[i].pid = event->pid;
+        memcpy(windows[i].title, event->title, sizeof(event->title));
         if (!event->resting)
           windows[i].resting_since_ms = 0;
         else if (!windows[i].resting_since_ms)
@@ -468,8 +478,11 @@ static void apply_event(const focus_watch_event_t *event,
       }
     }
     if (!replaced && window_count < WINDOW_MAX) {
-      windows[window_count++] = (focus_window_t){event->id, event->pid,
-                                                 event->resting ? now_ms() : 0};
+      windows[window_count] =
+          (focus_window_t){.id = event->id,
+                           .pid = event->pid,
+                           .resting_since_ms = event->resting ? now_ms() : 0};
+      memcpy(windows[window_count++].title, event->title, sizeof(event->title));
     }
     if (event->has_focused) {
       have_focus = true;
@@ -669,7 +682,8 @@ uint64_t focus_watch_match(uint64_t focused, const focus_window_t *wins,
   for (size_t i = 0; i < count; i++) {
     uint64_t id = 0;
     if (sessions[i].pid <= 1 ||
-        !focus_find_window(sessions[i].pid, wins, windows_count, &id) ||
+        !focus_terminal_window(sessions[i].pid, &sessions[i].terminal,
+                               sessions[i].name, wins, windows_count, &id) ||
         id != focused) {
       continue;
     }
@@ -691,7 +705,8 @@ int focus_watch_matching(uint64_t focused, const focus_window_t *wins,
   for (size_t i = 0; i < count && written < capacity; i++) {
     uint64_t id = 0;
     if (sessions[i].pid <= 1 ||
-        !focus_find_window(sessions[i].pid, wins, windows_count, &id) ||
+        !focus_terminal_window(sessions[i].pid, &sessions[i].terminal,
+                               sessions[i].name, wins, windows_count, &id) ||
         id != focused) {
       continue;
     }
@@ -768,7 +783,8 @@ int focus_watch_rested(const focus_window_t *wins, size_t windows_count,
     for (size_t i = 0; i < count; i++)
       if (sessions[i].key == owners[0])
         session = &sessions[i];
-    if (!session || session->state != AGENT_STATE_WORKING)
+    if (!session || session->state != AGENT_STATE_WORKING ||
+        session->terminal.kind == TERMINAL_TMUX)
       continue;
     const agent_adapter_t *adapter = agent_adapter_find(session->agent);
     if (!adapter->rest_title || strcmp(adapter->name, session->agent))

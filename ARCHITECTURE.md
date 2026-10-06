@@ -308,3 +308,38 @@ Neither paths nor transcript contents/error messages are printed by the monitor;
 contents are never persisted or transmitted. These private formats may change:
 unsupported input silently falls back to existing stale deadlines. No new
 runtime dependency is required.
+
+
+## Terminal locations
+
+Session terminal records keep kitty in the first slot, with its existing socket,
+pid and split semantics. The second slot identifies tmux, WezTerm or Ghostty.
+Hook metadata hands off a bounded `term` message with a hex-encoded socket;
+restoration/discovery can read the same environment from /proc. Decimal pane
+identifiers and absolute, user-owned socket paths are checked before use.
+Terminal records and the at-most-96-byte decoded window titles are never saved
+or logged. The authenticated control buffer remains unchanged.
+
+`platform/focus.c` serializes terminal discovery, focus and on-demand current-pane
+queries through the existing bounded `job_start` and its poll descriptor. Each
+external command uses argv and a one-second timeout, without a shell. WezTerm's
+socket is passed in a private child environment. tmux resolves the latest
+attached client, then focuses niri, optionally the client's kitty split, and
+finally switches the tmux client. WezTerm activates its pane, queries its title,
+then focuses niri. Ghostty selects a unique repository-name title match or the
+original first candidate. Window title ranking is pure and shared with current
+session matching.
+
+WezTerm current-pane requests come only from a system-window focus change or
+input needing to distinguish several sessions, with per-window 500 ms dedupe.
+A focus event preceding terminal registration retains its request until the
+socket metadata arrives. New panes can reuse an observed mux-window group.
+While a query is pending or unusable, no WezTerm pane is considered seen. Recent
+input feedback waits for the response; no new timer or thread is introduced.
+Mux window identities learned from list/current replies associate inactive panes
+with the same system window. tmux reports carry the validated server socket in a separate pane namespace,
+permitting pane zero and retaining kitty's original nonzero report rules and wire
+form. Every query resolves reported client ancestry against the current niri
+windows; multiple attached clients and identical pane IDs on different servers
+remain distinct.
+Title-based cancellation is disabled for tmux.

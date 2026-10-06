@@ -187,6 +187,68 @@ class SetupTests(unittest.TestCase):
                     finally:
                         child.tearDown()
 
+    def test_terminal_fixtures_roundtrip(self):
+        for terminal in ('tmux', 'kitty'):
+            for variant in ('blank', 'other', 'old'):
+                with self.subTest(terminal=terminal, variant=variant):
+                    child = SetupTests()
+                    child.setUp()
+                    try:
+                        path = child.home / ('.config/tmux/tmux.conf' if terminal == 'tmux'
+                                             else '.config/kitty/kitty.conf')
+                        original = (FIXTURES / terminal / (variant + '.conf')).read_bytes()
+                        child.write(path, original)
+                        baseline = original.split(b'# >>> herdcat >>>')[0]
+                        watcher = path.parent / 'herdcat_watcher.py'
+                        if terminal == 'kitty' and variant == 'old':
+                            child.write(watcher, b'# old herdcat watcher\ndef send_pane(pid, split): pass\n')
+                        before = snapshot(child.home)
+                        child.run_setup(terminal, '--dry-run')
+                        self.assertEqual(snapshot(child.home), before)
+                        child.run_setup(terminal, '--yes')
+                        installed = path.read_bytes()
+                        self.assertEqual(installed.count(b'# >>> herdcat >>>'), 1)
+                        self.assertTrue(installed.startswith(baseline))
+                        self.assertIn(b'source-file' if terminal == 'tmux' else b'watcher herdcat_watcher.py', installed)
+                        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o640)
+                        if terminal == 'kitty':
+                            self.assertEqual(watcher.read_bytes(),
+                                             (ROOT / 'integrations/kitty/herdcat_watcher.py').read_bytes())
+                            self.assertIn(b'allow_remote_control password', installed)
+                        backups = child.home / '.local/state/herdcat/backups'
+                        self.assertTrue(any(p.is_file() and p.read_bytes() == original
+                                            for p in backups.rglob('*')))
+                        current = snapshot(child.home)
+                        child.run_setup(terminal, '--yes')
+                        self.assertEqual(snapshot(child.home), current)
+                        self.assertIn(b'connected', child.run_setup(terminal, '--status'))
+                        child.run_setup(terminal, '--remove', '--dry-run')
+                        self.assertEqual(snapshot(child.home), current)
+                        child.run_setup(terminal, '--remove', '--yes')
+                        self.assertEqual(path.read_bytes(), baseline)
+                        if terminal == 'kitty':
+                            self.assertFalse(watcher.exists())
+                        current = snapshot(child.home)
+                        child.run_setup(terminal, '--remove', '--yes')
+                        self.assertEqual(snapshot(child.home), current)
+                    finally:
+                        child.tearDown()
+
+    def test_tmux_legacy_path_and_new_configs(self):
+        legacy = self.home / '.tmux.conf'
+        self.write(legacy, b'set -g status off\n')
+        self.run_setup('tmux', '--yes')
+        self.assertIn(b'source-file', legacy.read_bytes())
+        self.assertFalse((self.home / '.config/tmux/tmux.conf').exists())
+        self.run_setup('tmux', '--remove', '--yes')
+        self.assertEqual(legacy.read_bytes(), b'set -g status off\n')
+        legacy.unlink()
+        self.run_setup('tmux', 'kitty', '--yes')
+        self.run_setup('tmux', 'kitty', '--remove', '--yes')
+        self.assertFalse((self.home / '.config/tmux/tmux.conf').exists())
+        self.assertFalse((self.home / '.config/kitty/kitty.conf').exists())
+        self.assertFalse((self.home / '.config/kitty/herdcat_watcher.py').exists())
+
     def test_invalid_json_and_schema_are_untouched(self):
         for content in (b'{"key":"sk-FAKE-DO-NOT-USE",', b'{"hooks":[]}',
                         b'{"hooks":{"Stop":{}}}', b'{"hooks":null}',
@@ -404,7 +466,7 @@ class SetupTests(unittest.TestCase):
 
     def test_detection_and_locale(self):
         output = self.run_setup('--status')
-        self.assertEqual(output.count(b'not installed'), 8)
+        self.assertEqual(output.count(b'not installed'), 10)
         (self.home / '.codex').mkdir()
         output = self.run_setup('--status')
         self.assertIn(b'codex: not connected', output)

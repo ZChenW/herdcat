@@ -175,6 +175,9 @@ static void note_terminal(uint64_t key, pid_t pid) {
   if (agent_terminal_lookup("/proc", pid, &window, listen, sizeof(listen),
                             &kitty_pid))
     agent_sessions_set_kitty(key, kitty_pid, window, listen);
+  agent_terminal_t terminal;
+  if (agent_terminal_lookup_all("/proc", pid, &terminal))
+    agent_sessions_set_terminal(key, &terminal);
 }
 
 static void remember_path(const agent_session_record_t *row, int64_t now_ms) {
