@@ -42,6 +42,7 @@
 #endif
 
 #include "overlay_internal.h"
+#include "platform/overlay_geometry.h"
 
 #include <limits.h>
 
@@ -68,30 +69,27 @@ static bool reconcile_pending;
 overlay_t overlays[MAX_OUTPUTS];
 overlay_t *active;
 
-int cat_width(const overlay_t *overlay) {
-  return (int)((int64_t)overlay->config.cat_height * CAT_IMAGE_WIDTH /
-               CAT_IMAGE_HEIGHT);
-}
 void clamp_position(overlay_t *overlay) {
   if (!overlay->has_position) {
-    overlay->cat_x =
-        drag_default_x(&overlay->config, overlay->width, cat_width(overlay));
+    overlay->output_x = drag_default_x(
+        &overlay->config, overlay->config.screen_width, cat_width(overlay));
     overlay->margin_y = 0;
-    return;
+  } else {
+    drag_clamp(&overlay->output_x, &overlay->margin_y,
+               overlay->config.screen_width, cat_width(overlay),
+               overlay->output_height, overlay->height);
   }
-  drag_clamp(&overlay->cat_x, &overlay->margin_y, overlay->width,
-             cat_width(overlay), overlay->output_height, overlay->height);
-}
-// Called with this overlay active; input and pixels share one commit.
-bool overlay_hidden(const overlay_t *overlay) {
-  return hidden || (overlay->config.layer != LAYER_OVERLAY &&
-                    !overlay->config.disable_fullscreen_hide &&
-                    atomic_load(&fullscreen_detected));
+  overlay_placement_t place =
+      overlay_place(overlay->output_x, cat_width(overlay), overlay->width,
+                    overlay->config.screen_width, overlay->scale);
+  overlay->cat_x = place.cat_x_in_surface;
+  overlay->margin_x = place.margin_x;
 }
 void set_margin(overlay_t *overlay) {
   bool top = overlay->config.overlay_position == POSITION_TOP;
   zwlr_layer_surface_v1_set_margin(overlay->layer, top ? overlay->margin_y : 0,
-                                   0, top ? 0 : overlay->margin_y, 0);
+                                   0, top ? 0 : overlay->margin_y,
+                                   overlay->margin_x);
 }
 
 static void activate(overlay_t *overlay) {
@@ -102,19 +100,6 @@ static void activate(overlay_t *overlay) {
   atomic_store(&configured, overlay->configured);
   animation_overlay_activate(overlay->animation, &overlay->config);
   fullscreen_recompute();
-}
-int wayland_phys_dim(int logical) {
-  return scale_size_120(logical, active ? active->scale : 120);
-}
-void wayland_request_redraw(void) {
-  for (size_t i = 0; i < MAX_OUTPUTS; i++) {
-    overlays[i].redraw = true;
-  }
-}
-void wayland_request_current_redraw(void) {
-  if (active) {
-    active->redraw = true;
-  }
 }
 int wayland_reset_position(void) {
   finish_drag();
@@ -131,10 +116,6 @@ int wayland_reset_position(void) {
     }
   }
   return 0;
-}
-void wayland_set_hidden(bool value) {
-  hidden = value;
-  wayland_request_redraw();
 }
 static void teardown(overlay_t *overlay) {
   size_t index = (size_t)(overlay - overlays);
@@ -179,7 +160,12 @@ static void configure(void *data, struct zwlr_layer_surface_v1 *layer,
   if (width > INT_MAX || height > INT_MAX) {
     return;
   }
-  int w = width ? (int)width : overlay->config.screen_width;
+  int w =
+      width ? (int)width
+            : overlay_scaled_width(
+                  overlay_extent(&overlay->config, overlay->config.screen_width)
+                      .width,
+                  overlay->config.screen_width, overlay->scale);
   int h = height ? (int)height : overlay_signs_height(&overlay->config);
   if (overlay->width != w || overlay->height != h) {
     overlay->width = w;
@@ -206,6 +192,7 @@ static void preferred_scale(void *data, struct wp_fractional_scale_v1 *object,
   overlay_t *overlay = data;
   if (scale && scale != overlay->scale) {
     overlay->scale = scale;
+    reconcile_pending = true;
     overlay->resize = true;
     overlay->redraw = true;
   }
@@ -225,14 +212,14 @@ static uint32_t layer_value(layer_type_t layer) {
   }
 }
 static void properties(overlay_t *overlay) {
-  uint32_t anchor =
-      ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+  uint32_t anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
   anchor |= overlay->config.overlay_position == POSITION_TOP
                 ? ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP
                 : ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
   zwlr_layer_surface_v1_set_anchor(overlay->layer, anchor);
   set_margin(overlay);
-  zwlr_layer_surface_v1_set_size(overlay->layer, 0, (uint32_t)overlay->height);
+  zwlr_layer_surface_v1_set_size(overlay->layer, (uint32_t)overlay->width,
+                                 (uint32_t)overlay->height);
   zwlr_layer_surface_v1_set_exclusive_zone(overlay->layer, -1);
   zwlr_layer_surface_v1_set_keyboard_interactivity(overlay->layer, 0);
 }
@@ -246,10 +233,12 @@ static bool create(overlay_t *overlay, output_ref_t *ref) {
                        ? (uint32_t)ref->wl_scale * 120
                        : 120;
   overlay->output_height = ref->screen_height;
-  overlay->width = ref->screen_width;
+  overlay->width = overlay_scaled_width(
+      overlay_extent(&overlay->config, ref->screen_width).width,
+      ref->screen_width, overlay->scale);
   overlay->height = overlay_signs_height(&overlay->config);
   int position =
-      drag_position_load(overlay->name, &overlay->cat_x, &overlay->margin_y);
+      drag_position_load(overlay->name, &overlay->output_x, &overlay->margin_y);
   overlay->has_position = position == 0;
   if (position < 0) {
     herdcat_log_warning("Cannot load drag position for %s", overlay->name);
@@ -330,7 +319,10 @@ static void reconcile(void) {
     int total = overlay_signs_height(&effective);
     bool size_changed =
         (total != overlay->height ||
-         effective.screen_width != overlay->config.screen_width) != 0;
+         effective.screen_width != overlay->config.screen_width ||
+         overlay_scaled_width(
+             overlay_extent(&effective, ref->screen_width).width,
+             ref->screen_width, overlay->scale) != overlay->width) != 0;
     overlay->config = effective;
     if (!overlay->fractional) {
       uint32_t scale = ref->wl_scale > 0 && ref->wl_scale <= INT_MAX / 120
@@ -341,8 +333,13 @@ static void reconcile(void) {
         overlay->resize = true;
       }
     }
-    if (size_changed) {
-      overlay->width = effective.screen_width;
+    int next_width = overlay_scaled_width(
+        overlay_extent(&effective, ref->screen_width).width, ref->screen_width,
+        overlay->scale);
+    if (size_changed || next_width != overlay->width) {
+      overlay->width = overlay_scaled_width(
+          overlay_extent(&effective, ref->screen_width).width,
+          ref->screen_width, overlay->scale);
       overlay->height = total;
       overlay->resize = true;
     }
@@ -576,7 +573,7 @@ herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
         timeout = next;
       }
       bool concealed = overlay_hidden(overlay) || !overlay->configured;
-      font_panel_surface_margin(overlay->margin_y);
+      font_panel_surface_margin(overlay->margin_x, overlay->margin_y);
       overlay_signs_step_t sign_step = overlay_signs_step(
           i, &overlay->config, overlay->cat_x, cat_width(overlay),
           overlay->height, concealed, sign_now);

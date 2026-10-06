@@ -200,16 +200,16 @@ This requires niri's event stream and uses activity only, never key contents.
 | `sign_font` | empty = system sans-serif; Fontconfig family, up to 127 bytes |
 | `sign_font_size` | `13`; range 10–20, metadata/desk text proportional |
 | `sign_animations` | `full`, `reduced` (transitions only), `off` (instant) |
-| `sign_theme` | `light` (default), `dark` |
+| `sign_theme` | `light` (default), `auto` (XDG portal), `dark` |
 | `sign_language` | `auto`, `en`, `zh` |
 | `sign_done` | `sticky`, `timeout` |
 | `sign_typing_desk` | `1`, `0` |
 
-The cat artwork keeps its original colours in both themes. Theme selection
-is explicit: following the system theme is not supported yet; it would require
-a desktop portal and a new D-Bus dependency.
+The cat artwork keeps its original colours in both themes. The default is light;
+automatic selection follows the XDG desktop portal through busctl without a
+D-Bus library dependency.
 
-All options reload through `-w` or `--reload`. `auto` uses nonempty `LC_MESSAGES`,
+All options reload through `-w` or `--reload`. Language `auto` uses nonempty `LC_MESSAGES`,
 then `LANG`: zh locales select simplified Chinese, others English. Use `zh` to
 keep the earlier fixed Chinese text. Sizes scale with cat height and output
 scale. Larger text leaves less room for names. `never` hides idle signs even
@@ -218,8 +218,9 @@ returning to `sticky` applies to subsequent completions. `off` restores the
 original surface height, cat-only input region and whole-cat agent artwork;
 `sign_done` still applies. The temporary `HERDCAT_SIGN_STYLE` override is gone.
 
-FreeType and Fontconfig are required. Only niri supports terminal jumping and
-focus tracking. A kitty click reaches the
+FreeType and Fontconfig are required. niri supports terminal jumping and
+focus tracking. Hyprland/Sway backends require `compositor_experimental=1` and
+are unverified on real compositors (see [compositor backends](compositors.md)). A kitty click reaches the
 matching split only when the socket above is set. Without a split report, kitty
 splits still share that window: the desk takes the newest session, and focusing
 the window marks every session in it seen. Text supports Latin and CJK with
@@ -251,3 +252,11 @@ click-through. Hidden cats intercept no clicks, including fullscreen hiding
 when enabled. Pause still allows dragging. Set `cat_draggable=0` globally or
 in a monitor section for complete click-through. Dragging between outputs is
 not supported; each output has its own cat and saved position.
+
+`sign_theme=auto` reads the XDG appearance portal using `busctl --user`, then
+listens for Settings `SettingChanged` signals. Portal value 1 selects dark;
+0 and 2 select light. Missing busctl or an unavailable portal starts with light;
+`--doctor` reports whether busctl is available. ReadOne falls back to Read on
+older portals. Listener failures reconnect with bounded backoff. Explicit light
+and dark never start theme subprocesses. The card offers sun / automatic
+(display icon) / moon; saved light/dark choices remain readable.

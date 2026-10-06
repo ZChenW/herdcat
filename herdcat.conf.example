@@ -144,7 +144,10 @@ sign_idle=hover          # hover | always | never
 sign_font=               # Fontconfig family; empty selects system sans-serif
 sign_font_size=13        # 10..20; metadata and desk text scale proportionally
 sign_animations=full     # full | reduced (transitions only) | off
-sign_theme=light        # light | dark (explicit; no system-theme following)
+# Experimental Hyprland/Sway focus backends: unverified on real compositors.
+# Existing Hyprland fullscreen detection is independent of this setting.
+compositor_experimental=0
+sign_theme=light        # light | auto | dark (auto follows XDG portal)
 sign_language=auto       # auto (LC_MESSAGES, then LANG) | en | zh
 sign_done=sticky         # sticky (unread stays up) | timeout
 sign_typing_desk=1        # 0 disables the focused-session typing desk

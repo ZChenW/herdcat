@@ -56,7 +56,8 @@ static uint32_t pointer_serial;
 overlay_t *pointer_overlay;
 static bool dragging, drag_moved;
 static double pointer_x, pointer_y, origin_x, origin_y;
-static int origin_cat_x, origin_margin;
+static int origin_cat_x, origin_margin, origin_margin_x;
+static void drag_follow(overlay_t *overlay);
 static struct wl_callback *drag_frame;
 
 void cursor_shape(uint32_t shape) {
@@ -66,8 +67,14 @@ void cursor_shape(uint32_t shape) {
 
 void finish_drag(void) {
   if (dragging && drag_moved && pointer_overlay) {
+    // Flush the latest press-relative motion even if its frame is pending.
+    if (drag_frame) {
+      wl_callback_destroy(drag_frame);
+      drag_frame = NULL;
+    }
+    drag_follow(pointer_overlay);
     clamp_position(pointer_overlay);
-    if (drag_position_save(pointer_overlay->name, pointer_overlay->cat_x,
+    if (drag_position_save(pointer_overlay->name, pointer_overlay->output_x,
                            pointer_overlay->margin_y) < 0) {
       herdcat_log_warning("Cannot save drag position for %s",
                           pointer_overlay->name);
@@ -77,6 +84,8 @@ void finish_drag(void) {
     wl_callback_destroy(drag_frame);
     drag_frame = NULL;
   }
+  if (dragging && pointer_overlay)
+    pointer_x += origin_margin_x - pointer_overlay->margin_x;
   dragging = drag_moved = false;
   cursor_shape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
 }
@@ -88,25 +97,32 @@ static const struct wl_callback_listener DRAG_FRAME_LISTENER = {
 // button press for the whole implicit grab, so they do not shift as the margin
 // moves the surface. The margin is therefore absolute from the press state,
 // and at most one is submitted per frame.
-static void drag_follow_y(overlay_t *overlay) {
+static void drag_follow(overlay_t *overlay) {
   if (drag_frame) {
     return;
   }
-  int x = overlay->cat_x;
-  int y = drag_margin_follow(origin_margin, origin_y, pointer_y,
-                             overlay->config.overlay_position == POSITION_TOP);
-  drag_clamp(&x, &y, overlay->width, cat_width(overlay), overlay->output_height,
-             overlay->height);
-  if (y == overlay->margin_y) {
+  int x, y;
+  drag_follow_position(origin_margin_x + origin_cat_x, origin_margin, origin_x,
+                       origin_y, pointer_x, pointer_y,
+                       overlay->config.overlay_position == POSITION_TOP,
+                       overlay->config.screen_width, cat_width(overlay),
+                       overlay->output_height, overlay->height, &x, &y);
+  if (x == overlay->output_x && y == overlay->margin_y) {
     return;
   }
-  herdcat_log_debug("Drag margin %d -> %d (pointer y %.1f, grab y %.1f)",
-                    overlay->margin_y, y, pointer_y, origin_y);
+  int last_cat_x = overlay->cat_x;
+  overlay->output_x = x;
   overlay->margin_y = y;
+  clamp_position(overlay);
   set_margin(overlay);
   drag_frame = wl_surface_frame(overlay->surface);
   wl_callback_add_listener(drag_frame, &DRAG_FRAME_LISTENER, NULL);
-  wl_surface_commit(overlay->surface);
+  if (last_cat_x != overlay->cat_x) {
+    // Rebuild signs, pixels and input together before committing an edge move.
+    overlay->redraw = true;
+  } else {
+    wl_surface_commit(overlay->surface);
+  }
 }
 static void drag_frame_done(void *data, struct wl_callback *callback,
                             uint32_t time) {
@@ -115,7 +131,7 @@ static void drag_frame_done(void *data, struct wl_callback *callback,
   wl_callback_destroy(callback);
   drag_frame = NULL;
   if (dragging && drag_moved && pointer_overlay) {
-    drag_follow_y(pointer_overlay);
+    drag_follow(pointer_overlay);
   }
 }
 static void pointer_enter(void *data, struct wl_pointer *object,
@@ -181,18 +197,7 @@ static void pointer_motion(void *data, struct wl_pointer *object, uint32_t time,
     overlay->has_position = true;
     cursor_shape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING);
   }
-  int64_t desired_x = (int64_t)origin_cat_x + llround(pointer_x - origin_x);
-  int next_x = desired_x < 0         ? 0
-               : desired_x > INT_MAX ? INT_MAX
-                                     : (int)desired_x;
-  int unused_y = overlay->margin_y;
-  drag_clamp(&next_x, &unused_y, overlay->width, cat_width(overlay),
-             overlay->output_height, overlay->height);
-  if (next_x != overlay->cat_x) {
-    overlay->cat_x = next_x;
-    overlay->redraw = true;
-  }
-  drag_follow_y(overlay);
+  drag_follow(overlay);
 }
 static void pointer_button(void *data, struct wl_pointer *object,
                            uint32_t serial, uint32_t time, uint32_t button,
@@ -234,6 +239,7 @@ static void pointer_button(void *data, struct wl_pointer *object,
     origin_x = pointer_x;
     origin_y = pointer_y;
     origin_cat_x = pointer_overlay->cat_x;
+    origin_margin_x = pointer_overlay->margin_x;
     origin_margin = pointer_overlay->margin_y;
   }
 }

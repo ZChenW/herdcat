@@ -98,6 +98,14 @@ static void glyph_moon(sign_frame_t *frame, double ox, double oy, double scale,
                13 - 8 * t2 * (1 - t2), 2 + 14 * t2, color);
   }
 }
+static void glyph_auto(sign_frame_t *frame, double ox, double oy, double scale,
+                       uint32_t color) {
+  // A desktop display uses the same rounded strokes as the sun and moon.
+  add_shape(frame, SIGN_RECT, ox + 5 * scale, oy + 2 * scale, 16 * scale,
+            11 * scale, 2 * scale, 1.8 * scale, 0, color);
+  glyph_line(frame, ox, oy, scale, 13, 14, 13, 17, color);
+  glyph_line(frame, ox, oy, scale, 9, 17, 17, 17, color);
+}
 static void place_card(sign_shape_t *shape, double ox, double oy, double appear,
                        double cat_scale) {
   double fitted = 0.88 + 0.12 * appear;
@@ -152,8 +160,12 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
     snap(&model->menu.language, in->menu_english ? 1 : 0);
     snap(&model->menu.style_color, in->menu_post ? 1 : 0);
     snap(&model->menu.language_color, in->menu_english ? 1 : 0);
-    snap(&model->menu.theme, in->theme == SIGN_THEME_DARK ? 1 : 0);
-    snap(&model->menu.theme_color, in->theme == SIGN_THEME_DARK ? 1 : 0);
+    snap(&model->menu.theme, in->theme_auto                 ? 1
+                             : in->theme == SIGN_THEME_DARK ? 2
+                                                            : 0);
+    snap(&model->menu.theme_color, in->theme_auto                 ? 1
+                                   : in->theme == SIGN_THEME_DARK ? 2
+                                                                  : 0);
     snap(&model->menu.font_in, 1);
     snap(&model->menu.arrow, 1);
     snprintf(model->menu.font_label, sizeof(model->menu.font_label), "%s",
@@ -182,12 +194,16 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
                            &BEZIER_EASE, in, frame);
   double lang_color = aim(&model->menu.language_color, in->menu_english ? 1 : 0,
                           180, &BEZIER_EASE, in, frame);
-  double theme_pos =
-      aim(&model->menu.theme, in->theme == SIGN_THEME_DARK ? 1 : 0, 280,
-          &BEZIER_MOVE, in, frame);
-  double theme_color =
-      aim(&model->menu.theme_color, in->theme == SIGN_THEME_DARK ? 1 : 0, 180,
-          &BEZIER_EASE, in, frame);
+  double theme_pos = aim(&model->menu.theme,
+                         in->theme_auto                 ? 1
+                         : in->theme == SIGN_THEME_DARK ? 2
+                                                        : 0,
+                         280, &BEZIER_MOVE, in, frame);
+  double theme_color = aim(&model->menu.theme_color,
+                           in->theme_auto                 ? 1
+                           : in->theme == SIGN_THEME_DARK ? 2
+                                                          : 0,
+                           180, &BEZIER_EASE, in, frame);
   double holder_h = 54 * scale * holder;
   if (holder_h > 0.4 && holder_fade > 0.01) {
     add_shape(frame, SIGN_RECT, in->cat_x + 97 * scale, in->cat_y - 6 * scale,
@@ -219,9 +235,10 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
     add_shape(frame, SIGN_RECT, track_x, rows[row], track_w, track_h,
               11 * scale, 2 * scale, with_alpha(palette->paper, fade),
               with_alpha(palette->ink, fade));
-    double thumb_x = track_x + (4 + positions[row] * 61) * scale;
+    double step = row == 2 ? 122.0 / 3 : 61;
+    double thumb_x = track_x + (4 + positions[row] * step) * scale;
     double thumb_y = rows[row] + 4 * scale;
-    add_shape(frame, SIGN_RECT, thumb_x, thumb_y, 61 * scale, 22 * scale,
+    add_shape(frame, SIGN_RECT, thumb_x, thumb_y, step * scale, 22 * scale,
               7 * scale, 0, with_alpha(palette->ink, fade), 0);
   }
   double pad_x = track_x + 2 * scale;
@@ -242,8 +259,18 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
       glyph_fan(frame, left_x, icon_y, scale, left);
       glyph_post(frame, right_x, icon_y, scale, right);
     } else if (row == 2) {
-      glyph_sun(frame, left_x, icon_y, scale, left);
-      glyph_moon(frame, right_x, icon_y, scale, right);
+      for (int part = 0; part < 3; part++) {
+        double x = pad_x + part * (pad_w / 3) + (pad_w / 3 - icon_w) / 2;
+        double selected = 1 - fmin(1, fabs(theme_color - part));
+        uint32_t color =
+            with_alpha(mix_rgb(palette->ink, palette->paper, selected), fade);
+        if (part == 0)
+          glyph_sun(frame, x, icon_y, scale, color);
+        else if (part == 1)
+          glyph_auto(frame, x, icon_y, scale, color);
+        else
+          glyph_moon(frame, x, icon_y, scale, color);
+      }
     }
   }
   add_shape(frame, SIGN_RECT, track_x, font_y, track_w, track_h, 11 * scale,
@@ -291,13 +318,15 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
     sign_rect_t *halves = row == 0   ? frame->menu_style
                           : row == 1 ? frame->menu_lang
                                      : frame->menu_theme;
-    halves[0] = place_rect(track_x, rows[row], track_w / 2, track_h, origin_x,
-                           origin_y, appear, scale);
-    halves[1] = place_rect(track_x + track_w / 2, rows[row], track_w / 2,
-                           track_h, origin_x, origin_y, appear, scale);
-    double thumb_x = track_x + (4 + positions[row] * 61) * scale;
+    int parts = row == 2 ? 3 : 2;
+    for (int part = 0; part < parts; part++)
+      halves[part] = place_rect(track_x + part * track_w / parts, rows[row],
+                                track_w / parts, track_h, origin_x, origin_y,
+                                appear, scale);
+    double step = row == 2 ? 122.0 / 3 : 61;
+    double thumb_x = track_x + (4 + positions[row] * step) * scale;
     sign_rect_t thumb =
-        place_rect(thumb_x, rows[row] + 4 * scale, 61 * scale, 22 * scale,
+        place_rect(thumb_x, rows[row] + 4 * scale, step * scale, 22 * scale,
                    origin_x, origin_y, appear, scale);
     if (row == 0)
       frame->menu_style_thumb = thumb;

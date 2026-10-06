@@ -61,9 +61,10 @@ int segment_at(const sign_frame_t *frame, double x, double y) {
       return 1 + i;
     if (inside_rect(&frame->menu_lang[i], x, y))
       return 3 + i;
+  }
+  for (int i = 0; i < 3; i++)
     if (inside_rect(&frame->menu_theme[i], x, y))
       return 8 + i;
-  }
   if (inside_rect(&frame->menu_font_prev, x, y))
     return 5;
   if (inside_rect(&frame->menu_font_next, x, y))
@@ -202,10 +203,14 @@ void apply_choice(const config_t *config, int64_t now_ms) {
       on_language(SIGN_LANGUAGE_EN);
     if (on_paw)
       on_paw(2);
-  } else if ((choice == 8 || choice == 9) &&
+  } else if ((choice >= 8 && choice <= 10) &&
              (theme_override ? theme_choice : config->sign_theme) !=
-                 (choice == 8 ? SIGN_THEME_LIGHT : SIGN_THEME_DARK)) {
-    theme_choice = choice == 8 ? SIGN_THEME_LIGHT : SIGN_THEME_DARK;
+                 (choice == 8   ? SIGN_THEME_LIGHT
+                  : choice == 9 ? SIGN_THEME_AUTO
+                                : SIGN_THEME_DARK)) {
+    theme_choice = choice == 8   ? SIGN_THEME_LIGHT
+                   : choice == 9 ? SIGN_THEME_AUTO
+                                 : SIGN_THEME_DARK;
     theme_override = true;
     menu_tap = 2;
     menu_idle_at = now_ms + MENU_IDLE_MS;
@@ -277,6 +282,7 @@ void follow_hover(const config_t *config) {
       previewing = false;
       if (on_font)
         on_font(font_choice, false);
+      text_preview_end();
     }
     return;
   }
@@ -287,6 +293,7 @@ void follow_hover(const config_t *config) {
       font_override = true;
       snprintf(font_choice, sizeof(font_choice), "%s", config->sign_font);
     }
+    text_preview_begin();
     previewing = true;
     preview_face[0] = '\1';
     preview_face[1] = '\0';

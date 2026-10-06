@@ -4,6 +4,7 @@
 
 #include <fcntl.h>
 #include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,6 +60,40 @@ static void follow_tests(void) {
   }
   TEST_ASSERT(margin == 800);
 }
+static void follow_both(void) {
+  int x, y;
+  const int deltas[][2] = {
+      {0,   0  },
+      {20,  0  },
+      {-20, 0  },
+      {0,   20 },
+      {0,   -20},
+      {20,  -20}
+  };
+  for (int top = 0; top < 2; top++) {
+    for (size_t i = 0; i < sizeof(deltas) / sizeof(deltas[0]); i++) {
+      drag_follow_position(400, 100, 25, 30, 25 + deltas[i][0],
+                           30 + deltas[i][1], top != 0, 1000, 200, 800, 300, &x,
+                           &y);
+      TEST_ASSERT(x == 400 + deltas[i][0]);
+      TEST_ASSERT(y == 100 + (top ? deltas[i][1] : -deltas[i][1]));
+    }
+  }
+  for (int i = 0; i < 20; i++) {
+    drag_follow_position(400, 100, 25, 30, 45, 10, false, 1000, 200, 800, 300,
+                         &x, &y);
+    TEST_ASSERT(x == 420 && y == 120);
+  }
+  drag_follow_position(400, 100, 25, 30, 10000, -10000, false, 1000, 200, 800,
+                       300, &x, &y);
+  TEST_ASSERT(x == 800 && y == 500);
+  drag_follow_position(400, 100, 25, 30, -10000, 10000, false, 1000, 200, 800,
+                       300, &x, &y);
+  TEST_ASSERT(x == 0 && y == 0);
+  drag_follow_position(400, 100, 25, 30, NAN, INFINITY, false, 1000, 200, 800,
+                       300, &x, &y);
+  TEST_ASSERT(x == 400 && y == 100);
+}
 static void write_file(const char *path, const char *text) {
   FILE *file = fopen(path, "w");
   TEST_ASSERT(file != NULL);
@@ -67,6 +102,7 @@ static void write_file(const char *path, const char *text) {
 }
 int main(void) {
   follow_tests();
+  follow_both();
   geometry();
   char root[] = "/tmp/herdcat-drag-XXXXXX";
   TEST_ASSERT(mkdtemp(root) != NULL);
@@ -74,6 +110,12 @@ int main(void) {
   int x = -1, y = -1;
   TEST_ASSERT(drag_position_load("DP-1", &x, &y) == 1);
   TEST_ASSERT(drag_position_reset(NULL) == 0);
+  drag_follow_position(400, 100, 25, 30, 45, 10, false, 1000, 200, 800, 300, &x,
+                       &y);
+  TEST_ASSERT(drag_position_save("legacy-output", x, y) == 0);
+  TEST_ASSERT(drag_position_load("legacy-output", &x, &y) == 0 && x == 420 &&
+              y == 120);
+  TEST_ASSERT(drag_position_reset("legacy-output") == 0);
   TEST_ASSERT(drag_position_save("DP-1", 120, 300) == 0);
   TEST_ASSERT(drag_position_save("eDP-1", 20, 30) == 0);
   TEST_ASSERT(drag_position_save("DP-1", 140, 320) == 0);

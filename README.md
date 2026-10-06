@@ -100,7 +100,7 @@ overlay_position=bottom
 
 # Session signs
 # sign_style=fan          # fan or post
-# sign_theme=light        # light or dark; no automatic system theme
+# sign_theme=light        # light, auto (XDG portal), or dark
 # sign_language=auto      # auto, en or zh
 
 # Multi-monitor (comma-separated monitor names)

@@ -15,4 +15,6 @@ typedef struct {
 
 const sign_palette_t *sign_palette(sign_theme_t theme);
 
+sign_theme_t sign_theme_effective(sign_theme_t choice);
+void sign_theme_system(sign_theme_t theme);
 #endif

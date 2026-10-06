@@ -62,15 +62,23 @@ visibility/fullscreen and horizontal-position changes. Pointer capabilities,
 seat removal and overlay teardown share cleanup paths. Optional cursor-shape
 objects follow the pointer lifetime and add no library dependency.
 
-After four logical pixels of left-button motion, x changes the cat's in-buffer
-position and marks a redraw. Y changes the layer margin, with at most one
-margin submission per surface frame callback. During the implicit button
+Transparent overlays use a content-width surface anchored at the left edge.
+`platform/overlay_geometry.c` owns the pure extent and output-to-surface
+placement functions. Persisted x remains an output logical coordinate; the
+cat's surface coordinate is that x minus the left margin. At output edges,
+the surface stops moving and the cat moves inside it. Origins align to the
+physical pixel grid for fractional scales. Nonzero overlay opacity retains
+the output-wide background bar.
+
+After four logical pixels of left-button motion, both axes follow layer
+margins, with at most one combined margin submission per surface frame
+callback. A changed surface-local cat coordinate rebuilds pixels and input
+in the same commit. During the implicit button
 grab the compositor reports coordinates against the surface position at press,
 so they do not shift as the margin moves the surface; the margin is computed
 absolutely from the press-time margin and grab point (`drag_margin_follow`),
 and the callback submits any travel that arrived while it was pending.
-Horizontal motion continues
-while waiting for a callback. Release, leave or pointer loss saves the position
+Both axes retain the newest pointer travel while waiting for a callback. Release, leave or pointer loss saves the position
 and destroys outstanding callbacks. Pause preserves pointer interaction.
 
 `platform/drag.c` owns geometry and the bounded per-output position file in the
@@ -160,14 +168,15 @@ instruments the real runtime. Release retains PIE, RELRO and stack hardening.
 
 ## Session window focus
 
-`platform/focus.c` owns one asynchronous niri CLI job at a time. Window query
+`platform/focus.c` owns one asynchronous terminal/focus CLI job at a time. Window query
 and focus share a one-second deadline, bounded output, checked exit status,
 and cleanup/reaping. Its descriptor and deadline join the renderer poll loop.
-`focus_json.c` extracts window IDs/PIDs without interpreting titles as fields.
+`compositor_niri_windows.c` extracts niri window IDs/PIDs without interpreting titles as fields; `focus_json.c` parses WezTerm replies.
 The nearest matching process ancestor (up to 16) supplies the terminal window.
 `--focus` accepts a full session key or a unique eight-character prefix; a
 successful command response means queued, with the job result consumed later.
-The backend is unavailable outside niri. No shell commands are constructed.
+The default backend is niri. Experimental Hyprland/Sway backends are opt-in.
+No shell commands are constructed.
 
 ## Session sign rendering and focus tracking
 
@@ -212,8 +221,8 @@ existing unread completions onto timers when switching sticky to timeout.
 The old HERDCAT_SIGN_STYLE environment override is removed. Off restores the
 original cat geometry and agent frames; completion policy remains independent.
 
-`platform/focus_watch.c` reads niri's asynchronous EventStream into a bounded
-window/PID map, including initial is_focused state. Its fd joins agent_watch's
+`platform/compositor_niri.c` reads niri's asynchronous EventStream into a bounded
+window/PID map owned by `focus_watch.c`, including initial is_focused state. Its fd joins agent_watch's
 epoll, preserving six basic fds plus the control socket in the seven-slot poll
 budget. `focus_current_query` resolves ancestry once per session for both the
 seen and chosen results; no ancestry survives the query, so reparenting and
@@ -247,7 +256,9 @@ remain unchanged.
 
 `graphics/font_panel.c` is the panel's pure model and drawing: two columns,
 ten visible rows, a three-way filter, hover and selection. Every box has a
-fixed size; only glyphs change with the face. `platform/font_panel.c` owns a
+fixed size; only glyphs change with the face. `platform/font_panel_catalog.c` holds the unchanged catalog and recent-family
+storage functions behind `src/platform/font_panel_internal.h`.
+`platform/font_panel.c` owns a
 separate layer surface that exists only while the panel is open, its two
 buffers, pointer handling and placement beside the card inside the output.
 The always-present overlay surface is not made taller for it. Catalog order
@@ -264,8 +275,14 @@ the card is no longer under it. When the panel closes the menu closes.
 `graphics/text.c` remembers which face draws each (family, code point,
 weight) and asks a family's own face before asking Fontconfig. Without this
 every glyph cost a Fontconfig lookup on every draw: a page of font names took
-about 940 ms per redraw and a CJK label about 18 ms per frame. The table is
-dropped when a face is evicted, because eviction renumbers faces.
+about 940 ms per redraw and a CJK label about 18 ms per frame. Eviction and panel cleanup compact face indexes in both route and glyph
+caches. Used main-family fallbacks have a separate route table so browsing
+families cannot overwrite their routes. Panel close releases browsing faces
+and panel-only shape bitmaps, retaining the chosen family's used resources.
+Hover holds those resources until the menu restores or accepts a family;
+close-time heap trimming waits for that restoration when necessary. The
+Fontconfig enumeration result is destroyed immediately after copying names
+into the fixed-size catalog, which remains available for the next opening.
 
 `platform/prefs.c` stores menu choices as tab-separated
 `key, choice, config value at the time` lines and still reads the earlier
@@ -343,3 +360,28 @@ form. Every query resolves reported client ancestry against the current niri
 windows; multiple attached clients and identical pane IDs on different servers
 remain distinct.
 Title-based cancellation is disabled for tmux.
+
+## System theme and compositor backends
+
+`platform/theme_watch.c` starts busctl only for the resolved preference auto.
+ReadOne (with Read fallback) has the shared one-second command-job deadline;
+a separate monitor pipe supplies bounded Settings signal lines. Both fds join
+agent_watch epoll. Failed jobs/listeners are reaped and reconnect with backoff;
+explicit light/dark terminate them. `sign_theme_effective` resolves the palette
+while the card retains its automatic selection. Missing busctl uses light.
+
+`platform/compositor.c` selects niri, Hyprland or Sway in environment order;
+the latter two require compositor_experimental. The ops table supplies stream
+lifecycle, window parsing and argv construction. `compositor_niri_json.c` and
+`compositor_niri_windows.c` retain the original niri parsers; the shared map and
+session matching remain in focus_watch. `compositor_stream.c` supplies bounded
+nonblocking experimental transports: Hyprland socket2 plus event-triggered
+client/activewindow jobs, or Sway native-endian i3 IPC with subscription/tree
+requests. These backends are unverified on real compositors. The existing
+hyprland.c fullscreen fallback stays independent and unchanged.
+
+`core/runtime_sessions.c` holds the moved session/terminal/focus coordination;
+its private runtime_internal.h shares existing application state with main.
+`platform/command_job.c` holds the moved spawn/deadline/reaping mechanism.
+Theme and experimental snapshot descriptors use the existing agent epoll;
+six basics plus the control socket still fit the seven external poll slots.

@@ -11,6 +11,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __GLIBC__
+#  include <malloc.h>
+#endif
 
 #define GLYPH_LIMIT 512
 #define FACE_LIMIT  64
@@ -19,6 +22,7 @@ typedef struct {
   char *file;
   int index;
   uint64_t used;
+  bool resident;
 } face_t;
 typedef struct {
   uint32_t cp;
@@ -27,6 +31,7 @@ typedef struct {
   int w, h, left, top, advance;
   uint8_t *pixels;
   uint64_t used;
+  bool resident;
 } glyph_t;
 static FT_Library library;
 static FcConfig *fonts;
@@ -45,9 +50,15 @@ typedef struct {
   bool bold, used;
 } route_t;
 static route_t routes[ROUTE_LIMIT];
+// Browsing families can collide with main-family routes. Keep the latter
+// separately so a preview cannot force the signs to rematch a used fallback.
+static route_t main_routes[ROUTE_LIMIT];
 static int match_calls;
+static bool preview_active, trim_pending;
+static uint64_t preview_family;
 static void clear_routes(void) {
   memset(routes, 0, sizeof(routes));
+  memset(main_routes, 0, sizeof(main_routes));
 }
 static uint64_t family_hash(const char *family) {
   uint64_t hash = 1469598103934665603ULL;
@@ -55,9 +66,12 @@ static uint64_t family_hash(const char *family) {
     hash = (hash ^ *p) * 1099511628211ULL;
   return hash;
 }
-static route_t *route_slot(uint64_t family, uint32_t cp, bool bold) {
+static size_t route_index(uint64_t family, uint32_t cp, bool bold) {
   uint64_t mix = (family ^ ((uint64_t)cp * 0x9e3779b97f4a7c15ULL)) + bold;
-  return &routes[(mix ^ (mix >> 29)) % ROUTE_LIMIT];
+  return (mix ^ (mix >> 29)) % ROUTE_LIMIT;
+}
+static route_t *route_slot(uint64_t family, uint32_t cp, bool bold) {
+  return &routes[route_index(family, cp, bold)];
 }
 static void clear_glyphs(void) {
   for (int i = 0; i < GLYPH_LIMIT; i++)
@@ -66,7 +80,7 @@ static void clear_glyphs(void) {
   clock_stamp = 0;
 }
 static int match(const char *family, uint32_t cp, bool bold);
-// match() can open a face or evict one, so only it may change the routes.
+// match() can open or compact faces, invalidating a route slot.
 static int routed(const char *family, uint32_t cp, bool bold) {
   uint64_t key = family_hash(family);
   route_t *slot = route_slot(key, cp, bold);
@@ -88,7 +102,7 @@ static int routed(const char *family, uint32_t cp, bool bold) {
   if (face < 0)
     face = match(family, cp, bold);
   if (face >= 0 && face <= INT16_MAX) {
-    // An eviction inside match() cleared the table, so look the slot up again.
+    // An eviction inside match() may have changed the slot.
     slot = route_slot(key, cp, bold);
     *slot = (route_t){.family = key,
                       .cp = cp,
@@ -106,6 +120,7 @@ void text_cleanup(void) {
     free(faces[i].file);
   }
   face_count = 0;
+  preview_active = trim_pending = false;
   primary[0] = primary[1] = -1;
   if (library)
     FT_Done_FreeType(library);
@@ -118,19 +133,8 @@ void text_cleanup(void) {
   library = NULL;
   fonts = NULL;
 }
-static bool evict_face(void) {
-  int victim = -1;
-  uint64_t oldest = UINT64_MAX;
-  for (int i = 0; i < face_count; i++) {
-    if (i == primary[0] || i == primary[1])
-      continue;
-    if (faces[i].used <= oldest) {
-      oldest = faces[i].used;
-      victim = i;
-    }
-  }
-  if (victim < 0)
-    return false;
+// Compact all three caches together so surviving routes and glyphs stay valid.
+static void remove_face(int victim) {
   for (int i = 0; i < GLYPH_LIMIT; i++) {
     if (!glyphs[i].used || glyphs[i].face != victim)
       continue;
@@ -140,6 +144,17 @@ static bool evict_face(void) {
   FT_Done_Face(faces[victim].ft);
   free(faces[victim].file);
   int last = face_count - 1;
+  for (int table = 0; table < 2; table++) {
+    route_t *entries = table ? main_routes : routes;
+    for (int i = 0; i < ROUTE_LIMIT; i++) {
+      if (!entries[i].used)
+        continue;
+      if (entries[i].face == victim)
+        entries[i] = (route_t){0};
+      else if (entries[i].face == last)
+        entries[i].face = (int16_t)victim;
+    }
+  }
   if (victim != last) {
     faces[victim] = faces[last];
     for (int i = 0; i < GLYPH_LIMIT; i++)
@@ -152,8 +167,71 @@ static bool evict_face(void) {
   }
   faces[last] = (face_t){0};
   face_count--;
-  clear_routes();
+}
+static bool evict_face(void) {
+  int victim = -1;
+  uint64_t oldest = UINT64_MAX;
+  for (int i = 0; i < face_count; i++) {
+    if (i == primary[0] || i == primary[1] || faces[i].resident)
+      continue;
+    if (faces[i].used <= oldest) {
+      oldest = faces[i].used;
+      victim = i;
+    }
+  }
+  if (victim < 0)
+    return false;
+  remove_face(victim);
   return true;
+}
+static void retain_current(bool reset) {
+  uint64_t key = family_name ? family_hash(family_name) : 0;
+  if (reset) {
+    memset(main_routes, 0, sizeof(main_routes));
+    for (int i = 0; i < face_count; i++)
+      faces[i].resident = false;
+    for (int i = 0; i < GLYPH_LIMIT; i++)
+      glyphs[i].resident = false;
+  }
+  for (int i = 0; i < face_count; i++)
+    if (i == primary[0] || i == primary[1])
+      faces[i].resident = true;
+  for (int i = 0; i < ROUTE_LIMIT; i++)
+    if (routes[i].used && routes[i].family == key)
+      faces[routes[i].face].resident = true;
+}
+void text_release_unused(bool trim) {
+  // The menu restores the chosen family after the panel has closed. Never
+  // discard its held fallback faces while the main face is still a preview.
+  if (preview_active) {
+    trim_pending = trim_pending || trim;
+    return;
+  }
+  retain_current(false);
+  for (int i = face_count - 1; i >= 0; i--)
+    if (!faces[i].resident)
+      remove_face(i);
+  if (trim) {
+#ifdef __GLIBC__
+    malloc_trim(0);
+#endif
+  }
+}
+void text_preview_begin(void) {
+  if (preview_active || !family_name)
+    return;
+  retain_current(false);
+  preview_family = family_hash(family_name);
+  preview_active = true;
+}
+void text_preview_end(void) {
+  if (!preview_active)
+    return;
+  preview_active = false;
+  retain_current(!family_name || family_hash(family_name) != preview_family);
+  bool trim = trim_pending;
+  trim_pending = false;
+  text_release_unused(trim);
 }
 static int match(const char *family, uint32_t cp, bool bold) {
   match_calls++;
@@ -219,6 +297,7 @@ int text_init(const char *family) {
   primary[1] = match(family_name, 0, true);
   if (primary[0] < 0 || primary[1] < 0)
     goto fail;
+  retain_current(true);
   return 0;
 fail:
   text_cleanup();
@@ -242,11 +321,29 @@ static int face_for(const char *family, uint32_t cp, bool bold) {
     if (face >= 0 && face < face_count &&
         FT_Get_Char_Index(faces[face].ft, cp)) {
       faces[face].used = ++clock_stamp;
+      if (!preview_active)
+        faces[face].resident = true;
       return face;
     }
-    int fallback = routed(family_name, cp, bold);
-    if (fallback >= 0)
+    uint64_t key = family_hash(family_name);
+    route_t *saved = &main_routes[route_index(key, cp, bold)];
+    int fallback;
+    if (!preview_active && saved->used && saved->family == key &&
+        saved->cp == cp && saved->bold == bold)
+      fallback = saved->face;
+    else
+      fallback = routed(family_name, cp, bold);
+    if (fallback >= 0) {
+      if (!preview_active) {
+        faces[fallback].resident = true;
+        *saved = (route_t){.family = key,
+                           .cp = cp,
+                           .face = (int16_t)fallback,
+                           .bold = bold,
+                           .used = true};
+      }
       return fallback;
+    }
     face = primary[bold];
     return face >= 0 && face < face_count ? face : -1;
   }
@@ -263,17 +360,28 @@ static glyph_t *glyph(const char *family, uint32_t cp, float px, bool bold) {
   if (f < 0)
     return NULL;
   int size = (int)lround((double)px * scale_120 / 120 * 64);
-  glyph_t *slot = &glyphs[0];
+  glyph_t *slot = NULL;
+  bool resident = main_family(family) && !preview_active;
   for (int i = 0; i < GLYPH_LIMIT; i++) {
     glyph_t *g = &glyphs[i];
     if (g->used && g->cp == cp && g->bold == bold && g->size == size &&
         g->face == f) {
       g->used = ++clock_stamp;
+      g->resident = g->resident || resident;
       faces[f].used = g->used;
       return g;
     }
-    if (g->used < slot->used)
+    if (g->used && g->resident && faces[g->face].resident)
+      continue;
+    if (!slot || g->used < slot->used)
       slot = g;
+  }
+  // A full resident cache still obeys its fixed cap.
+  if (!slot) {
+    slot = &glyphs[0];
+    for (int i = 1; i < GLYPH_LIMIT; i++)
+      if (glyphs[i].used < slot->used)
+        slot = &glyphs[i];
   }
   FT_Face face = faces[f].ft;
   if (FT_Set_Char_Size(face, 0, size, 72, 72) ||
@@ -309,7 +417,8 @@ static glyph_t *glyph(const char *family, uint32_t cp, float px, bool bold) {
                     .top = src->bitmap_top,
                     .advance = (int)src->advance.x,
                     .pixels = pixels,
-                    .used = ++clock_stamp};
+                    .used = ++clock_stamp,
+                    .resident = resident};
   return slot;
 }
 static uint32_t next(const char **s) {
@@ -355,6 +464,8 @@ int text_set_family(const char *family) {
   family_name = copy;
   primary[0] = regular;
   primary[1] = heavy;
+  if (!preview_active)
+    retain_current(true);
   return 0;
 }
 int text_match_count(void) {

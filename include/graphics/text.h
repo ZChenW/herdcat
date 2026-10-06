@@ -8,6 +8,13 @@ typedef struct {
 } text_clip_t;
 int text_init(const char *family);
 void text_cleanup(void);
+// Release browsing faces, preserving the main family's used fallback faces,
+// glyphs and routes. trim is reserved for closing the font panel.
+void text_release_unused(bool trim);
+// Hold the chosen family's resources while hover temporarily changes the
+// main family. End after restoring or accepting a family.
+void text_preview_begin(void);
+void text_preview_end(void);
 void text_set_scale(int scale_120);
 // Primary-face metrics in logical pixels. Fallback faces do not affect
 // these, so one line keeps a single baseline. False if text is not ready.

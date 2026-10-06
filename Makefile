@@ -220,6 +220,8 @@ TESTDIR = tests
 TEST_CFLAGS = $(BASE_CFLAGS) -g3 -O0 -DDEBUG -DTEST_BUILD
 TEST_LDFLAGS = -lm -lpthread
 
+COMPOSITOR_TEST_DEPS = src/platform/compositor.c src/platform/compositor_niri.c src/platform/compositor_niri_json.c src/platform/compositor_niri_windows.c src/platform/compositor_hyprland.c src/platform/compositor_sway.c src/platform/compositor_stream.c src/utils/json.c
+
 OVERLAY_SIGNS_TEST_DEPS = src/platform/overlay_signs.c src/platform/overlay_menu.c
 SIGNS_TEST_DEPS = src/graphics/sign_palette.c src/graphics/signs.c src/graphics/signs_fan.c src/graphics/signs_post.c src/graphics/signs_menu.c
 
@@ -242,13 +244,13 @@ $(BUILDDIR)/test_fullscreen_state: $(TESTDIR)/test_fullscreen_state.c | $(OBJDIR
 $(BUILDDIR)/test_runtime: $(TESTDIR)/test_runtime.c src/core/control.c src/config/config_watcher.c $(CONFIG_TEST_DEPS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_terminal_focus: tests/test_terminal_focus.c src/core/agent_sessions.c src/core/agent_state.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_terminal_focus: tests/test_terminal_focus.c src/core/agent_sessions.c src/core/agent_state.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_focus: tests/test_focus.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_focus: tests/test_focus.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_focus_watch: tests/test_focus_watch.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_focus_watch: tests/test_focus_watch.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(BUILDDIR)/test_text: tests/test_text.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
@@ -269,7 +271,10 @@ $(BUILDDIR)/test_buffer_damage: tests/test_buffer_damage.c src/platform/shm_buff
 $(BUILDDIR)/test_font_panel: tests/test_font_panel.c src/graphics/font_panel.c src/graphics/sign_palette.c src/graphics/sign_draw.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
 
-$(BUILDDIR)/test_overlay_signs: tests/test_overlay_signs.c $(CONFIG_MODULE_SOURCES) $(OVERLAY_SIGNS_TEST_DEPS) $(SIGNS_TEST_DEPS) src/graphics/text.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_font_panel_memory: tests/test_font_panel_memory.c src/graphics/font_panel.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+
+$(BUILDDIR)/test_overlay_signs: tests/test_overlay_signs.c $(CONFIG_MODULE_SOURCES) $(OVERLAY_SIGNS_TEST_DEPS) $(SIGNS_TEST_DEPS) src/graphics/text.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
 
 $(BUILDDIR)/test_theme_pixels: tests/test_theme_pixels.c src/graphics/font_panel.c src/graphics/sign_draw.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
@@ -278,7 +283,24 @@ $(BUILDDIR)/test_theme_pixels: tests/test_theme_pixels.c src/graphics/font_panel
 $(BUILDDIR)/test_sign_palette: tests/test_sign_palette.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
-TEST_BINARIES = $(BUILDDIR)/test_terminal_focus $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
+THEME_TEST_DEPS = src/platform/theme_watch.c src/platform/command_job.c src/platform/agent_watch.c src/graphics/sign_palette.c src/utils/json.c
+
+$(BUILDDIR)/test_theme_watch: tests/test_theme_watch.c $(THEME_TEST_DEPS) $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=posix_spawnp
+
+$(BUILDDIR)/test_compositor_backends: tests/test_compositor_backends.c $(COMPOSITOR_TEST_DEPS) src/platform/focus_watch.c src/platform/focus_current.c src/platform/focus.c src/platform/command_job.c src/platform/focus_json.c src/platform/agent_watch.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=socket,--wrap=connect
+
+$(BUILDDIR)/test_theme_auto: tests/test_theme_auto.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
+
+TEST_BINARIES = $(BUILDDIR)/test_theme_auto $(BUILDDIR)/test_compositor_backends $(BUILDDIR)/test_theme_watch $(BUILDDIR)/test_overlay_pixels $(BUILDDIR)/test_overlay_geometry $(BUILDDIR)/test_font_panel_memory $(BUILDDIR)/test_terminal_focus $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
+
+$(BUILDDIR)/test_overlay_pixels: tests/test_overlay_pixels.c src/platform/overlay_geometry.c src/graphics/font_panel.c src/graphics/sign_draw.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c src/graphics/animation.c src/graphics/embedded_assets.c src/core/agent_state.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+
+$(BUILDDIR)/test_overlay_geometry: tests/test_overlay_geometry.c src/platform/overlay_geometry.c src/platform/drag.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
 
 $(BUILDDIR)/test_drag: tests/test_drag.c src/platform/drag.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)
@@ -316,6 +338,8 @@ test: $(TEST_BINARIES)
 		echo "--- $$(basename $$t) ---"; \
 		$$t || failures=$$((failures + 1)); \
 	done; \
+	echo "--- test_theme_watch.py ---"; \
+	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_theme_watch.py || failures=$$((failures + 1)); \
 	echo "--- test_terminal_commands.py ---"; \
 	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_terminal_commands.py || \
 		failures=$$((failures + 1)); \
@@ -348,7 +372,7 @@ compositor-test-build:
 	wayland-scanner server-header protocols/viewporter.xml $(BUILDDIR)/compositor/viewport-server.h
 	wayland-scanner server-header protocols/fractional-scale-v1.xml $(BUILDDIR)/compositor/scale-server.h
 	wayland-scanner server-header protocols/wlr-foreign-toplevel-management-unstable-v1.xml $(BUILDDIR)/compositor/fullscreen-server.h
-	$(CC) -std=c2x -g -Wall -Wextra -I$(BUILDDIR)/compositor tests/test_compositor.c protocols/zwlr-layer-shell-v1-protocol.c protocols/xdg-shell-protocol.c protocols/viewporter-protocol.c protocols/fractional-scale-v1-protocol.c protocols/wlr-foreign-toplevel-management-v1-protocol.c -o $(BUILDDIR)/compositor/server -lwayland-server
+	$(CC) -std=c2x -g -Wall -Wextra -I$(BUILDDIR)/compositor tests/test_compositor.c tests/test_compositor_pointer.c protocols/zwlr-layer-shell-v1-protocol.c protocols/xdg-shell-protocol.c protocols/viewporter-protocol.c protocols/fractional-scale-v1-protocol.c protocols/wlr-foreign-toplevel-management-v1-protocol.c -o $(BUILDDIR)/compositor/server -lwayland-server
 
 $(BUILDDIR)/test_animation: tests/test_animation.c src/core/agent_state.c src/graphics/animation.c src/graphics/embedded_assets.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(filter %.c,$^) -o $@ $(TEST_LDFLAGS)

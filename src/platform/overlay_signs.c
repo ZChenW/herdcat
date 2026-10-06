@@ -3,6 +3,7 @@
 
 #include "config/sign_options.h"
 #include "core/agent_sessions.h"
+#include "graphics/sign_palette.h"
 #include "graphics/text.h"
 #include "overlay_signs_internal.h"
 #include "platform/drag.h"
@@ -170,7 +171,8 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
       .sessions = shown,
       .count = selected > 0 ? (size_t)selected : 0,
       .style = config->sign_style,
-      .theme = config->sign_theme,
+      .theme = sign_theme_effective(config->sign_theme),
+      .theme_auto = config->sign_theme == SIGN_THEME_AUTO,
       .animations = config->sign_animations,
       .idle = config->sign_idle,
       .font_size = config->sign_font_size,

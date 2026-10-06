@@ -23,6 +23,7 @@
 #include "cursor-shape-v1-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
 #include "graphics/animation.h"
+#include "graphics/pixel_rect.h"
 #include "graphics/sign_draw.h"
 #include "graphics/text.h"
 #include "platform/drag.h"
@@ -64,8 +65,11 @@ static void update_input_region(overlay_t *overlay, bool invisible) {
         (size_t)(overlay - overlays), &overlay->config, overlay->cat_x,
         cat_width(overlay), overlay->height, rects, OVERLAY_SIGNS_REGION_LIMIT);
     for (int i = 0; i < count; i++) {
-      if (rects[i].w > 0 && rects[i].h > 0) {
-        wl_region_add(region, rects[i].x, rects[i].y, rects[i].w, rects[i].h);
+      pixel_rect_t clipped = pixel_rect_clip(
+          (pixel_rect_t){rects[i].x, rects[i].y, rects[i].w, rects[i].h},
+          overlay->width, overlay->height);
+      if (clipped.w > 0 && clipped.h > 0) {
+        wl_region_add(region, clipped.x, clipped.y, clipped.w, clipped.h);
       }
     }
   }

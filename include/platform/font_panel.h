@@ -40,6 +40,6 @@ void font_panel_surface_left(void);
 void font_panel_surface_output_gone(size_t index);
 void font_panel_surface_select(const char *family);
 void font_panel_surface_language(bool english);
-void font_panel_surface_margin(int margin_y);
+void font_panel_surface_margin(int margin_x, int margin_y);
 
 #endif

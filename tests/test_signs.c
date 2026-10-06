@@ -949,11 +949,11 @@ static void test_theme_row(void) {
   in.menu = true;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(frame.menu_theme[0].x == 134 && frame.menu_theme[0].y == 122);
-  TEST_ASSERT(frame.menu_theme[1].x == 199 && frame.menu_theme[1].y == 122);
-  TEST_ASSERT(frame.menu_theme[0].w == 65 && frame.menu_theme[0].h == 30);
+  TEST_ASSERT(frame.menu_theme[1].x == 177 && frame.menu_theme[1].y == 122);
+  TEST_ASSERT(frame.menu_theme[0].w == 44 && frame.menu_theme[0].h == 30);
   TEST_ASSERT(frame.menu_theme_thumb.x == 138 &&
               frame.menu_theme_thumb.y == 126);
-  TEST_ASSERT(frame.menu_theme_thumb.w == 61 && frame.menu_theme_thumb.h == 22);
+  TEST_ASSERT(frame.menu_theme_thumb.w == 41 && frame.menu_theme_thumb.h == 22);
   in.animations = SIGN_ANIM_FULL;
   in.theme = SIGN_THEME_DARK;
   in.now_ms = 1000;
@@ -964,7 +964,7 @@ static void test_theme_row(void) {
   TEST_ASSERT(frame.animating && frame.menu_theme_thumb.x > 138);
   in.now_ms = 1280;
   signs_frame(&model, &in, &frame);
-  TEST_ASSERT(!frame.animating && frame.menu_theme_thumb.x == 199);
+  TEST_ASSERT(!frame.animating && frame.menu_theme_thumb.x == 219);
   // The taller card keeps its bottom, its border and its padding.
   for (int height = 40; height <= 220; height += 30) {
     double scale = height / 110.0;

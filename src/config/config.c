@@ -228,6 +228,7 @@ static void config_set_defaults(config_t *config) {
       .overlay_height = 50,
       .idle_frame = 0,
       .agent_done_timeout = DEFAULT_AGENT_DONE_TIMEOUT,
+      .compositor_experimental = 0,
       .agent_interrupt_detect = 1,
       .agent_stale_timeout = DEFAULT_AGENT_STALE_TIMEOUT,
       .keypress_duration = 100,

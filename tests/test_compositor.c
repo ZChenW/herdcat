@@ -3,6 +3,7 @@
 #include "fullscreen-server.h"
 #include "layer-server.h"
 #include "scale-server.h"
+#include "test_compositor_internal.h"
 #include "viewport-server.h"
 
 #include <assert.h>
@@ -14,37 +15,16 @@
 #include <unistd.h>
 #include <wayland-server.h>
 
-static struct wl_display *server;
+struct wl_display *server;
 static struct wl_event_loop *loop;
 static unsigned commits, surfaces, live;
 static struct wl_resource *toplevel;
-static struct wl_resource *test_pointer, *test_seat;
 static bool drag_mode, measure_mode;
 static int measure_frame_ms = 17, measure_release_ms = 16;
-struct test_rect {
-  int x, y, width, height;
-};
 static struct wl_resource *fractional_objects[32];
-struct monitor {
-  struct wl_global *global;
-  struct wl_resource *resources[32];
-  int width, height, scale;
-  const char *name;
-  struct test_surface *surface, *extra;
-};
-static struct monitor monitors[2] = {
+struct monitor monitors[2] = {
     {.width = 800,  .height = 600, .scale = 1, .name = "TEST-1"},
     {.width = 1024, .height = 768, .scale = 1, .name = "TEST-2"}
-};
-struct test_surface {
-  struct wl_resource *resource, *layer, *buffer;
-  struct wl_listener buffer_destroy;
-  struct wl_event_source *release_timer;
-  struct monitor *monitor;
-  unsigned height;
-  struct test_rect input;
-  bool configure_pending, layered;
-  char ns[64];
 };
 static void measure_event(const char *event, const char *name) {
   if (!measure_mode)
@@ -55,8 +35,7 @@ static void measure_event(const char *event, const char *name) {
          (double)now.tv_sec + (double)now.tv_nsec / 1e9);
   fflush(stdout);
 }
-static void destroy_request(struct wl_client *client,
-                            struct wl_resource *resource) {
+void destroy_request(struct wl_client *client, struct wl_resource *resource) {
   (void)client;
   wl_resource_destroy(resource);
 }
@@ -214,7 +193,7 @@ static void commit(struct wl_client *client, struct wl_resource *resource) {
   if (surface->layer && surface->configure_pending) {
     zwlr_layer_surface_v1_send_configure(
         surface->layer, wl_display_next_serial(server),
-        (uint32_t)surface->monitor->width,
+        surface->width ? surface->width : (uint32_t)surface->monitor->width,
         surface->height ? surface->height : 50);
     surface->configure_pending = false;
   }
@@ -343,11 +322,11 @@ static void bind_output(struct wl_client *client, void *data, uint32_t version,
 static void layer_size(struct wl_client *client, struct wl_resource *resource,
                        uint32_t width, uint32_t height) {
   (void)client;
-  (void)width;
   struct test_surface *surface = wl_resource_get_user_data(resource);
-  if (surface->height != height)
+  if (surface->height != height || surface->width != width)
     surface->configure_pending = true;
   surface->height = height;
+  surface->width = width;
 }
 static void unsigned_request(struct wl_client *client,
                              struct wl_resource *resource, uint32_t value) {
@@ -358,11 +337,12 @@ static void unsigned_request(struct wl_client *client,
 static void margin(struct wl_client *client, struct wl_resource *resource,
                    int32_t top, int32_t right, int32_t bottom, int32_t left) {
   (void)client;
-  (void)right;
-  (void)left;
   struct test_surface *surface = wl_resource_get_user_data(resource);
   if (drag_mode) {
     printf("margin %s %d %d\n", surface->monitor->name, top, bottom);
+    printf("placement %s %s %d %d %d %d %u %u\n", surface->monitor->name,
+           surface->ns, top, right, bottom, left, surface->width,
+           surface->height);
     fflush(stdout);
   }
 }
@@ -533,7 +513,7 @@ static void bind_fullscreen(struct wl_client *client, void *data,
   zwlr_foreign_toplevel_handle_v1_send_done(toplevel);
   wl_array_release(&state);
 }
-static int step(void *data) {
+int step(void *data) {
   static unsigned phase;
   (void)data;
   phase++;
@@ -575,116 +555,6 @@ static int step(void *data) {
   }
   printf("phase %u\n", phase);
   fflush(stdout);
-  return 0;
-}
-static void pointer_destroyed(struct wl_resource *resource) {
-  if (test_pointer == resource)
-    test_pointer = NULL;
-}
-static void cursor_request(struct wl_client *client,
-                           struct wl_resource *resource, uint32_t serial,
-                           struct wl_resource *surface, int32_t x, int32_t y) {
-  (void)client;
-  (void)resource;
-  (void)serial;
-  (void)surface;
-  (void)x;
-  (void)y;
-}
-static const struct wl_pointer_interface pointer_impl = {
-    .set_cursor = cursor_request, .release = destroy_request};
-static void get_pointer(struct wl_client *client, struct wl_resource *resource,
-                        uint32_t id) {
-  test_pointer = wl_resource_create(client, &wl_pointer_interface,
-                                    wl_resource_get_version(resource), id);
-  wl_resource_set_implementation(test_pointer, &pointer_impl, NULL,
-                                 pointer_destroyed);
-}
-static const struct wl_seat_interface seat_impl = {.get_pointer = get_pointer,
-                                                   .release = destroy_request};
-static void seat_destroyed(struct wl_resource *resource) {
-  if (test_seat == resource)
-    test_seat = NULL;
-}
-static void bind_seat(struct wl_client *client, void *data, uint32_t version,
-                      uint32_t id) {
-  (void)data;
-  test_seat = wl_resource_create(client, &wl_seat_interface, (int)version, id);
-  wl_resource_set_implementation(test_seat, &seat_impl, NULL, seat_destroyed);
-  wl_seat_send_capabilities(test_seat, WL_SEAT_CAPABILITY_POINTER);
-  wl_seat_send_name(test_seat, "fixture");
-}
-static struct monitor *monitor_named(const char *name) {
-  for (size_t i = 0; i < 2; i++)
-    if (!strcmp(name, monitors[i].name))
-      return &monitors[i];
-  return NULL;
-}
-static void click_at(struct test_surface *surface, int x, int y, int button) {
-  assert(surface && test_pointer && button > 0);
-  uint32_t serial = wl_display_next_serial(server);
-  wl_pointer_send_enter(test_pointer, serial, surface->resource,
-                        wl_fixed_from_int(x), wl_fixed_from_int(y));
-  wl_pointer_send_button(test_pointer, serial, 0, (uint32_t)button,
-                         WL_POINTER_BUTTON_STATE_PRESSED);
-  wl_pointer_send_button(test_pointer, serial, 1, (uint32_t)button,
-                         WL_POINTER_BUTTON_STATE_RELEASED);
-  wl_pointer_send_frame(test_pointer);
-}
-static int fixture_command(int fd, uint32_t mask, void *data) {
-  (void)mask;
-  (void)data;
-  char line[128] = {0}, name[32], action[32];
-  int dx, dy, x, y, button;
-  ssize_t bytes = read(fd, line, sizeof(line) - 1);
-  assert(bytes > 0);
-  if (!strncmp(line, "step", 4)) {
-    step(NULL);
-  } else if (sscanf(line, "out %31s", name) == 1) {
-    for (size_t i = 0; i < 2; i++) {
-      struct test_surface *surface = monitors[i].surface;
-      if (!strcmp(name, monitors[i].name) && surface && test_pointer) {
-        wl_pointer_send_leave(test_pointer, wl_display_next_serial(server),
-                              surface->resource);
-        wl_pointer_send_frame(test_pointer);
-      }
-    }
-  } else if (!strncmp(line, "capabilities", 12)) {
-    wl_seat_send_capabilities(test_seat, WL_SEAT_CAPABILITY_POINTER);
-  } else if (sscanf(line, "tap %31s %d %d %d", name, &x, &y, &button) == 4 ||
-             sscanf(line, "panel %31s %d %d %d", name, &x, &y, &button) == 4) {
-    struct monitor *monitor = monitor_named(name);
-    struct test_surface *hit = NULL;
-    if (monitor)
-      hit = line[0] == 'p' ? monitor->extra : monitor->surface;
-    click_at(hit, x, y, button);
-  } else if (sscanf(line, "%31s %31s %d %d", action, name, &dx, &dy) == 4) {
-    struct test_surface *surface = NULL;
-    for (size_t i = 0; i < 2; i++)
-      if (!strcmp(name, monitors[i].name))
-        surface = monitors[i].surface;
-    assert(surface && test_pointer);
-    int x = surface->input.x + surface->input.width / 2;
-    int y = surface->input.y + surface->input.height / 2;
-    uint32_t serial = wl_display_next_serial(server);
-    wl_pointer_send_enter(test_pointer, serial, surface->resource,
-                          wl_fixed_from_int(x), wl_fixed_from_int(y));
-    wl_pointer_send_button(test_pointer, serial, 0, 272,
-                           WL_POINTER_BUTTON_STATE_PRESSED);
-    wl_pointer_send_motion(test_pointer, 1, wl_fixed_from_int(x + dx),
-                           wl_fixed_from_int(y + dy));
-    if (!strcmp(action, "leave")) {
-      wl_pointer_send_leave(test_pointer, serial, surface->resource);
-    } else if (!strcmp(action, "lost")) {
-      wl_seat_send_capabilities(test_seat, 0);
-    } else {
-      wl_pointer_send_button(test_pointer, serial, 2, 272,
-                             WL_POINTER_BUTTON_STATE_RELEASED);
-    }
-    wl_pointer_send_frame(test_pointer);
-  } else {
-    assert(false);
-  }
   return 0;
 }
 static int stop(int signal, void *data) {

@@ -415,7 +415,14 @@ static void test_sign_theme(void) {
                  "light theme reload parses");
   TEST_ASSERT(config.sign_theme == SIGN_THEME_LIGHT, "light theme retained");
   config_cleanup_full(&config);
-  const char *invalid[] = {"sign_theme=auto", "sign_theme=unknown",
+  write_temp_config(path, "sign_theme=auto\ncompositor_experimental=1\n");
+  TEST_ASSERT_EQ(load_config_strict(&config, path), HERDCAT_SUCCESS,
+                 "auto theme and experimental opt-in parse");
+  TEST_ASSERT(config.sign_theme == SIGN_THEME_AUTO &&
+                  config.compositor_experimental == 1,
+              "auto and experimental retained");
+  config_cleanup_full(&config);
+  const char *invalid[] = {"compositor_experimental=2", "sign_theme=unknown",
                            "sign_theme=", "[monitor:TEST-1]\nsign_theme=dark"};
   for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
     write_temp_config(path, invalid[i]);

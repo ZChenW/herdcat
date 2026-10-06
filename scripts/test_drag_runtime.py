@@ -67,7 +67,15 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         return {name: (int(x), int(y))
                 for name, x, y in (line.split() for line in position.read_text().splitlines())}
 
-    def regions():
+    def placements():
+        result = {}
+        for line in server_log.read_text().splitlines():
+            parts = line.split()
+            if parts[:1] == ['placement'] and parts[2] == 'herdcat-overlay':
+                result[parts[1]] = tuple(map(int, parts[3:]))
+        return result
+
+    def local_regions():
         result = {}
         for line in server_log.read_text().splitlines():
             parts = line.split()
@@ -75,10 +83,18 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
                 result[parts[1]] = tuple(map(int, parts[2:]))
         return result
 
+    def regions():
+        # Position files retain output coordinates. Input is now surface-local.
+        placed = placements()
+        return {name: (rect[0] + placed[name][3], *rect[1:])
+                for name, rect in local_regions().items() if name in placed}
+
     try:
         wait_for(lambda: (root / 'wayland-test').exists())
         app = start()
         wait_for(lambda: len(regions()) == 2 and all(v[2] for v in regions().values()))
+        wait_for(lambda: placements().get('TEST-1', (0,) * 6)[4] ==
+                 (72 if style == 'off' else 240))
         start_x = regions()['TEST-1'][0]
         second_x = regions()['TEST-2'][0]
         send('drag TEST-1 0 0')
@@ -87,6 +103,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         send('drag TEST-1 20 -40')
         wait_for(lambda: records().get('TEST-1') == (start_x + 20, 40))
         assert 'margin TEST-1 0 40' in server_log.read_text()
+        assert placements()['TEST-1'][3] > 0
         send('drag TEST-2 -30 45')
         wait_for(lambda: records().get('TEST-2') == (second_x - 30, 45))
         assert records()['TEST-1'] == (start_x + 20, 40)
@@ -110,6 +127,14 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         command('reload')
         wait_for(lambda: all(v[2] for v in regions().values()))
         assert records() == saved
+        # Resize and mirror on reload without changing output-space records.
+        config.write_text(base + 'cat_height=60\nmirror_x=1\ncat_align=right\n')
+        command('reload')
+        wait_for(lambda: placements()['TEST-1'][4] == (108 if style == 'off' else 356))
+        assert records() == saved
+        config.write_text(base)
+        command('reload')
+        wait_for(lambda: placements()['TEST-1'][4] == (72 if style == 'off' else 240))
         send('leave TEST-1 10 -10')
         wait_for(lambda: records()['TEST-1'] == (start_x + 30, 50))
         send('lost TEST-1 10 -10')
@@ -122,6 +147,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         time.sleep(.7)  # Close the hover pad before reading the cat rectangle.
         send('step')  # Fractional scale and smaller TEST-1.
         wait_for(lambda: regions()['TEST-1'][0] == 568)
+        assert local_regions()['TEST-1'][0] == (0 if style == 'off' else 166)
         send('step')  # Remove TEST-2.
         time.sleep(.2)
         send('step')  # Re-add TEST-2 and restore its own saved position.
@@ -130,7 +156,9 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         command('reset-position')
         wait_for(lambda: not position.exists())
         wait_for(lambda: regions()['TEST-1'][0] == 284)
+        assert local_regions()['TEST-1'][0] == (0 if style == 'off' else 84)
         assert 'margin TEST-1 0 0' in server_log.read_text()
+        assert placements()['TEST-1'][3] == (284 if style == 'off' else 200)
         assert 'margin TEST-2 0 0' in server_log.read_text()
         app.terminate()
         assert app.wait(timeout=3) == 0

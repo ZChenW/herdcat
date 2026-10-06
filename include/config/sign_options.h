@@ -23,7 +23,8 @@ typedef enum {
 } sign_language_t;
 typedef enum {
   SIGN_THEME_LIGHT,
-  SIGN_THEME_DARK
+  SIGN_THEME_DARK,
+  SIGN_THEME_AUTO
 } sign_theme_t;
 typedef enum {
   SIGN_DONE_STICKY,

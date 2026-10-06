@@ -180,7 +180,12 @@ with tempfile.TemporaryDirectory(prefix="herdcat-integration-") as directory:
         text = (root / "compositor.log").read_text()
         assert "overlay TEST-1" in text and "overlay TEST-2" in text
         assert "phase 4" in text and "commit TEST-1" in text
-        assert "1000x" in text and "2048x" in text and "960x" in text
+        # A transparent overlay is only as wide as the cat and its signs, at
+        # each output's scale. The reloaded config has the default visible
+        # bar, which still spans the output.
+        assert "TEST-1 300x145" in text and "TEST-1 357x174" in text
+        assert "TEST-2 712x304" in text
+        assert "TEST-1 960x186" in text and "TEST-2 2048x248" in text
         assert "visible TEST-1 0" in text and "visible TEST-2 0" in text
         assert "visible TEST-1 1" in text
         assert text.count("overlay TEST-2") >= 2

@@ -17,6 +17,12 @@ bool drag_exceeds_threshold(double start_x, double start_y, double x, double y);
 // surface coordinates fixed at button press.
 int drag_margin_follow(int press_margin, double grab_y, double pointer_y,
                        bool top);
+// Resolve both margins from press-time coordinates, then clamp in output space.
+void drag_follow_position(int press_x, int press_y, double grab_x,
+                          double grab_y, double pointer_x, double pointer_y,
+                          bool top, int output_width, int cat_width,
+                          int output_height, int surface_height, int *x,
+                          int *y);
 // Load: 0 found, 1 absent, -1 error. Save/reset: 0 success, -1 error.
 int drag_position_load(const char *output, int *x, int *y);
 int drag_position_save(const char *output, int x, int y);

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import socket
@@ -176,7 +177,8 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
                                        cwd=directory,
                                        stdout=app_log, stderr=app_log)
                 wait_for(lambda: (directory / "herdcat.sock").exists(), [server, app])
-                wait_for(lambda: "commit TEST-1 2560x" in server_path.read_text(),
+                wait_for(lambda: re.search(r"^commit TEST-1 [1-9][0-9]*x[1-9][0-9]*$",
+                                          server_path.read_text(), re.MULTILINE),
                          [server, app])
                 if font_panel:
                     warm_font_panel(server, server_path, [server, app])

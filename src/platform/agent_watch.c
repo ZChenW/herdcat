@@ -8,7 +8,7 @@
 #include <sys/pidfd.h>
 #include <unistd.h>
 
-#define EXTRA_WATCHES 4
+#define EXTRA_WATCHES 6
 
 typedef struct {
   pid_t pid;

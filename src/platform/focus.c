@@ -3,6 +3,8 @@
 
 #include "core/agent_hook.h"
 #include "platform/agent_terminal.h"
+#include "platform/command_job.h"
+#include "platform/compositor.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -16,124 +18,10 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-
-typedef struct {
-  pid_t pid;
-  int fd;
-  int64_t deadline;
-  size_t used;
-  bool eof, failed, exited;
-  int status;
-  char buffer[65536];
-} command_job_t;
 static int64_t now_ms(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return ((int64_t)ts.tv_sec * 1000) + (ts.tv_nsec / 1000000);
-}
-static void job_cleanup(command_job_t *job) {
-  if (job->fd >= 0) {
-    close(job->fd);
-  }
-  if (job->pid > 0 && !job->exited) {
-    kill(job->pid, SIGKILL);
-    while (waitpid(job->pid, &job->status, 0) < 0 && errno == EINTR) {}
-  }
-  job->fd = -1;
-  job->pid = 0;
-}
-static const char *command_socket;
-static int job_start(command_job_t *job, const char *const argv[]) {
-  *job = (command_job_t){.fd = -1};
-  int pipes[2];
-  if (pipe2(pipes, O_CLOEXEC | O_NONBLOCK) < 0) {
-    return -1;
-  }
-  posix_spawn_file_actions_t actions;
-  int error = posix_spawn_file_actions_init(&actions);
-  if (!error) {
-    error = posix_spawn_file_actions_adddup2(&actions, pipes[1], STDOUT_FILENO);
-    if (!error) {
-      error = posix_spawn_file_actions_addopen(&actions, STDERR_FILENO,
-                                               "/dev/null", O_WRONLY, 0);
-    }
-    if (!error) {
-      error = posix_spawn_file_actions_addclosefrom_np(&actions, 3);
-    }
-    if (!error) {
-      char **environment = environ;
-      char socket_env[AGENT_TERMINAL_LISTEN_MAX + 32];
-      if (command_socket) {
-        size_t count = 0;
-        while (environ[count])
-          count++;
-        environment = calloc(count + 2, sizeof(*environment));
-        if (!environment) {
-          error = ENOMEM;
-        } else {
-          size_t used = 0;
-          for (size_t i = 0; i < count; i++)
-            if (strncmp(environ[i], "WEZTERM_UNIX_SOCKET=", 20))
-              environment[used++] = environ[i];
-          snprintf(socket_env, sizeof(socket_env), "WEZTERM_UNIX_SOCKET=%s",
-                   command_socket);
-          environment[used] = socket_env;
-        }
-      }
-      if (!error)
-        error = posix_spawnp(&job->pid, argv[0], &actions, NULL,
-                             (char *const *)argv, environment);
-      if (command_socket)
-        free(environment);
-    }
-    posix_spawn_file_actions_destroy(&actions);
-  }
-  close(pipes[1]);
-  if (error) {
-    close(pipes[0]);
-    job->pid = 0;
-    return -1;
-  }
-  job->fd = pipes[0];
-  job->deadline = now_ms() + 1000;
-  return 0;
-}
-// Returns 0 while pending, 1 for complete output, -1 for any failure.
-static int job_process(command_job_t *job) {
-  char chunk[1024];
-  ssize_t count;
-  while ((count = read(job->fd, chunk, sizeof(chunk))) > 0) {
-    if ((size_t)count > sizeof(job->buffer) - 1 - job->used) {
-      job->failed = true;
-      break;
-    }
-    memcpy(job->buffer + job->used, chunk, (size_t)count);
-    job->used += (size_t)count;
-  }
-  if (!count) {
-    job->eof = true;
-  } else if (count < 0 && errno != EAGAIN && errno != EINTR) {
-    job->failed = true;
-  }
-  if (!job->exited) {
-    pid_t result = waitpid(job->pid, &job->status, WNOHANG);
-    if (result == job->pid) {
-      job->exited = true;
-    } else if (result < 0 && errno != EINTR) {
-      job->failed = true;
-    }
-  }
-  if (job->failed || now_ms() >= job->deadline) {
-    job_cleanup(job);
-    return -1;
-  }
-  if (!job->eof || !job->exited) {
-    return 0;
-  }
-  bool success = WIFEXITED(job->status) && WEXITSTATUS(job->status) == 0;
-  job->buffer[job->used] = '\0';
-  job_cleanup(job);
-  return (int)success ? 1 : -1;
 }
 
 enum {
@@ -273,9 +161,8 @@ bool focus_available(void) {
   if (test_available)
     return true;
 #endif
-  const char *socket = getenv("NIRI_SOCKET");
-  struct stat st;
-  return socket && *socket && stat(socket, &st) == 0 && S_ISSOCK(st.st_mode);
+  const compositor_ops_t *ops = compositor_selected();
+  return ops && ops->detect();
 }
 #ifdef TEST_BUILD
 static unsigned stat_reads;
@@ -411,7 +298,11 @@ static bool start_kind(int kind, const char *const argv[]) {
   return true;
 }
 static bool start_windows(void) {
-  const char *args[] = {"niri", "msg", "-j", "windows", NULL};
+  const compositor_ops_t *ops = compositor_selected();
+  if (!ops)
+    ops = &COMPOSITOR_NIRI;
+  const char *args[8] = {0};
+  ops->windows(args);
   return start_kind(JOB_WINDOWS, args);
 }
 static bool start_tmux_switch(void) {
@@ -674,7 +565,10 @@ static void job_completed(int done) {
   }
   focus_window_t windows[256];
   uint64_t id;
-  int count = focus_parse_windows(job.buffer, job.used, windows, 256);
+  const compositor_ops_t *ops = compositor_selected();
+  if (!ops)
+    ops = &COMPOSITOR_NIRI;
+  int count = ops->parse_windows(job.buffer, job.used, windows, 256);
   if (count < 0) {
     finish(FOCUS_UNAVAILABLE);
     return;
@@ -687,11 +581,10 @@ static void job_completed(int done) {
   terminal.window = id;
   if (terminal_note)
     terminal_note(target_pid, &terminal);
-  char identifier[32];
-  snprintf(identifier, sizeof(identifier), "%" PRIu64, id);
-  const char *args[] = {"niri", "msg",      "action", "focus-window",
-                        "--id", identifier, NULL};
-  if (!start_kind(JOB_NIRI, args)) {
+  char identifier[64];
+  const char *args[8] = {0};
+  if (!ops->focus_window(id, args, identifier, sizeof(identifier)) ||
+      !start_kind(JOB_NIRI, args)) {
     finish(FOCUS_UNAVAILABLE);
     return;
   }

@@ -462,6 +462,8 @@ void font_panel_close(font_panel_t *panel) {
   motion_snap(&panel->appear, 0);
   motion_snap(&panel->fade, 0);
   motion_snap(&panel->mix, 0);
+  sign_draw_font_panel_cleanup();
+  text_release_unused(true);
 }
 static void remember(font_panel_t *panel, const char *selected) {
   copy_name(panel->selected, sizeof(panel->selected), selected);
@@ -916,8 +918,8 @@ void font_panel_draw(const font_panel_t *panel, uint8_t *dst, int dst_w,
   draw_shapes(panel, &frame, &layout, pop, fade);
   if (scale_120 > 0)
     text_set_scale(scale_120);
-  sign_draw(dst, dst_w, dst_h, scale_120 > 0 ? scale_120 : 120, &frame,
-            SIGN_DRAW_OVER);
+  sign_draw_font_panel(dst, dst_w, dst_h, scale_120 > 0 ? scale_120 : 120,
+                       &frame);
   if (fade <= 0)
     return;
   double scale = unit_scale(panel);

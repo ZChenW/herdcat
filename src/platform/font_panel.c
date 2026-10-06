@@ -1,8 +1,11 @@
 #define _GNU_SOURCE
 #include "platform/font_panel.h"
 
+#include "font_panel_internal.h"
 #include "graphics/font_panel.h"
+#include "graphics/sign_palette.h"
 #include "graphics/text.h"
+#include "platform/overlay_geometry.h"
 #include "platform/overlay_signs.h"
 #include "platform/shm_buffer.h"
 #include "platform/wayland.h"
@@ -28,13 +31,11 @@
 #include <wayland-client.h>
 
 static font_panel_t panel;
-static font_panel_face_t catalog[FONT_PANEL_CAP];
-static int catalog_count, catalog_lang;
 static char selected_name[128];
 static char choice[128];
 static bool has_choice;
 static size_t owner;
-static int placed_margin;
+static int placed_margin, placed_margin_x, card_margin_x;
 static int panel_scale_120 = 120;
 static int logical_w, logical_h;
 static int origin_x, origin_y;
@@ -94,142 +95,6 @@ static uint32_t layer_value(layer_type_t layer) {
   default:
     return ZWLR_LAYER_SHELL_V1_LAYER_TOP;
   }
-}
-// Recently chosen families lead the grid, newest first, so the few faces a
-// user moves between are one glance away. Kept beside the other state files.
-#define RECENT_MAX 4
-static char recent[RECENT_MAX][128];
-static bool recent_loaded;
-static bool recent_path(char *out, size_t cap, bool create) {
-  const char *state = getenv("XDG_STATE_HOME");
-  const char *home = getenv("HOME");
-  char dir[PATH_MAX];
-  int length;
-  if (state && state[0] == '/')
-    length = snprintf(dir, sizeof(dir), "%s/herdcat", state);
-  else if (home && home[0] == '/')
-    length = snprintf(dir, sizeof(dir), "%s/.local/state/herdcat", home);
-  else
-    return false;
-  if (length < 0 || (size_t)length >= sizeof(dir))
-    return false;
-  if (create && mkdir(dir, 0700) < 0 && errno != EEXIST)
-    return false;
-  length = snprintf(out, cap, "%s/fonts-recent", dir);
-  return length > 0 && (size_t)length < cap;
-}
-static bool recent_name_ok(const char *name) {
-  size_t length = strlen(name);
-  if (!length || length >= sizeof(recent[0]))
-    return false;
-  for (const unsigned char *p = (const unsigned char *)name; *p; p++)
-    if (*p < 0x20 || *p == 0x7f)
-      return false;
-  return true;
-}
-static void load_recent(void) {
-  if (recent_loaded)
-    return;
-  recent_loaded = true;
-  char path[PATH_MAX];
-  if (!recent_path(path, sizeof(path), false))
-    return;
-  int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-  if (fd < 0)
-    return;
-  struct stat st;
-  char text[RECENT_MAX * 130 + 1];
-  ssize_t got = -1;
-  if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_uid == getuid())
-    got = read(fd, text, sizeof(text) - 1);
-  close(fd);
-  if (got <= 0)
-    return;
-  text[got] = '\0';
-  int count = 0;
-  char *save = NULL;
-  for (char *line = strtok_r(text, "\n", &save); line && count < RECENT_MAX;
-       line = strtok_r(NULL, "\n", &save))
-    if (recent_name_ok(line))
-      snprintf(recent[count++], sizeof(recent[0]), "%s", line);
-}
-static void save_recent(void) {
-  char path[PATH_MAX], temp[PATH_MAX];
-  if (!recent_path(path, sizeof(path), true))
-    return;
-  int length = snprintf(temp, sizeof(temp), "%s.tmp", path);
-  if (length < 0 || (size_t)length >= sizeof(temp))
-    return;
-  int fd =
-      open(temp, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0600);
-  if (fd < 0)
-    return;
-  bool ok = true;
-  for (int i = 0; i < RECENT_MAX && ok; i++) {
-    if (!recent[i][0])
-      continue;
-    size_t size = strlen(recent[i]);
-    ok = write(fd, recent[i], size) == (ssize_t)size && write(fd, "\n", 1) == 1;
-  }
-  ok = close(fd) == 0 && ok;
-  if (!ok || rename(temp, path) < 0)
-    unlink(temp);
-}
-// Move the recent families to the front of the catalog, keeping the rest in
-// their sorted order.
-static void lift_recent(void) {
-  load_recent();
-  int front = 0;
-  for (int r = 0; r < RECENT_MAX; r++) {
-    if (!recent[r][0])
-      continue;
-    for (int i = front; i < catalog_count; i++) {
-      if (strcmp(catalog[i].name, recent[r]) != 0)
-        continue;
-      font_panel_face_t found = catalog[i];
-      memmove(&catalog[front + 1], &catalog[front],
-              (size_t)(i - front) * sizeof(catalog[0]));
-      catalog[front++] = found;
-      break;
-    }
-  }
-}
-// The default face has no family name and is always the first cell.
-static void note_recent(const char *family) {
-  if (!family || !recent_name_ok(family))
-    return;
-  load_recent();
-  int at = RECENT_MAX - 1;
-  for (int i = 0; i < RECENT_MAX; i++)
-    if (!strcmp(recent[i], family)) {
-      at = i;
-      break;
-    }
-  memmove(&recent[1], &recent[0], (size_t)at * sizeof(recent[0]));
-  snprintf(recent[0], sizeof(recent[0]), "%s", family);
-  save_recent();
-}
-static void load_faces(bool english) {
-  int lang = english ? 1 : 2;
-  if (catalog_lang == lang)
-    return;
-  const char *names[FONT_PANEL_CAP];
-  int count = text_families(english ? "en" : "zh-cn", names, FONT_PANEL_CAP);
-  catalog_count = 0;
-  if (count < 0)
-    count = 0;
-  for (int i = 0; i < count && catalog_count < FONT_PANEL_CAP; i++) {
-    if (!names[i] || !names[i][0])
-      continue;
-    snprintf(catalog[catalog_count].name, sizeof(catalog[catalog_count].name),
-             "%s", names[i]);
-    // spacing >= 90 (dual, mono, charcell). Names are not inspected.
-    int spacing = text_family_spacing(names[i]);
-    catalog[catalog_count].mono = text_spacing_mono(spacing);
-    catalog_count++;
-  }
-  catalog_lang = lang;
-  lift_recent();
 }
 static void release_frame(void) {
   if (!panel_frame)
@@ -444,9 +309,11 @@ static bool place_of(const config_t *config, font_panel_anchor_t card,
   if (!output_size(&output_w, &output_h))
     return false;
   bool top = config->overlay_position == POSITION_TOP;
-  double sy =
-      top ? placed_margin : (double)output_h - placed_margin - surface_h;
-  font_panel_box_t card_box = {card.x, sy + card.y, card.w, card.h};
+  drag_rect_t absolute =
+      overlay_card_rect((drag_rect_t){card.x, card.y, card.w, card.h},
+                        card_margin_x, placed_margin, top, output_h, surface_h);
+  font_panel_box_t card_box = {absolute.x, absolute.y, absolute.width,
+                               absolute.height};
   double scale = panel.scale > 0 ? panel.scale : 1;
   font_panel_size_t size = {font_panel_width(scale),
                             font_panel_height(font_panel_count(&panel), scale)};
@@ -518,7 +385,7 @@ static void open_model(const config_t *config, int64_t now_ms) {
   catalog_lang = 0;
   load_faces(english);
   font_panel_reset(&panel);
-  font_panel_set_theme(&panel, config->sign_theme);
+  font_panel_set_theme(&panel, sign_theme_effective(config->sign_theme));
   font_panel_set_faces(&panel, catalog, catalog_count);
   font_panel_set_prepared(&panel, 0);
   font_panel_set_real_preview(&panel, false);
@@ -532,8 +399,8 @@ static void open_model(const config_t *config, int64_t now_ms) {
 static void retarget(const config_t *config) {
   if (!panel.open)
     return;
-  if (panel.theme != config->sign_theme) {
-    font_panel_set_theme(&panel, config->sign_theme);
+  if (panel.theme != sign_theme_effective(config->sign_theme)) {
+    font_panel_set_theme(&panel, sign_theme_effective(config->sign_theme));
     need_draw = true;
   }
   bool english = config_sign_english(config);
@@ -670,7 +537,8 @@ void font_panel_surface_language(bool english) {
   batch = BATCH_START;
   need_draw = true;
 }
-void font_panel_surface_margin(int margin_y) {
+void font_panel_surface_margin(int margin_x, int margin_y) {
+  placed_margin_x = margin_x;
   placed_margin = margin_y;
 }
 static void toggle_panel(size_t index, const config_t *config, int64_t now_ms) {
@@ -686,8 +554,12 @@ static void toggle_panel(size_t index, const config_t *config, int64_t now_ms) {
 void font_panel_surface_sync(size_t index, const config_t *config,
                              font_panel_anchor_t card, int surface_h,
                              int64_t now_ms, int *timeout_ms, bool toggle) {
-  if (toggle)
+  if (toggle) {
+    // The card is hidden while browsing. Retain its opening output-space
+    // anchor when the main surface is repositioned by a scale/size change.
+    card_margin_x = placed_margin_x;
     toggle_panel(index, config, now_ms);
+  }
   if (!panel.open || owner != index) {
     if (!panel.open)
       destroy_surface();

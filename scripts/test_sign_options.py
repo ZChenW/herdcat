@@ -55,7 +55,7 @@ try:
         'sign_font': ['', 'Noto Sans', 'monospace', 'missing-herdcat-font'],
         'sign_font_size': list(range(10, 21)),
         'sign_animations': ['full', 'reduced', 'off'],
-        'sign_theme': ['light', 'dark'],
+        'sign_theme': ['light', 'dark', 'auto'],
         'sign_language': ['auto', 'en', 'zh'],
         'sign_done': ['sticky', 'timeout'],
         'sign_typing_desk': [0, 1],

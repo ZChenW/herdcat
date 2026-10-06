@@ -75,6 +75,8 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
     target = &config->overlay_height;
   } else if (strcmp(key, "idle_frame") == 0) {
     target = &config->idle_frame;
+  } else if (strcmp(key, "compositor_experimental") == 0) {
+    target = &config->compositor_experimental;
   } else if (strcmp(key, "agent_interrupt_detect") == 0) {
     target = &config->agent_interrupt_detect;
   } else if (strcmp(key, "agent_stale_timeout") == 0) {
@@ -122,7 +124,8 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
   }
 
   bool boolean_key =
-      (target == &config->agent_interrupt_detect ||
+      (target == &config->compositor_experimental ||
+       target == &config->agent_interrupt_detect ||
        target == &config->sign_typing_desk ||
        target == &config->cat_draggable || target == &config->mirror_x ||
        target == &config->mirror_y || target == &config->enable_antialiasing ||
@@ -176,6 +179,7 @@ static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
       {"sign_style",      "off",     SIGN_STYLE_OFF    },
       {"sign_theme",      "light",   SIGN_THEME_LIGHT  },
       {"sign_theme",      "dark",    SIGN_THEME_DARK   },
+      {"sign_theme",      "auto",    SIGN_THEME_AUTO   },
       {"sign_idle",       "hover",   SIGN_IDLE_HOVER   },
       {"sign_idle",       "always",  SIGN_IDLE_ALWAYS  },
       {"sign_idle",       "never",   SIGN_IDLE_NEVER   },
@@ -201,7 +205,8 @@ static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
       config->sign_animations = (sign_animations_t)signs[i].number;
     else if (!strcmp(key, "sign_language"))
       config->sign_language = (sign_language_t)signs[i].number;
-    else
+    else if (!strcmp(key, "sign_done") && signs[i].number >= SIGN_DONE_STICKY &&
+             signs[i].number <= SIGN_DONE_TIMEOUT)
       config->sign_done = (sign_done_t)signs[i].number;
     return HERDCAT_SUCCESS;
   }

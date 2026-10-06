@@ -120,6 +120,8 @@ static const char *theme_text(sign_theme_t value) {
     return "light";
   if (value == SIGN_THEME_DARK)
     return "dark";
+  if (value == SIGN_THEME_AUTO)
+    return "auto";
   return NULL;
 }
 static bool parse_theme(const char *text, sign_theme_t *value) {
@@ -127,6 +129,8 @@ static bool parse_theme(const char *text, sign_theme_t *value) {
     *value = SIGN_THEME_LIGHT;
   else if (!strcmp(text, "dark"))
     *value = SIGN_THEME_DARK;
+  else if (!strcmp(text, "auto"))
+    *value = SIGN_THEME_AUTO;
   else
     return false;
   return true;
@@ -325,7 +329,7 @@ static int choose(int kind, int value) {
   } else if ((kind == 1 && value != SIGN_LANGUAGE_EN &&
               value != SIGN_LANGUAGE_ZH) ||
              (kind == 2 && value != SIGN_THEME_LIGHT &&
-              value != SIGN_THEME_DARK)) {
+              value != SIGN_THEME_DARK && value != SIGN_THEME_AUTO)) {
     return -1;
   }
   int dir = state_dir(true);

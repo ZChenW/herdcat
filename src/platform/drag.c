@@ -66,6 +66,15 @@ int drag_margin_follow(int press_margin, double grab_y, double pointer_y,
       (int64_t)press_margin + (top ? llround(error) : -llround(error));
   return value < 0 ? 0 : value > INT_MAX ? INT_MAX : (int)value;
 }
+void drag_follow_position(int press_x, int press_y, double grab_x,
+                          double grab_y, double pointer_x, double pointer_y,
+                          bool top, int output_width, int cat_width,
+                          int output_height, int surface_height, int *x,
+                          int *y) {
+  *x = drag_margin_follow(press_x, grab_x, pointer_x, true);
+  *y = drag_margin_follow(press_y, grab_y, pointer_y, top);
+  drag_clamp(x, y, output_width, cat_width, output_height, surface_height);
+}
 static bool valid_output(const char *output) {
   if (!output || !*output ||
       strlen(output) >= sizeof(((position_t *)0)->output)) {

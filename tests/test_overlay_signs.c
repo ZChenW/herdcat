@@ -1178,7 +1178,7 @@ static void theme_switch_and_reload(void) {
   right_click(120, cat_y + 20);
   overlay_signs_step(0, &config, 100, cat_y, height, false, 1000);
   const sign_frame_t *frame = overlay_signs_frame(0);
-  sign_rect_t light = frame->menu_theme[0], dark = frame->menu_theme[1];
+  sign_rect_t light = frame->menu_theme[0], dark = frame->menu_theme[2];
   TEST_ASSERT(frame->menu_card.y >= 6);
   TEST_ASSERT(frame->menu_card.y + frame->menu_card.h == cat_y - 6);
   click_rect(dark);
@@ -1187,7 +1187,7 @@ static void theme_switch_and_reload(void) {
   TEST_ASSERT(step.redraw && theme_choices == 1 &&
               last_theme == SIGN_THEME_DARK);
   frame = overlay_signs_frame(0);
-  TEST_ASSERT(frame->menu_open && frame->menu_theme_thumb.x == dark.x);
+  TEST_ASSERT(frame->menu_open && frame->menu_theme_thumb.x == dark.x - 1);
   TEST_ASSERT(panel_theme == SIGN_THEME_DARK);
   TEST_ASSERT(panel_anchor.y == frame->menu_card.y &&
               panel_anchor.h == frame->menu_card.h);

@@ -25,7 +25,7 @@ typedef struct {
   uint64_t key, used;
   int w, h;
   uint8_t *pixels;
-  bool phase;
+  bool phase, panel_only;
 } cache_slot_t;
 
 static NSVGrasterizer *rasterizer;
@@ -35,6 +35,7 @@ static int cache_scale;
 static size_t cache_bytes;
 static int cache_phases;
 static int64_t cache_release_at;
+static bool panel_drawing;
 
 #ifdef TEST_BUILD
 static uint64_t cache_hits, cache_misses;
@@ -203,7 +204,8 @@ static void cache_store(uint64_t key, uint8_t *pixels, int w, int h,
                          .w = w,
                          .h = h,
                          .pixels = pixels,
-                         .phase = phase};
+                         .phase = phase,
+                         .panel_only = panel_drawing};
   if (phase)
     cache_phases++;
   cache_bytes += bytes;
@@ -418,6 +420,8 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
     key = mix(key, quantize(rot_y - y));
   }
   cache_slot_t *slot = cacheable ? cache_find(key, bw, bh) : NULL;
+  if (slot && !panel_drawing)
+    slot->panel_only = false;
   // A bitmap also used by a settled non-waiting shape is worth retaining.
   if (slot && slot->phase && !shape->pixel_snap) {
     slot->phase = false;
@@ -620,6 +624,22 @@ void sign_draw_clip(uint8_t *dst, int dw, int dh, int scale_120,
     if (text->above == (layer == SIGN_DRAW_OVER))
       draw_text(dst, dw, dh, text, scale, bounds, store);
   }
+}
+void sign_draw_font_panel(uint8_t *dst, int dw, int dh, int scale_120,
+                          const sign_frame_t *frame) {
+  panel_drawing = true;
+  sign_draw(dst, dw, dh, scale_120, frame, SIGN_DRAW_OVER);
+  panel_drawing = false;
+}
+void sign_draw_font_panel_cleanup(void) {
+  for (int i = 0; i < CACHE_SLOTS; i++)
+    if (cache[i].panel_only)
+      cache_drop(&cache[i]);
+  // Rasterizer scratch storage can grow to the panel's size. Shape bitmaps
+  // and text caches remain valid when the scratch storage is recreated.
+  if (rasterizer)
+    nsvgDeleteRasterizer(rasterizer);
+  rasterizer = NULL;
 }
 void sign_draw_cleanup(void) {
   cache_clear();

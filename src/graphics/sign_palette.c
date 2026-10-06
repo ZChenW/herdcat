@@ -29,3 +29,11 @@ static const sign_palette_t DARK = {
 const sign_palette_t *sign_palette(sign_theme_t theme) {
   return theme == SIGN_THEME_DARK ? &DARK : &LIGHT;
 }
+
+static sign_theme_t system_theme = SIGN_THEME_LIGHT;
+sign_theme_t sign_theme_effective(sign_theme_t choice) {
+  return choice == SIGN_THEME_AUTO ? system_theme : choice;
+}
+void sign_theme_system(sign_theme_t theme) {
+  system_theme = theme == SIGN_THEME_DARK ? SIGN_THEME_DARK : SIGN_THEME_LIGHT;
+}

@@ -21,6 +21,10 @@ void sign_draw_clip(uint8_t *dst, int dst_w, int dst_h, int scale_120,
                     const sign_frame_t *frame, sign_draw_layer_t layer,
                     pixel_rect_t clip);
 void sign_draw_cleanup(void);
+// Tag panel-only bitmaps for release without dropping settled sign bitmaps.
+void sign_draw_font_panel(uint8_t *dst, int dw, int dh, int scale_120,
+                          const sign_frame_t *frame);
+void sign_draw_font_panel_cleanup(void);
 // Call after session updates, with waiting true if any session is waiting.
 // After 60 seconds without waiting, drop only full-motion phase bitmaps.
 // The timeout is -1 when no one-shot cache deadline is pending.

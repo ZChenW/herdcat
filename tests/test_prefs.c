@@ -167,7 +167,7 @@ static void theme_round_trip(void) {
                             &theme) == 0);
   TEST_ASSERT(theme == SIGN_THEME_LIGHT);
   TEST_ASSERT(prefs_choose_theme(SIGN_THEME_DARK) == 0);
-  TEST_ASSERT(prefs_choose_theme((sign_theme_t)2) == -1);
+  TEST_ASSERT(prefs_choose_theme((sign_theme_t)3) == -1);
   char *text = slurp();
   TEST_ASSERT(strstr(text, "sign_theme\tdark\tlight\n"));
   TEST_ASSERT(strstr(text, "sign_style\tpost\tfan\n"));
@@ -191,6 +191,19 @@ static void theme_round_trip(void) {
   text = slurp();
   TEST_ASSERT(!strstr(text, "sign_theme"));
   free(text);
+  theme = SIGN_THEME_LIGHT;
+  TEST_ASSERT(prefs_resolve(&style, &language, font_buf, sizeof(font_buf),
+                            &theme) == 0);
+  TEST_ASSERT(prefs_choose_theme(SIGN_THEME_AUTO) == 0);
+  theme = SIGN_THEME_LIGHT;
+  TEST_ASSERT(prefs_resolve(&style, &language, font_buf, sizeof(font_buf),
+                            &theme) == 0);
+  TEST_ASSERT(theme == SIGN_THEME_AUTO);
+  write_text("sign_theme dark light\n");
+  theme = SIGN_THEME_LIGHT;
+  TEST_ASSERT(prefs_resolve(&style, &language, font_buf, sizeof(font_buf),
+                            &theme) == 0);
+  TEST_ASSERT(theme == SIGN_THEME_DARK);
   write_text("sign_theme\tbogus\tlight\n");
   theme = SIGN_THEME_LIGHT;
   TEST_ASSERT(prefs_resolve(&style, &language, font_buf, sizeof(font_buf),

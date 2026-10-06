@@ -67,6 +67,36 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
                 result[parts[1]] = tuple(map(int, parts[2:]))
         return result
 
+    def placements():
+        result = {}
+        for line in text().splitlines():
+            parts = line.split()
+            if parts[:1] == ['placement']:
+                result[(parts[1], parts[2])] = tuple(map(int, parts[3:]))
+        return result
+
+    def check_anchor(output, card, top, output_size):
+        main = placements()[(output, 'herdcat-overlay')]
+        wait_for(lambda: (output, 'herdcat-font-panel') in placements())
+        panel = placements()[(output, 'herdcat-font-panel')]
+        # The card is surface-local, the independent panel uses output pixels.
+        card_x = main[3] + card[0]
+        card_y = (main[0] if top else output_size[1] - main[2] - main[5]) + card[1]
+        scale = 40 / 110
+        panel_w = 384 * scale
+        gap = 10 * scale
+        x = card_x + card[2] + gap
+        if x + panel_w > output_size[0]:
+            x = card_x - gap - panel_w
+        x = max(0, min(x, output_size[0] - panel_w))
+        # The card region is an integer cover of a card that is still easing
+        # in when it is sampled, and the panel follows the card as it settles,
+        # so the two differ by a few pixels. A missing surface margin would be
+        # off by hundreds.
+        y = max(0, min(card_y + card[3] - panel[5], output_size[1] - panel[5]))
+        assert abs(panel[3] - x) <= 4, (main, panel, card, x)
+        assert abs(panel[0] - y) <= 6, (main, panel, card, y)
+
     def card_region(output, cat):
         # A right click on the cat first shows the hover area around the cat,
         # then the card above it. Taking the first changed region clicked the
@@ -93,6 +123,19 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
         click('TEST-1', name, 272)
         wait_for(lambda: 'overlay TEST-1 herdcat-font-panel' in text())
         wait_for(lambda: 'commit TEST-1' in text().rsplit('herdcat-font-panel', 1)[-1])
+        check_anchor('TEST-1', card, False, (800, 600))
+        # The panel follows the card while it eases in; sample once it rests.
+        def settled():
+            first = placements()[('TEST-1', 'herdcat-font-panel')]
+            time.sleep(.3)
+            return first == placements()[('TEST-1', 'herdcat-font-panel')]
+        wait_for(settled)
+        panel_x = placements()[('TEST-1', 'herdcat-font-panel')][3]
+        send('step')  # Narrower output and new fractional scale while browsing.
+        wait_for(lambda: 'phase 1' in text())
+        wait_for(lambda: placements()[('TEST-1', 'herdcat-overlay')][4] == 238)
+        time.sleep(.2)
+        assert abs(placements()[('TEST-1', 'herdcat-font-panel')][3] - panel_x) <= 1
         # The card steps aside while the panel is open, so there is no font
         # name to click again. A right click on the cat closes the menu and
         # the panel with it.
@@ -112,11 +155,11 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
 
         cat = regions()['TEST-2']
         click('TEST-2', (cat[0] + cat[2] // 2, cat[1] + cat[3] // 2), 273)
-        name = name_center(card_region('TEST-2', cat))
+        card = card_region('TEST-2', cat)
+        name = name_center(card)
         click('TEST-2', name, 272)
         wait_for(lambda: 'overlay TEST-2 herdcat-font-panel' in text())
-        send('step')
-        wait_for(lambda: 'phase 1' in text())
+        check_anchor('TEST-2', card, True, (1024, 768))
         send('step')
         wait_for(lambda: 'phase 2' in text())
         wait_for(lambda: text().count('gone herdcat-font-panel') >= 3)
