@@ -32,10 +32,12 @@ static const double HOT_MS = 120;
 typedef struct {
   const char *fallback, *all, *prop, *mono, *meta;
 } panel_words_t;
+// clang-format off
 static const panel_words_t WORDS[] = {
     {"默认",    "全部", "比例", "等宽", "Claude · 等你批准"      },
     {"Default", "All",  "Text", "Mono", "Claude · Needs approval"},
 };
+// clang-format on
 typedef struct {
   double x1, y1, x2, y2;
 } font_curve_t;

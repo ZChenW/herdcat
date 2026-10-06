@@ -66,36 +66,89 @@ static void geometry(void) {
   TEST_ASSERT(x == 800 && y == 800 - fan_height);
 }
 static void quiet_pole(void) {
-  begin();
-  config_t config = config_of(40, 50, 10);
-  int height = overlay_signs_height(&config);
-  overlay_signs_step_t first =
-      overlay_signs_step(0, &config, 10, 72, height, false, 0);
-  TEST_ASSERT(first.redraw);
-  TEST_ASSERT(!first.frame);
-  TEST_ASSERT(first.timeout_ms < 0);
-  TEST_ASSERT(first.damage_full);
-  overlay_signs_step_t second =
-      overlay_signs_step(0, &config, 10, 72, height, false, 50);
-  TEST_ASSERT(!second.redraw);
-  TEST_ASSERT(!second.frame);
-  TEST_ASSERT(second.timeout_ms < 0);
-  TEST_ASSERT(!second.damage_full);
+  const sign_style_t styles[] = {SIGN_STYLE_FAN, SIGN_STYLE_POST,
+                                 SIGN_STYLE_OFF};
+  for (size_t style = 0; style < sizeof(styles) / sizeof(styles[0]); style++) {
+    begin();
+    config_t config = config_of(40, 50, 10);
+    config.sign_style = styles[style];
+    int height = overlay_signs_height(&config);
+    overlay_signs_step_t first =
+        overlay_signs_step(0, &config, 10, 72, height, false, 0);
+    TEST_ASSERT(first.redraw);
+    TEST_ASSERT(!first.frame);
+    TEST_ASSERT(first.timeout_ms < 0);
+    TEST_ASSERT(first.damage_full);
+    const int64_t times[] = {50, 180, 1000, 60000, 3600000};
+    for (size_t i = 0; i < sizeof(times) / sizeof(times[0]); i++) {
+      overlay_signs_step_t next =
+          overlay_signs_step(0, &config, 10, 72, height, false, times[i]);
+      TEST_ASSERT(!next.redraw);
+      TEST_ASSERT(!next.frame);
+      TEST_ASSERT(next.timeout_ms < 0);
+      TEST_ASSERT(!next.damage_full);
+    }
+  }
 }
 static void working_dots(void) {
-  begin();
-  config_t config = config_of(40, 50, 0);
-  int height = overlay_signs_height(&config);
-  TEST_ASSERT(agent_sessions_apply(0x11, "claude", AGENT_EVENT_WORKING, 42, 0,
-                                   0, NULL) == 0);
-  overlay_signs_step_t rising =
-      overlay_signs_step(0, &config, 10, 72, height, false, 0);
-  TEST_ASSERT(rising.frame);
-  TEST_ASSERT(rising.timeout_ms < 0);
-  overlay_signs_step_t dots =
-      overlay_signs_step(0, &config, 10, 72, height, false, 420);
-  TEST_ASSERT(!dots.frame);
-  TEST_ASSERT(dots.timeout_ms > 0 && dots.timeout_ms <= 180);
+  const sign_style_t styles[] = {SIGN_STYLE_FAN, SIGN_STYLE_POST};
+  for (size_t style = 0; style < sizeof(styles) / sizeof(styles[0]); style++) {
+    begin();
+    config_t config = config_of(40, 50, 0);
+    config.sign_style = styles[style];
+    int height = overlay_signs_height(&config);
+    TEST_ASSERT(agent_sessions_apply(0x11, "claude", AGENT_EVENT_WORKING, 42, 0,
+                                     0, NULL) == 0);
+    overlay_signs_step_t rising =
+        overlay_signs_step(0, &config, 10, 72, height, false, 0);
+    TEST_ASSERT(rising.frame);
+    TEST_ASSERT(rising.timeout_ms < 0);
+    // Let the entrance scalars advance as actual surface callbacks would.
+    // The fan's plate starts appearing after opacity first becomes positive.
+    for (int64_t now = 17; now < 720; now += 17)
+      overlay_signs_step(0, &config, 10, 72, height, false, now);
+    overlay_signs_step_t dots =
+        overlay_signs_step(0, &config, 10, 72, height, false, 720);
+    TEST_ASSERT(!dots.frame);
+    TEST_ASSERT(dots.timeout_ms == 180);
+    // Release events between dot steps must not cause another submission.
+    for (int64_t now = 721; now <= 1440; now++) {
+      overlay_signs_step_t step =
+          overlay_signs_step(0, &config, 10, 72, height, false, now);
+      TEST_ASSERT(!step.frame);
+      TEST_ASSERT(step.redraw == (now % 180 == 0));
+      TEST_ASSERT(step.timeout_ms == 180 - now % 180);
+    }
+  }
+}
+static void waiting_phases(void) {
+  const sign_style_t styles[] = {SIGN_STYLE_FAN, SIGN_STYLE_POST};
+  for (size_t style = 0; style < sizeof(styles) / sizeof(styles[0]); style++) {
+    begin();
+    config_t config = config_of(110, 120, 0);
+    config.sign_style = styles[style];
+    int height = overlay_signs_height(&config);
+    TEST_ASSERT(agent_sessions_apply(0x11, "claude", AGENT_EVENT_WAITING, 42, 0,
+                                     0, NULL) == 0);
+    for (int64_t now = 0; now < 1000; now += 17)
+      overlay_signs_step(0, &config, 100, 200, height, false, now);
+    overlay_signs_step(0, &config, 100, 200, height, false, 6000);
+    int submissions = 0;
+    for (int64_t now = 6001; now <= 36000; now++) {
+      overlay_signs_step_t step =
+          overlay_signs_step(0, &config, 100, 200, height, false, now);
+      int phase = (int)(now % 1500) * 48 / 1500;
+      int previous = (int)((now - 1) % 1500) * 48 / 1500;
+      int boundary = ((phase + 1) * 1500 + 47) / 48;
+      TEST_ASSERT(!step.frame);
+      TEST_ASSERT(!overlay_signs_frame(0)->transitioning);
+      TEST_ASSERT(step.redraw == (phase != previous));
+      TEST_ASSERT(step.timeout_ms == boundary - now % 1500);
+      submissions += step.redraw;
+    }
+    TEST_ASSERT(submissions >= 912 && submissions <= 1008);
+    TEST_ASSERT(submissions == 960);
+  }
 }
 static bool has_key(const sign_frame_t *frame, uint64_t key) {
   for (int i = 0; i < frame->hit_count; i++) {
@@ -720,6 +773,9 @@ static void font_row(void) {
   text_cleanup();
 }
 static bool stub_open, stub_armed, stub_covers, stub_toggled;
+static bool stub_has_choice;
+static char stub_choice[128], stub_selected[128];
+static const char *panel_hover;
 static int stub_close_n, stub_wheel_n;
 bool font_panel_surface_is_open(void) {
   return stub_open;
@@ -756,22 +812,31 @@ void font_panel_surface_wheel(int discrete) {
   stub_wheel_n++;
 }
 bool font_panel_surface_button(uint32_t button, uint32_t state) {
-  (void)button;
-  (void)state;
-  return false;
+  if (!stub_armed)
+    return false;
+  if (button == 0x110 && state == 0 && panel_hover) {
+    snprintf(stub_choice, sizeof(stub_choice), "%s", panel_hover);
+    stub_has_choice = true;
+  }
+  return true;
 }
-static const char *panel_hover;
 const char *font_panel_surface_hover(void) {
   return panel_hover;
 }
 bool font_panel_surface_take_choice(char *out, size_t cap) {
-  (void)out;
-  (void)cap;
-  return false;
+  if (!stub_has_choice)
+    return false;
+  stub_has_choice = false;
+  if (out && cap)
+    snprintf(out, cap, "%s", stub_choice);
+  return true;
 }
-void font_panel_surface_left(void) {}
+void font_panel_surface_left(void) {
+  stub_armed = stub_covers = false;
+  panel_hover = NULL;
+}
 void font_panel_surface_select(const char *family) {
-  (void)family;
+  snprintf(stub_selected, sizeof(stub_selected), "%s", family ? family : "");
 }
 void font_panel_surface_language(bool english) {
   (void)english;
@@ -864,10 +929,254 @@ static void font_name_button(void) {
   overlay_signs_press(0);
   TEST_ASSERT(stub_close_n == after_open + 1 && !stub_open);
 }
-int main(void) {
+// Keep contract failures fatal to the suite, but collect them so that a broken
+// save deadline does not prevent checking the rest of the selection flow.
+static int contract_failures;
+#define EXPECT_CONTRACT(condition)                                        \
+  do {                                                                    \
+    if (!(condition)) {                                                   \
+      fprintf(stderr, "%s:%d: contract failed: %s\n", __FILE__, __LINE__, \
+              #condition);                                                \
+      contract_failures++;                                                \
+    }                                                                     \
+  } while (0)
+
+static config_t *flow_config;
+static int64_t flow_now, flow_saved_at;
+static int flow_saves;
+static char flow_saved[128];
+static void flow_font(const char *family, bool save) {
+  // Match main.c's menu_font: both preview and save update the live face.
+  snprintf(flow_config->sign_font, sizeof(flow_config->sign_font), "%s",
+           family);
+  TEST_ASSERT(text_set_family(family) == 0);
+  if (save) {
+    flow_saves++;
+    flow_saved_at = flow_now;
+    snprintf(flow_saved, sizeof(flow_saved), "%s", family);
+  }
+  printf("font callback: t=%lld save=%d family=%s\n", (long long)flow_now, save,
+         family);
+}
+static overlay_signs_step_t flow_step(config_t *config, int height,
+                                      int64_t now) {
+  flow_now = now;
+  return overlay_signs_step(0, config, 100, 199, height, false, now);
+}
+static void open_font_flow(config_t *config, int *height, char *original,
+                           char *tried, size_t cap) {
+  begin();
+  stub_open = stub_armed = stub_covers = stub_toggled = false;
+  stub_has_choice = false;
+  panel_hover = NULL;
+  flow_saves = 0;
+  flow_saved_at = 0;
+  flow_saved[0] = '\0';
+  TEST_ASSERT(text_init(NULL) == 0);
+  const char *families[2];
+  TEST_ASSERT(text_families("en", families, 2) >= 2);
+  snprintf(original, cap, "%s", families[0]);
+  snprintf(tried, cap, "%s", families[1]);
+  TEST_ASSERT(strcmp(original, tried) != 0);
+  *config = config_of(110, 120, 0);
+  config->sign_style = SIGN_STYLE_FAN;
+  config->sign_language = SIGN_LANGUAGE_EN;
+  config->sign_animations = SIGN_ANIM_OFF;
+  snprintf(config->sign_font, sizeof(config->sign_font), "%s", original);
+  TEST_ASSERT(text_set_family(original) == 0);
+  flow_config = config;
+  overlay_signs_on_menu(NULL, NULL, NULL, flow_font);
+  TEST_ASSERT(agent_sessions_apply(0x91, "claude", AGENT_EVENT_WAITING, 42, 0,
+                                   0, NULL) == 0);
+  *height = overlay_signs_height(config);
+  flow_step(config, *height, 1000);
+  int cat_y = overlay_signs_cat_y(config, *height);
+  right_click(120, cat_y + 20);
+  flow_step(config, *height, 1000);
+  const sign_frame_t *frame = overlay_signs_frame(0);
+  TEST_ASSERT(frame && frame->menu_open);
+  click_rect(frame->menu_font);
+  flow_step(config, *height, 1100);
+  TEST_ASSERT(stub_toggled && stub_open);
+  // Opening is synchronized after building the card frame. Let the next
+  // frame present browsing before the pointer enters the separate panel.
+  flow_step(config, *height, 1150);
+  TEST_ASSERT(!overlay_signs_frame(0)->menu_open && stub_open);
+  stub_armed = stub_covers = true;
+  overlay_signs_track_panel(0);
+  panel_hover = tried;
+  flow_step(config, *height, 1200);
+  TEST_ASSERT(!overlay_signs_frame(0)->menu_open);
+  TEST_ASSERT(!strcmp(config->sign_font, tried));
+  TEST_ASSERT(!strcmp(stub_selected, original));
+  TEST_ASSERT(flow_saves == 0);
+}
+static void expect_sign_font(const config_t *config, const char *family) {
+  const sign_frame_t *frame = overlay_signs_frame(0);
+  TEST_ASSERT(frame && !frame->menu_open && frame->text_count > 0);
+  const sign_text_t *label = &frame->texts[0];
+  enum {
+    WIDTH = 512,
+    HEIGHT = 64,
+    BYTES = WIDTH * HEIGHT * 4
+  };
+  uint8_t *actual = calloc(BYTES, 1), *expected = calloc(BYTES, 1);
+  TEST_ASSERT(actual && expected);
+  // The sign renderer also uses the main face for an empty text.family.
+  text_draw_family(actual, WIDTH, HEIGHT, 0, 50,
+                   label->family[0] ? label->family : NULL, label->value, 32,
+                   true, 0xffffffff, WIDTH);
+  text_draw_family(expected, WIDTH, HEIGHT, 0, 50, family, label->value, 32,
+                   true, 0xffffffff, WIDTH);
+  bool ink = false;
+  for (int i = 0; i < BYTES; i++)
+    ink |= expected[i] != 0;
+  TEST_ASSERT(ink);
+  EXPECT_CONTRACT(!strcmp(config->sign_font, family));
+  EXPECT_CONTRACT(memcmp(actual, expected, BYTES) == 0);
+  free(actual);
+  free(expected);
+}
+static void font_panel_selection(void) {
+  config_t config;
+  int height;
+  char original[128], tried[128];
+  open_font_flow(&config, &height, original, tried, sizeof(original));
+  TEST_ASSERT(overlay_signs_button(0x110, 1));
+  TEST_ASSERT(overlay_signs_button(0x110, 0));
+  TEST_ASSERT(stub_has_choice);
+  overlay_signs_step_t picked = flow_step(&config, height, 1300);
+  TEST_ASSERT(!stub_has_choice);
+  TEST_ASSERT(!strcmp(stub_selected, tried));
+  printf("after choice: saves=%d timeout=%d\n", flow_saves, picked.timeout_ms);
+  // A click in the panel is a deliberate choice and is saved at once. Only
+  // stepping with the arrows or the wheel waits 500 ms before saving.
+  EXPECT_CONTRACT(flow_saves == 1 && !strcmp(flow_saved, tried));
+  EXPECT_CONTRACT(flow_saved_at == 1300);
+  // Leaving the cell afterwards must keep the new choice.
+  panel_hover = NULL;
+  flow_step(&config, height, 1400);
+  EXPECT_CONTRACT(!strcmp(config.sign_font, tried));
+  EXPECT_CONTRACT(!strcmp(stub_selected, tried));
+  flow_step(&config, height, 1800);
+  EXPECT_CONTRACT(flow_saves == 1);
+  // The one-shot choice and the save must not repeat on later steps.
+  flow_step(&config, height, 1801);
+  EXPECT_CONTRACT(flow_saves == 1);
+  font_panel_surface_left();
+  overlay_signs_leave();
+  flow_step(&config, height, 1900);
+  flow_step(&config, height, 2699);
+  TEST_ASSERT(stub_open);
+  flow_step(&config, height, 2700);
+  EXPECT_CONTRACT(!stub_open);
+  EXPECT_CONTRACT(flow_saves == 1);
+  expect_sign_font(&config, tried);
+  begin();
+  flow_config = NULL;
+  text_cleanup();
+}
+static void font_panel_cancel(void) {
+  config_t config;
+  int height;
+  char original[128], tried[128];
+  open_font_flow(&config, &height, original, tried, sizeof(original));
+  font_panel_surface_left();
+  overlay_signs_leave();
+  overlay_signs_step_t left = flow_step(&config, height, 1300);
+  // The hover pad can wake before the panel's 800 ms close deadline.
+  EXPECT_CONTRACT(left.timeout_ms > 0 && left.timeout_ms <= 800);
+  EXPECT_CONTRACT(!strcmp(config.sign_font, original));
+  EXPECT_CONTRACT(flow_saves == 0);
+  flow_step(&config, height, 2099);
+  TEST_ASSERT(stub_open);
+  flow_step(&config, height, 2100);
+  EXPECT_CONTRACT(!stub_open);
+  flow_step(&config, height, 7000);
+  EXPECT_CONTRACT(flow_saves == 0 && !flow_saved[0]);
+  expect_sign_font(&config, original);
+  begin();
+  flow_config = NULL;
+  text_cleanup();
+}
+static void expect_output_y(size_t index, const config_t *config, int height,
+                            int expected) {
+  int actual = overlay_signs_cat_y_at(index, config, height);
+  printf("cat_height=%d: y=%d expected=%d\n", config->cat_height, actual,
+         expected);
+  EXPECT_CONTRACT(actual == expected);
+}
+static void expect_cat_region(overlay_signs_rect_t rect, int x, int y, int w,
+                              int h) {
+  EXPECT_CONTRACT(rect.x == x && rect.y == y && rect.w == w && rect.h == h);
+}
+static void interleaved_outputs(void) {
+  begin();
+  config_t config[2] = {config_of(110, 120, 0), config_of(220, 260, -15)};
+  int height[2], rest[2];
+  for (size_t i = 0; i < 2; i++) {
+    config[i].sign_animations = SIGN_ANIM_OFF;
+    height[i] = overlay_signs_height(&config[i]);
+    overlay_signs_step(i, &config[i], 100 + (int)i * 300, 199 * (int)(i + 1),
+                       height[i], false, 1000);
+    TEST_ASSERT(overlay_signs_frame(i)->cat_lift == 0);
+    rest[i] = overlay_signs_cat_y(&config[i], height[i]);
+  }
+  TEST_ASSERT(rest[0] != rest[1]);
+  TEST_ASSERT(agent_sessions_apply(0x92, "claude", AGENT_EVENT_WORKING, 42,
+                                   1000, 0, NULL) == 0);
+  overlay_signs_type_at(0x92, 1000);
+  overlay_signs_step(0, &config[0], 100, 199, height[0], false, 1000);
+  // Output 1 retains its unraised frame while output 0 has presented typing.
+  // Reading either output must not change the geometry of the other one.
+  const sign_frame_t *raised = overlay_signs_frame(0);
+  const sign_frame_t *quiet = overlay_signs_frame(1);
+  TEST_ASSERT(raised != quiet);
+  TEST_ASSERT(raised->cat_lift == 8 && quiet->cat_lift == 0);
+  TEST_ASSERT(wide_board(raised) && !wide_board(quiet));
+  int expected[2] = {rest[0] - 8, rest[1]};
+  expect_output_y(0, &config[0], height[0], expected[0]);
+  expect_output_y(1, &config[1], height[1], expected[1]);
+
+  overlay_signs_rect_t regions[2][OVERLAY_SIGNS_REGION_LIMIT];
+  TEST_ASSERT(overlay_signs_regions(0, &config[0], 100, 199, height[0],
+                                    regions[0],
+                                    OVERLAY_SIGNS_REGION_LIMIT) == 1);
+  TEST_ASSERT(overlay_signs_regions(1, &config[1], 400, 398, height[1],
+                                    regions[1],
+                                    OVERLAY_SIGNS_REGION_LIMIT) == 1);
+  expect_cat_region(regions[0][0], 100, expected[0], 199, 110);
+  expect_cat_region(regions[1][0], 400, expected[1], 398, 220);
+  expect_output_y(0, &config[0], height[0], expected[0]);
+  expect_output_y(1, &config[1], height[1], expected[1]);
+
+  TEST_ASSERT(overlay_signs_frame(1) == quiet);
+  TEST_ASSERT(overlay_signs_frame(0) == raised);
+  expect_output_y(1, &config[1], height[1], expected[1]);
+  expect_output_y(0, &config[0], height[0], expected[0]);
+  EXPECT_CONTRACT(raised->cat_lift == 8 && quiet->cat_lift == 0);
+  begin();
+}
+int main(int argc, char **argv) {
+  // Focused entry points preserve the same assertions used by make test.
+  if (argc == 2) {
+    if (!strcmp(argv[1], "font-panel-selection"))
+      font_panel_selection();
+    else if (!strcmp(argv[1], "font-panel-cancel"))
+      font_panel_cancel();
+    else if (!strcmp(argv[1], "interleaved-outputs"))
+      interleaved_outputs();
+    else {
+      fprintf(stderr, "Unknown test: %s\n", argv[1]);
+      return EXIT_FAILURE;
+    }
+    return contract_failures ? EXIT_FAILURE : EXIT_SUCCESS;
+  }
+  TEST_ASSERT(argc == 1);
   geometry();
   quiet_pole();
   working_dots();
+  waiting_phases();
   open_and_close();
   click();
   focus_shake();
@@ -879,5 +1188,8 @@ int main(void) {
   switch_card();
   font_row();
   font_name_button();
-  return 0;
+  font_panel_selection();
+  font_panel_cancel();
+  interleaved_outputs();
+  return contract_failures ? EXIT_FAILURE : EXIT_SUCCESS;
 }

@@ -4,7 +4,7 @@
 #          --config /path/to/test.conf --pid <test-overlay-pid>
 # Optional real niri check: --focus-pid <owned-kitty-child> --focus-window <id>
 set -euo pipefail
-exec python3 - "$@" <<'PY'
+exec python3 - "$(dirname -- "${BASH_SOURCE[0]}")" "$@" <<'PY'
 import argparse
 import json
 import os
@@ -15,6 +15,12 @@ import subprocess
 import sys
 import tempfile
 import time
+
+sys.path.insert(0, sys.argv.pop(1))
+sys.dont_write_bytecode = True
+from runtime_test_helpers import HookParent, run_on_pty
+
+run_on_pty()
 
 parser = argparse.ArgumentParser(description='Replay hooks against an empty test overlay; stops it on success.')
 parser.add_argument('--config', type=Path, required=True)
@@ -31,6 +37,14 @@ original = args.config.read_bytes()
 mode = args.config.stat().st_mode & 0o777
 child = None
 stopped = False
+parents = {}
+
+def agent_hook(agent, payload, event=None, json_stdout=False):
+    session = payload.get('session_id') or payload.get('conversation_id') or payload.get('sessionId')
+    identity = (agent, session)
+    if identity not in parents:
+        parents[identity] = HookParent(binary, env)
+    parents[identity].invoke(agent, payload, event, json_stdout)
 
 def control(name, success=True, *arguments):
     result = subprocess.run([binary, '--' + name, *arguments], env=env, capture_output=True,
@@ -55,10 +69,7 @@ def wait_state(state, sessions, seconds):
 
 def hook(event, session, **fields):
     payload = {'hook_event_name': event, 'session_id': session, **fields}
-    result = subprocess.run([binary, '--hook', 'claude'], env=env,
-                            input=json.dumps(payload), text=True,
-                            capture_output=True, timeout=3)
-    assert result.returncode == 0 and not result.stdout and not result.stderr, result
+    agent_hook('claude', payload)
 
 def config(stale, extra=""):
     text = original.decode().rstrip() + f'\n[global]\nsign_done=timeout\nagent_done_timeout=5\nagent_stale_timeout={stale}\n' + extra
@@ -106,6 +117,8 @@ try:
         hook('SessionStart', f'replay-name-{i}', cwd='/synthetic/' + name)
     lines = control('sessions').splitlines()
     assert len(lines) == 6 and [line.split(maxsplit=5)[5] for line in lines] == names, lines
+    pids = [int(line.split()[4].removeprefix('pid=')) for line in lines]
+    assert len(set(pids)) == 6, ('sessions must have distinct parent PIDs', lines)
     hook('UserPromptSubmit', 'replay-name-5', cwd='/synthetic/' + names[5])
     lines = control('sessions').splitlines()
     assert [line.split(maxsplit=5)[5] for line in lines] == names, lines
@@ -182,22 +195,13 @@ os.execv('/usr/bin/sleep', ['sleep', '30'])
     child.wait(timeout=3)
     wait_state('idle', 0, 2)
     config(3)
-    hook('UserPromptSubmit', 'replay-stale')
+    agent_hook('opencode', {'session_id': 'replay-stale'}, 'session.execution.started')
     status('working', 1)
-    wait_state('idle', 1, 4)
-    hook('SessionEnd', 'replay-stale')
+    assert 'pid=-' in control('sessions')
+    wait_state('idle', 0, 4)  # Pidless stale sessions are removed (8.8).
+    agent_hook('opencode', {'session_id': 'replay-stale'}, 'session.deleted')
     status('idle', 0)
     config(600)
-
-    def agent_hook(agent, payload, event=None, json_stdout=False):
-        command = [binary, '--hook', agent]
-        if event:
-            command.extend(['--event', event])
-        result = subprocess.run(command, env=env, input=json.dumps(payload),
-                                text=True, capture_output=True, timeout=3)
-        expected = '{}\n' if json_stdout else ''
-        assert result.returncode == 0 and result.stdout == expected and not result.stderr, (
-            agent, event, result.returncode, result.stdout, result.stderr)
 
     def one_session(agent, state, name):
         lines = control('sessions').splitlines()
@@ -304,8 +308,11 @@ finally:
             wire(f'ev claude end {focus_key} 0')
         except OSError:
             pass
-        for session in ('replay-A', 'replay-B', 'replay-stale', 'replay-process',
+        for session in ('replay-A', 'replay-B', 'replay-process',
                         *(f'replay-name-{i}' for i in range(6))):
             hook('SessionEnd', session)
+        agent_hook('opencode', {'session_id': 'replay-stale'}, 'session.deleted')
         subprocess.run([binary, '--reload'], env=env, capture_output=True)
+    for parent in parents.values():
+        parent.close()
 PY

@@ -27,7 +27,6 @@
 #include "graphics/sign_draw.h"
 #include "graphics/text.h"
 #include "platform/drag.h"
-#include "platform/focus.h"
 #include "platform/font_panel.h"
 #include "platform/fullscreen.h"
 #include "platform/input.h"
@@ -42,9 +41,9 @@
 #  pragma GCC diagnostic pop
 #endif
 
+#include "overlay_internal.h"
+
 #include <limits.h>
-#include <linux/input-event-codes.h>
-#include <math.h>
 
 struct wl_display *display;
 struct wl_compositor *compositor;
@@ -63,47 +62,17 @@ static config_t *global_config;
 static void (*tick_callback)(void);
 static int (*runtime_fds)(int *, size_t);
 static int (*runtime_timeout)(void);
-static struct wl_seat *seat;
-static struct wl_pointer *pointer;
-static struct wp_cursor_shape_manager_v1 *cursor_manager;
-static struct wp_cursor_shape_device_v1 *cursor_device;
-static uint32_t seat_id, cursor_manager_id, pointer_serial;
-static bool hidden;
+bool hidden;
 static bool reconcile_pending;
 
-typedef struct {
-  uint32_t output_id;
-  struct wl_output *output;
-  char name[128];
-  config_t config;
-  struct wl_surface *surface;
-  struct zwlr_layer_surface_v1 *layer;
-  struct wp_viewport *viewport;
-  struct wp_fractional_scale_v1 *fractional;
-  shm_buffer_t *buffers[2];
-  void *animation;
-  uint32_t scale;
-  int width, height, physical_width, physical_height;
-  int cat_x, margin_y, output_height;
-  bool has_position, accepts_pointer;
-  bool configured, redraw, resize, closed, damage_all;
-} overlay_t;
-static overlay_t overlays[MAX_OUTPUTS];
-static overlay_t *active;
-static overlay_t *pointer_overlay;
+overlay_t overlays[MAX_OUTPUTS];
+overlay_t *active;
 
-static bool dragging, drag_moved;
-static double pointer_x, pointer_y, origin_x, origin_y;
-static int origin_cat_x, origin_margin;
-static struct wl_callback *drag_frame;
-static struct wl_callback *sign_frames[MAX_OUTPUTS];
-static void finish_drag(void);
-
-static int cat_width(const overlay_t *overlay) {
+int cat_width(const overlay_t *overlay) {
   return (int)((int64_t)overlay->config.cat_height * CAT_IMAGE_WIDTH /
                CAT_IMAGE_HEIGHT);
 }
-static void clamp_position(overlay_t *overlay) {
+void clamp_position(overlay_t *overlay) {
   if (!overlay->has_position) {
     overlay->cat_x =
         drag_default_x(&overlay->config, overlay->width, cat_width(overlay));
@@ -114,312 +83,16 @@ static void clamp_position(overlay_t *overlay) {
              cat_width(overlay), overlay->output_height, overlay->height);
 }
 // Called with this overlay active; input and pixels share one commit.
-static bool overlay_hidden(const overlay_t *overlay) {
+bool overlay_hidden(const overlay_t *overlay) {
   return hidden || (overlay->config.layer != LAYER_OVERLAY &&
                     !overlay->config.disable_fullscreen_hide &&
                     atomic_load(&fullscreen_detected));
 }
-static void update_input_region(overlay_t *overlay, bool invisible) {
-  struct wl_region *region = wl_compositor_create_region(compositor);
-  overlay->accepts_pointer =
-      overlay->configured && overlay->config.cat_draggable && !invisible;
-  if (!overlay->accepts_pointer && pointer_overlay == overlay) {
-    finish_drag();
-    overlay_signs_leave();
-    pointer_overlay = NULL;
-  }
-  if (overlay->accepts_pointer) {
-    overlay_signs_rect_t rects[OVERLAY_SIGNS_REGION_LIMIT];
-    int count = overlay_signs_regions(
-        (size_t)(overlay - overlays), &overlay->config, overlay->cat_x,
-        cat_width(overlay), overlay->height, rects, OVERLAY_SIGNS_REGION_LIMIT);
-    for (int i = 0; i < count; i++) {
-      if (rects[i].w > 0 && rects[i].h > 0) {
-        wl_region_add(region, rects[i].x, rects[i].y, rects[i].w, rects[i].h);
-      }
-    }
-  }
-  wl_surface_set_input_region(overlay->surface, region);
-  wl_region_destroy(region);
-}
-static void cursor_shape(uint32_t shape) {
-  if (cursor_device && (pointer_overlay || font_panel_surface_armed()))
-    wp_cursor_shape_device_v1_set_shape(cursor_device, pointer_serial, shape);
-}
-static void set_margin(overlay_t *overlay) {
+void set_margin(overlay_t *overlay) {
   bool top = overlay->config.overlay_position == POSITION_TOP;
   zwlr_layer_surface_v1_set_margin(overlay->layer, top ? overlay->margin_y : 0,
                                    0, top ? 0 : overlay->margin_y, 0);
 }
-static void finish_drag(void) {
-  if (dragging && drag_moved && pointer_overlay) {
-    clamp_position(pointer_overlay);
-    if (drag_position_save(pointer_overlay->name, pointer_overlay->cat_x,
-                           pointer_overlay->margin_y) < 0) {
-      herdcat_log_warning("Cannot save drag position for %s",
-                          pointer_overlay->name);
-    }
-  }
-  if (drag_frame) {
-    wl_callback_destroy(drag_frame);
-    drag_frame = NULL;
-  }
-  dragging = drag_moved = false;
-  cursor_shape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
-}
-static void drag_frame_done(void *data, struct wl_callback *callback,
-                            uint32_t time);
-static const struct wl_callback_listener DRAG_FRAME_LISTENER = {
-    .done = drag_frame_done};
-// The compositor reports pointer coordinates against the surface position at
-// button press for the whole implicit grab, so they do not shift as the margin
-// moves the surface. The margin is therefore absolute from the press state,
-// and at most one is submitted per frame.
-static void drag_follow_y(overlay_t *overlay) {
-  if (drag_frame) {
-    return;
-  }
-  int x = overlay->cat_x;
-  int y = drag_margin_follow(origin_margin, origin_y, pointer_y,
-                             overlay->config.overlay_position == POSITION_TOP);
-  drag_clamp(&x, &y, overlay->width, cat_width(overlay), overlay->output_height,
-             overlay->height);
-  if (y == overlay->margin_y) {
-    return;
-  }
-  herdcat_log_debug("Drag margin %d -> %d (pointer y %.1f, grab y %.1f)",
-                    overlay->margin_y, y, pointer_y, origin_y);
-  overlay->margin_y = y;
-  set_margin(overlay);
-  drag_frame = wl_surface_frame(overlay->surface);
-  wl_callback_add_listener(drag_frame, &DRAG_FRAME_LISTENER, NULL);
-  wl_surface_commit(overlay->surface);
-}
-static void drag_frame_done(void *data, struct wl_callback *callback,
-                            uint32_t time) {
-  (void)data;
-  (void)time;
-  wl_callback_destroy(callback);
-  drag_frame = NULL;
-  if (dragging && drag_moved && pointer_overlay) {
-    drag_follow_y(pointer_overlay);
-  }
-}
-static void pointer_enter(void *data, struct wl_pointer *object,
-                          uint32_t serial, struct wl_surface *target,
-                          wl_fixed_t x, wl_fixed_t y) {
-  (void)data;
-  (void)object;
-  finish_drag();
-  pointer_serial = serial;
-  pointer_x = wl_fixed_to_double(x);
-  pointer_y = wl_fixed_to_double(y);
-  pointer_overlay = NULL;
-  if (font_panel_surface_enter(target, pointer_x, pointer_y)) {
-    cursor_shape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER);
-    return;
-  }
-  overlay_signs_leave();
-  for (size_t i = 0; i < MAX_OUTPUTS; i++) {
-    if (overlays[i].surface == target && overlays[i].accepts_pointer &&
-        !hidden) {
-      pointer_overlay = &overlays[i];
-      bool on_sign = overlay_signs_pointer(i, pointer_x, pointer_y);
-      cursor_shape(on_sign ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER
-                           : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
-      break;
-    }
-  }
-}
-static void pointer_leave(void *data, struct wl_pointer *object,
-                          uint32_t serial, struct wl_surface *target) {
-  (void)data;
-  (void)object;
-  (void)serial;
-  (void)target;
-  finish_drag();
-  overlay_signs_leave();
-  pointer_overlay = NULL;
-}
-static void pointer_motion(void *data, struct wl_pointer *object, uint32_t time,
-                           wl_fixed_t x, wl_fixed_t y) {
-  (void)data;
-  (void)object;
-  (void)time;
-  pointer_x = wl_fixed_to_double(x);
-  pointer_y = wl_fixed_to_double(y);
-  if (font_panel_surface_motion(pointer_x, pointer_y))
-    return;
-  overlay_t *overlay = pointer_overlay;
-  if (overlay && !dragging) {
-    size_t index = (size_t)(overlay - overlays);
-    bool on_sign = overlay_signs_pointer(index, pointer_x, pointer_y);
-    cursor_shape(on_sign ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER
-                         : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
-  }
-  if (!dragging || !overlay) {
-    return;
-  }
-  if (!drag_moved) {
-    if (!drag_exceeds_threshold(origin_x, origin_y, pointer_x, pointer_y)) {
-      return;
-    }
-    drag_moved = true;
-    overlay->has_position = true;
-    cursor_shape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING);
-  }
-  int64_t desired_x = (int64_t)origin_cat_x + llround(pointer_x - origin_x);
-  int next_x = desired_x < 0         ? 0
-               : desired_x > INT_MAX ? INT_MAX
-                                     : (int)desired_x;
-  int unused_y = overlay->margin_y;
-  drag_clamp(&next_x, &unused_y, overlay->width, cat_width(overlay),
-             overlay->output_height, overlay->height);
-  if (next_x != overlay->cat_x) {
-    overlay->cat_x = next_x;
-    overlay->redraw = true;
-  }
-  drag_follow_y(overlay);
-}
-static void pointer_button(void *data, struct wl_pointer *object,
-                           uint32_t serial, uint32_t time, uint32_t button,
-                           uint32_t state) {
-  (void)data;
-  (void)object;
-  (void)serial;
-  (void)time;
-  if (overlay_signs_button(button, state)) {
-    return;
-  }
-  if (state == WL_POINTER_BUTTON_STATE_RELEASED) {
-    bool moved = drag_moved;
-    size_t index = 0;
-    pid_t pid = 0;
-    uint64_t key = 0;
-    bool click = overlay_signs_release(moved, &index, &pid, &key);
-    finish_drag();
-    if (click && index < MAX_OUTPUTS) {
-      if (pid > 0 && focus_session_window(pid) < 0) {
-        overlay_signs_fail(index, key, overlay_signs_now());
-      } else if (pid > 0) {
-        overlay_signs_arm_focus(index, key);
-      }
-      overlays[index].redraw = true;
-    }
-    if (pointer_overlay) {
-      size_t hover = (size_t)(pointer_overlay - overlays);
-      bool on_sign = overlay_signs_pointer(hover, pointer_x, pointer_y);
-      cursor_shape(on_sign ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER
-                           : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
-    }
-  } else if (pointer_overlay && pointer_overlay->accepts_pointer && !hidden) {
-    finish_drag();
-    bool on_sign = overlay_signs_press((size_t)(pointer_overlay - overlays));
-    cursor_shape(on_sign ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER
-                         : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
-    dragging = !overlay_signs_blocks_drag();
-    origin_x = pointer_x;
-    origin_y = pointer_y;
-    origin_cat_x = pointer_overlay->cat_x;
-    origin_margin = pointer_overlay->margin_y;
-  }
-}
-static void pointer_axis(void *data, struct wl_pointer *object, uint32_t time,
-                         uint32_t axis, wl_fixed_t value) {
-  (void)data;
-  (void)object;
-  (void)time;
-  (void)axis;
-  (void)value;
-}
-static void pointer_frame(void *data, struct wl_pointer *object) {
-  (void)data;
-  (void)object;
-}
-static void pointer_axis_source(void *data, struct wl_pointer *object,
-                                uint32_t source) {
-  (void)data;
-  (void)object;
-  (void)source;
-}
-static void pointer_axis_stop(void *data, struct wl_pointer *object,
-                              uint32_t time, uint32_t axis) {
-  (void)data;
-  (void)object;
-  (void)time;
-  (void)axis;
-}
-static void pointer_axis_discrete(void *data, struct wl_pointer *object,
-                                  uint32_t axis, int32_t discrete) {
-  (void)data;
-  (void)object;
-  // Axis 0 is vertical. The font panel keeps pointer_overlay empty.
-  if (!axis && discrete && (pointer_overlay || font_panel_surface_armed()))
-    overlay_signs_scroll(discrete);
-}
-static const struct wl_pointer_listener POINTER_LISTENER = {
-    .enter = pointer_enter,
-    .leave = pointer_leave,
-    .motion = pointer_motion,
-    .button = pointer_button,
-    .axis = pointer_axis,
-    .frame = pointer_frame,
-    .axis_source = pointer_axis_source,
-    .axis_stop = pointer_axis_stop,
-    .axis_discrete = pointer_axis_discrete};
-static void setup_cursor(void) {
-  if (cursor_manager && pointer && !cursor_device) {
-    cursor_device =
-        wp_cursor_shape_manager_v1_get_pointer(cursor_manager, pointer);
-  }
-}
-static void release_pointer(void) {
-  finish_drag();
-  overlay_signs_leave();
-  pointer_overlay = NULL;
-  if (cursor_device) {
-    wp_cursor_shape_device_v1_destroy(cursor_device);
-    cursor_device = NULL;
-  }
-  if (pointer) {
-    if (wl_pointer_get_version(pointer) >= WL_POINTER_RELEASE_SINCE_VERSION) {
-      wl_pointer_release(pointer);
-    } else {
-      wl_pointer_destroy(pointer);
-    }
-    pointer = NULL;
-  }
-}
-static void release_seat(void) {
-  release_pointer();
-  if (seat) {
-    if (wl_seat_get_version(seat) >= WL_SEAT_RELEASE_SINCE_VERSION) {
-      wl_seat_release(seat);
-    } else {
-      wl_seat_destroy(seat);
-    }
-    seat = NULL;
-  }
-  seat_id = 0;
-}
-static void seat_capabilities(void *data, struct wl_seat *object,
-                              uint32_t capabilities) {
-  (void)data;
-  if (!(capabilities & WL_SEAT_CAPABILITY_POINTER)) {
-    release_pointer();
-  } else if (!pointer) {
-    pointer = wl_seat_get_pointer(object);
-    wl_pointer_add_listener(pointer, &POINTER_LISTENER, NULL);
-    setup_cursor();
-  }
-}
-static void seat_name(void *data, struct wl_seat *object, const char *name) {
-  (void)data;
-  (void)object;
-  (void)name;
-}
-static const struct wl_seat_listener SEAT_LISTENER = {
-    .capabilities = seat_capabilities, .name = seat_name};
 
 static void activate(overlay_t *overlay) {
   active = overlay;
@@ -432,182 +105,6 @@ static void activate(overlay_t *overlay) {
 }
 int wayland_phys_dim(int logical) {
   return scale_size_120(logical, active ? active->scale : 120);
-}
-static int clamp_offset(int64_t value) {
-  if (value < INT_MIN) {
-    return INT_MIN;
-  }
-  if (value > INT_MAX) {
-    return INT_MAX;
-  }
-  return (int)value;
-}
-static void sign_frame_done(void *data, struct wl_callback *callback,
-                            uint32_t time) {
-  (void)time;
-  overlay_t *overlay = data;
-  size_t index = (size_t)(overlay - overlays);
-  wl_callback_destroy(callback);
-  if (index < MAX_OUTPUTS && sign_frames[index] == callback) {
-    sign_frames[index] = NULL;
-  }
-  overlay->redraw = true;
-}
-static const struct wl_callback_listener SIGN_FRAME_LISTENER = {
-    .done = sign_frame_done};
-static void arm_sign_frame(overlay_t *overlay) {
-  size_t index = (size_t)(overlay - overlays);
-  if (index >= MAX_OUTPUTS || sign_frames[index]) {
-    return;
-  }
-  struct wl_callback *callback = wl_surface_frame(overlay->surface);
-  if (!callback) {
-    return;
-  }
-  sign_frames[index] = callback;
-  wl_callback_add_listener(callback, &SIGN_FRAME_LISTENER, overlay);
-}
-static void fill_bar(overlay_t *overlay, uint8_t *pixels) {
-  const config_t *config = &overlay->config;
-  int bar = config->overlay_height;
-  if (bar <= 0 || overlay->height <= 0 || overlay->physical_width <= 0 ||
-      overlay->physical_height <= 0 || config->overlay_opacity <= 0) {
-    return;
-  }
-  if (bar > overlay->height) {
-    bar = overlay->height;
-  }
-  int y = config->overlay_position == POSITION_TOP ? 0 : overlay->height - bar;
-  int py = scale_offset_120(y, overlay->scale);
-  int ph = scale_size_120(bar, overlay->scale);
-  if (py < 0) {
-    ph += py;
-    py = 0;
-  }
-  if (ph <= 0 || py >= overlay->physical_height) {
-    return;
-  }
-  if (py > overlay->physical_height - ph) {
-    ph = overlay->physical_height - py;
-  }
-  uint32_t color = (uint32_t)config->overlay_opacity << 24;
-  uint32_t *dest = (uint32_t *)pixels;
-  int stride = overlay->physical_width;
-  for (int row = py; row < py + ph; row++) {
-    uint32_t *line = dest + (size_t)row * (size_t)stride;
-    for (int col = 0; col < stride; col++) {
-      line[col] = color;
-    }
-  }
-}
-static void damage_box(overlay_t *overlay, int x, int y, int w, int h) {
-  if (x < 0) {
-    w += x;
-    x = 0;
-  }
-  if (y < 0) {
-    h += y;
-    y = 0;
-  }
-  if (w <= 0 || h <= 0 || x >= overlay->width || y >= overlay->height) {
-    return;
-  }
-  if (x > overlay->width - w) {
-    w = overlay->width - x;
-  }
-  if (y > overlay->height - h) {
-    h = overlay->height - y;
-  }
-  int px = scale_offset_120(x, overlay->scale);
-  int py = scale_offset_120(y, overlay->scale);
-  int pw = scale_size_120(w, overlay->scale);
-  int ph = scale_size_120(h, overlay->scale);
-  if (px < 0) {
-    pw += px;
-    px = 0;
-  }
-  if (py < 0) {
-    ph += py;
-    py = 0;
-  }
-  if (pw <= 0 || ph <= 0 || px >= overlay->physical_width ||
-      py >= overlay->physical_height) {
-    return;
-  }
-  if (px > overlay->physical_width - pw) {
-    pw = overlay->physical_width - px;
-  }
-  if (py > overlay->physical_height - ph) {
-    ph = overlay->physical_height - py;
-  }
-  wl_surface_damage_buffer(overlay->surface, px, py, pw, ph);
-}
-static void damage_surface(overlay_t *overlay, bool invisible) {
-  size_t index = (size_t)(overlay - overlays);
-  overlay_signs_step_t last = overlay_signs_last(index);
-  bool full = invisible || overlay->damage_all || last.damage_full ||
-              last.damage_w <= 0 || last.damage_h <= 0;
-  overlay->damage_all = false;
-  if (full) {
-    wl_surface_damage_buffer(overlay->surface, 0, 0, overlay->physical_width,
-                             overlay->physical_height);
-    return;
-  }
-  damage_box(overlay, last.damage_x, last.damage_y, last.damage_w,
-             last.damage_h);
-}
-void draw_bar(void) {
-  overlay_t *overlay = active;
-  if (!overlay || !overlay->configured || overlay->resize) {
-    return;
-  }
-  shm_buffer_t *buffer = NULL;
-  for (size_t i = 0; i < 2; i++) {
-    if (overlay->buffers[i] && !overlay->buffers[i]->busy) {
-      buffer = overlay->buffers[i];
-      break;
-    }
-  }
-  if (!buffer) {
-    overlay->redraw = true;
-    return;
-  }
-  config_t *config = &overlay->config;
-  bool invisible = overlay_hidden(overlay);
-  size_t index = (size_t)(overlay - overlays);
-  const sign_frame_t *signs = overlay_signs_frame(index);
-  memset(buffer->pixels, 0, buffer->size);
-  if (!invisible) {
-    fill_bar(overlay, buffer->pixels);
-    if (signs) {
-      sign_draw(buffer->pixels, overlay->physical_width,
-                overlay->physical_height, (int)overlay->scale, signs,
-                SIGN_DRAW_UNDER);
-    }
-    cached_frame_t *frame = &anim_cached_frames[anim_index];
-    int64_t x = scale_offset_120(overlay->cat_x, overlay->scale);
-    int logical_y = overlay_signs_cat_y(config, overlay->height);
-    int64_t y = scale_offset_120(logical_y, overlay->scale);
-    if (frame->data) {
-      blit_cached_frame(buffer->pixels, overlay->physical_width,
-                        overlay->physical_height, frame->data, frame->width,
-                        frame->height, clamp_offset(x), clamp_offset(y));
-    }
-    if (signs) {
-      sign_draw(buffer->pixels, overlay->physical_width,
-                overlay->physical_height, (int)overlay->scale, signs,
-                SIGN_DRAW_OVER);
-    }
-  }
-  update_input_region(overlay, invisible);
-  buffer->busy = true;
-  wl_surface_attach(overlay->surface, buffer->object, 0, 0);
-  damage_surface(overlay, invisible);
-  if (!invisible && overlay_signs_last(index).frame) {
-    arm_sign_frame(overlay);
-  }
-  wl_surface_commit(overlay->surface);
-  overlay->redraw = false;
 }
 void wayland_request_redraw(void) {
   for (size_t i = 0; i < MAX_OUTPUTS; i++) {
@@ -875,6 +372,7 @@ static bool resize_buffers(overlay_t *overlay) {
   overlay->buffers[1] = b;
   overlay->physical_width = width;
   overlay->physical_height = height;
+  overlay->pending_damage = (pixel_rect_t){0};
   if (overlay->viewport) {
     wl_surface_set_buffer_scale(overlay->surface, 1);
     wp_viewport_set_destination(overlay->viewport, overlay->width,
@@ -1021,11 +519,15 @@ void wayland_update_config(config_t *config) {
 }
 herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
   bool flush_blocked = false;
+  bool runtime_ready = true;
   while (*running && display) {
     if (wl_display_dispatch_pending(display) < 0) {
       return HERDCAT_ERROR_WAYLAND;
     }
-    if (tick_callback) {
+    // Display dispatch handles releases and frame callbacks itself. Runtime
+    // jobs need a tick on their descriptors or a deadline, not every release.
+    if (tick_callback &&
+        (runtime_ready || (runtime_timeout && runtime_timeout() == 0))) {
       tick_callback();
     }
     if (!*running) {
@@ -1115,6 +617,9 @@ herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
       fds[0].events |= POLLOUT;
     }
     int result = poll(fds, (nfds_t)count + 1, timeout);
+    runtime_ready = result <= 0;
+    for (int i = 1; i <= count; i++)
+      runtime_ready = runtime_ready || fds[i].revents != 0;
     if (result > 0 && (fds[0].revents & POLLIN)) {
       if (wl_display_read_events(display) < 0) {
         return HERDCAT_ERROR_WAYLAND;

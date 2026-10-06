@@ -56,6 +56,12 @@ int agent_hook_parse_stat(const char *line, char *comm, size_t capacity,
 int agent_hook_stat_tty(const char *line, unsigned long *tty_nr);
 // Same codes for a live process. -1 means /proc/<pid>/stat could not be read.
 int agent_process_tty(pid_t pid);
+// The one process under root (normally "/proc") named comm that has a
+// controlling terminal and runs in cwd. 0 when there is none or more than
+// one. Codex without --no-daemon runs its hooks in a background server; this
+// finds the terminal program the session belongs to.
+pid_t agent_hook_front_process(const char *root, const char *comm,
+                               const char *cwd);
 // Quiet, bounded hook client. Only invalid CLI agent names return nonzero.
 int agent_hook_run(const char *agent, const char *event_name);
 // Explicit adapter entry point also supports isolated client-policy tests.

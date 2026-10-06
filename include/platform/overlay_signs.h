@@ -32,6 +32,11 @@ typedef struct {
 
 int overlay_signs_height(const config_t *config);
 int overlay_signs_cat_y(const config_t *config, int surface_height);
+// The cat's top on one output, lifted by that output's own frame. Use this
+// wherever more than one output can be drawn: the form above follows
+// whichever frame was read last.
+int overlay_signs_cat_y_at(size_t index, const config_t *config,
+                           int surface_height);
 int64_t overlay_signs_now(void);
 
 overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,

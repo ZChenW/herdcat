@@ -97,7 +97,7 @@ static void test_lifecycle(void) {
   TEST_ASSERT(!frame.animating && frame.hit_count == 5 &&
               frame.text_count == 5);
   for (int i = 0; i < frame.hit_count; i++)
-    TEST_ASSERT(frame.hits[i].w == 204);
+    TEST_ASSERT(frame.hits[i].w == 236);
   TEST_ASSERT(frame.bounds_y >= 0);
   check_bounds(&frame);
   in.open = false;
@@ -118,10 +118,10 @@ static void test_lifecycle(void) {
   in.now_ms = 3600;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(!frame.animating && frame.text_count == 1);
-  TEST_ASSERT(!strcmp(frame.texts[0].meta, "等你批准"));
+  TEST_ASSERT(!strcmp(frame.texts[0].meta, "Claude · 等你批准"));
   in.animations = SIGN_ANIM_FULL;
   signs_frame(&model, &in, &frame);
-  TEST_ASSERT(frame.animating && frame.next_frame_ms == 3633);
+  TEST_ASSERT(frame.animating && frame.next_frame_ms == 3625);
   in.animations = SIGN_ANIM_OFF;
   sessions[0].state = AGENT_STATE_IDLE;
   signs_frame(&model, &in, &frame);
@@ -201,10 +201,10 @@ static void test_easing_hover_and_press(void) {
   in.now_ms = 2190;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(frame.hit_count == 1);
-  near(board_near(&frame, frame.hits[0].x, frame.hits[0].y)->w, 202.541);
+  near(board_near(&frame, frame.hits[0].x, frame.hits[0].y)->w, 234.267);
   in.now_ms = 2500;
   signs_frame(&model, &in, &frame);
-  TEST_ASSERT(!frame.animating && frame.hits[0].w == 204);
+  TEST_ASSERT(!frame.animating && frame.hits[0].w == 236);
   double rested = frame.hits[0].x;
   in.has_hover = true;
   in.hover_key = session0.key;
@@ -260,7 +260,7 @@ static void test_icons_text_and_loops(void) {
   in.now_ms = 150000;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(frame.text_count == 1);
-  TEST_ASSERT(!strcmp(frame.texts[0].meta, "2 分钟"));
+  TEST_ASSERT(!strcmp(frame.texts[0].meta, "Claude · 2 分钟"));
   TEST_ASSERT(!strcmp(frame.texts[0].value, "项目 with spaces"));
   near(frame.texts[0].px, 13);
   near(frame.texts[0].meta_px, 11.5);
@@ -287,7 +287,7 @@ static void test_icons_text_and_loops(void) {
   one.state = AGENT_STATE_WAITING;
   one.state_since_ms = 150000;
   signs_frame(&model, &in, &frame);
-  TEST_ASSERT(!strcmp(frame.texts[0].meta, "等你批准"));
+  TEST_ASSERT(!strcmp(frame.texts[0].meta, "Claude · 等你批准"));
   TEST_ASSERT((frame.texts[0].meta_color & 0xffffff) == 0x71430b);
   int bars = 0, checks = 0;
   for (int i = 0; i < frame.shape_count; i++) {
@@ -299,7 +299,7 @@ static void test_icons_text_and_loops(void) {
   TEST_ASSERT(bars == 1 && checks == 0);
   one.state = AGENT_STATE_DONE;
   signs_frame(&model, &in, &frame);
-  TEST_ASSERT(!strcmp(frame.texts[0].meta, "完成"));
+  TEST_ASSERT(!strcmp(frame.texts[0].meta, "Claude · 完成"));
   const sign_shape_t *check = NULL;
   for (int i = 0; i < frame.shape_count; i++)
     if (frame.shapes[i].kind == SIGN_CHECK)
@@ -308,7 +308,7 @@ static void test_icons_text_and_loops(void) {
   TEST_ASSERT((check->outline & 0xffffff) == 0x22643d);
   one.unread = true;
   signs_frame(&model, &in, &frame);
-  TEST_ASSERT(!strcmp(frame.texts[0].meta, "完成 · 未查看"));
+  TEST_ASSERT(!strcmp(frame.texts[0].meta, "Claude · 未查看"));
   const sign_shape_t *badge = NULL;
   const sign_shape_t *board = NULL;
   for (int i = 0; i < frame.shape_count; i++) {
@@ -345,9 +345,44 @@ static void test_icons_text_and_loops(void) {
   one.unread = false;
   in.has_hover = false;
   in.style = SIGN_STYLE_POST;
+  one.state = AGENT_STATE_ERROR;
+  one.unread = true;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(!strcmp(frame.texts[0].meta, "Claude · 出错"));
+  TEST_ASSERT((frame.texts[0].meta_color & 0xffffff) == 0x8a2415);
+  const sign_shape_t *cross = NULL;
+  badge = NULL;
+  checks = 0;
+  for (int i = 0; i < frame.shape_count; i++) {
+    const sign_shape_t *shape = &frame.shapes[i];
+    if (shape->kind == SIGN_CROSS)
+      cross = shape;
+    if (shape->kind == SIGN_CHECK)
+      checks++;
+    if (fabs(shape->w - 9) < 0.02 && fabs(shape->h - 9) < 0.02)
+      badge = shape;
+  }
+  TEST_ASSERT(cross && checks == 0 && cross->w == cross->h);
+  TEST_ASSERT(cross->fill == 0 && cross->stroke == 3);
+  TEST_ASSERT((cross->outline & 0xffffff) == 0x8a2415);
+  TEST_ASSERT(badge && (badge->fill & 0xffffff) == 0x8a2415);
+  in.english = true;
+  in.style = SIGN_STYLE_FAN;
+  signs_frame(&model, &in, &frame);
+  // Raised like waiting, but named only on hover.
+  TEST_ASSERT(frame.text_count == 0);
+  in.has_hover = true;
+  in.hover_key = one.key;
+  signs_frame(&model, &in, &frame);
+  TEST_ASSERT(frame.text_count == 1);
+  TEST_ASSERT(strstr(frame.texts[0].meta, "Stopped on error"));
+  in.has_hover = false;
+  in.english = false;
+  in.style = SIGN_STYLE_POST;
+  one.unread = false;
   one.state = AGENT_STATE_IDLE;
   signs_frame(&model, &in, &frame);
-  TEST_ASSERT(!strcmp(frame.texts[0].meta, "空闲"));
+  TEST_ASSERT(!strcmp(frame.texts[0].meta, "Claude · 空闲"));
   int dashes = 0;
   for (int i = 0; i < frame.shape_count; i++)
     if (frame.shapes[i].w == 10 && frame.shapes[i].h == 3) {
@@ -369,7 +404,7 @@ static void test_icons_text_and_loops(void) {
   in.now_ms = 150750;
   signs_frame(&left, &in, &frame);
   TEST_ASSERT(frame.hits[0].x == (int)floor(origin - 6));
-  TEST_ASSERT(frame.next_frame_ms == 150750 + 33);
+  TEST_ASSERT(frame.next_frame_ms == 150782);
   in.animations = SIGN_ANIM_REDUCED;
   signs_frame(&left, &in, &frame);
   TEST_ASSERT(frame.hits[0].x == (int)origin);
@@ -412,7 +447,7 @@ static void test_failure_scale_and_clearance(void) {
   in.now_ms = 6000;
   signs_frame(&scaled, &in, &frame);
   TEST_ASSERT(frame.hit_count == 1);
-  TEST_ASSERT(frame.hits[0].x == 300 + 10 && frame.hits[0].w == 408);
+  TEST_ASSERT(frame.hits[0].x == 300 + 10 && frame.hits[0].w == 472);
   TEST_ASSERT(frame.hits[0].h == 52);
   near(frame.texts[0].gap, 14);
   near(pole_of(&frame)->h, 272);
@@ -555,6 +590,36 @@ static void test_fan(void) {
     TEST_ASSERT(frame.bounds_y >= 0);
     check_bounds(&frame);
   }
+  // Nameplates are wider than the gap between signs: one at a time.
+  signs_t queue = {0};
+  for (int i = 0; i < 5; i++) {
+    many[i].state_since_ms = 500 - 100 * i;
+    snprintf(many[i].name, sizeof(many[i].name), "s%d", i);
+  }
+  many[4].state = AGENT_STATE_WORKING;  // Earliest, but not waiting.
+  sign_input_t line = base_input(many, 5);
+  line.style = SIGN_STYLE_FAN;
+  line.cat_y = clearance;
+  signs_frame(&queue, &line, &frame);
+  TEST_ASSERT(frame.text_count == 1 && !strcmp(frame.texts[0].value, "s3"));
+  many[3].state = AGENT_STATE_WORKING;  // Answered: the next in line.
+  signs_frame(&queue, &line, &frame);
+  TEST_ASSERT(frame.text_count == 1 && !strcmp(frame.texts[0].value, "s2"));
+  line.has_hover = true;  // Hover replaces it instead of adding a second.
+  line.hover_key = many[4].key;
+  signs_frame(&queue, &line, &frame);
+  TEST_ASSERT(frame.text_count == 1 && !strcmp(frame.texts[0].value, "s4"));
+  line.has_hover = false;
+  line.typing = true;  // The sign under the paws has no nameplate to give.
+  line.typing_key = many[2].key;
+  signs_frame(&queue, &line, &frame);
+  int tags = 0;
+  for (int i = 0; i < frame.text_count; i++)
+    if (frame.texts[i].back >> 24) {
+      tags++;
+      TEST_ASSERT(!strcmp(frame.texts[i].value, "s1"));
+    }
+  TEST_ASSERT(tags == 1);
 }
 static const sign_shape_t *desk_board(const sign_frame_t *frame) {
   const sign_shape_t *found = NULL;
@@ -826,7 +891,57 @@ static void test_menu(void) {
   TEST_ASSERT(named);
   near(named->slide, 0);
 }
+static void test_waiting_phases(void) {
+  const sign_style_t styles[] = {SIGN_STYLE_FAN, SIGN_STYLE_POST};
+  const sign_animations_t animations[] = {SIGN_ANIM_FULL, SIGN_ANIM_REDUCED,
+                                          SIGN_ANIM_OFF};
+  for (size_t style = 0; style < sizeof(styles) / sizeof(styles[0]); style++) {
+    for (size_t anim = 0; anim < sizeof(animations) / sizeof(animations[0]);
+         anim++) {
+      signs_t model = {0};
+      agent_session_view_t one;
+      session(&one, 0, AGENT_STATE_WAITING, "claude");
+      one.state_since_ms = 123;
+      sign_input_t in = base_input(&one, 1);
+      in.style = styles[style];
+      in.animations = animations[anim];
+      sign_frame_t frame;
+      for (int64_t now = 123; now < 1123; now += 17) {
+        in.now_ms = now;
+        signs_frame(&model, &in, &frame);
+      }
+      sign_frame_t first_half[25];
+      int frames = 0;
+      for (int phase = 0; phase < 48; phase++) {
+        int start = (phase * 1500 + 47) / 48;
+        int end = ((phase + 1) * 1500 + 47) / 48;
+        in.now_ms = 6123 + start;
+        signs_frame(&model, &in, &frame);
+        TEST_ASSERT(!frame.transitioning);
+        bool full = animations[anim] == SIGN_ANIM_FULL;
+        TEST_ASSERT(frame.animating == full);
+        TEST_ASSERT(frame.next_frame_ms == (full ? 6123 + end : 0));
+        sign_frame_t same = frame;
+        for (int offset = start + 1; offset < end; offset++) {
+          in.now_ms = 6123 + offset;
+          signs_frame(&model, &in, &frame);
+          TEST_ASSERT(!memcmp(&same, &frame, sizeof(frame)));
+        }
+        if (phase <= 24)
+          first_half[phase] = frame;
+        else {
+          sign_frame_t mirror = first_half[48 - phase];
+          mirror.next_frame_ms = frame.next_frame_ms;
+          TEST_ASSERT(!memcmp(&mirror, &frame, sizeof(frame)));
+        }
+        frames++;
+      }
+      TEST_ASSERT(frames == 48);
+    }
+  }
+}
 int main(void) {
+  test_waiting_phases();
   options();
   test_menu();
   test_lifecycle();

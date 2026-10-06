@@ -43,3 +43,6 @@ packaging/arch/herdcat/
 packaging/arch/pkg/
 packaging/arch/*.pkg.tar.*
 packaging/arch/*.src.tar.*
+
+# Python caches from test scripts
+__pycache__/

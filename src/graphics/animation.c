@@ -168,7 +168,7 @@ static void anim_select_frame(animation_state_t *state,
   } else if (left_live || right_live) {
     new_frame =
         frame_from_paw_state(left_live, right_live, current_config->idle_frame);
-  } else if (agent_frames && agent_state != AGENT_STATE_IDLE) {
+  } else if (agent_frames && agent_state_frame(agent_state) >= 0) {
     new_frame = agent_state_frame(agent_state);
   } else if (current_config->idle_sleep_timeout_sec > 0 &&
              state->last_key_pressed_timestamp > 0 &&
@@ -577,16 +577,20 @@ void animation_cache_frames(int target_w, int target_h, int mirror_x,
 void blit_cached_frame(uint8_t *dest, int dest_w, int dest_h,
                        const uint8_t *src, int src_w, int src_h, int offset_x,
                        int offset_y) {
-  for (int y = 0; y < src_h; y++) {
-    int64_t dy = (int64_t)y + offset_y;
-    if (dy < 0 || dy >= dest_h) {
-      continue;
-    }
-    for (int x = 0; x < src_w; x++) {
-      int64_t dx = (int64_t)x + offset_x;
-      if (dx < 0 || dx >= dest_w) {
-        continue;
-      }
+  blit_cached_frame_clip(dest, dest_w, dest_h, src, src_w, src_h, offset_x,
+                         offset_y, (pixel_rect_t){0, 0, dest_w, dest_h});
+}
+void blit_cached_frame_clip(uint8_t *dest, int dest_w, int dest_h,
+                            const uint8_t *src, int src_w, int src_h,
+                            int offset_x, int offset_y, pixel_rect_t clip) {
+  if (!dest || !src || src_w <= 0 || src_h <= 0)
+    return;
+  clip = pixel_rect_intersect(pixel_rect_clip(clip, dest_w, dest_h),
+                              (pixel_rect_t){offset_x, offset_y, src_w, src_h});
+  for (int dy = clip.y; dy < clip.y + clip.h; dy++) {
+    int y = (int)((int64_t)dy - offset_y);
+    for (int dx = clip.x; dx < clip.x + clip.w; dx++) {
+      int x = (int)((int64_t)dx - offset_x);
       size_t si = (((size_t)y * src_w) + x) * 4;
       size_t di = (((size_t)dy * dest_w) + (size_t)dx) * 4;
       uint8_t sa = src[si + 3];

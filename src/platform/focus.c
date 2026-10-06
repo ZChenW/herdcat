@@ -162,6 +162,15 @@ bool focus_available(void) {
   struct stat st;
   return socket && *socket && stat(socket, &st) == 0 && S_ISSOCK(st.st_mode);
 }
+#ifdef TEST_BUILD
+static unsigned stat_reads;
+void focus_reset_stat_reads(void) {
+  stat_reads = 0;
+}
+unsigned focus_stat_reads(void) {
+  return stat_reads;
+}
+#endif
 bool focus_find_window(pid_t pid, const focus_window_t *windows, size_t count,
                        uint64_t *id) {
   for (int depth = 0; depth < 16 && pid > 1; depth++) {
@@ -174,6 +183,9 @@ bool focus_find_window(pid_t pid, const focus_window_t *windows, size_t count,
     char path[64], buffer[1024], comm[256];
     pid_t parent;
     snprintf(path, sizeof(path), "/proc/%jd/stat", (intmax_t)pid);
+#ifdef TEST_BUILD
+    stat_reads++;
+#endif
     int fd = open(path, O_RDONLY | O_CLOEXEC);
     if (fd < 0)
       return false;

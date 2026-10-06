@@ -92,7 +92,7 @@ with tempfile.TemporaryDirectory(prefix="bongo-transcript-runtime-") as director
         assert state("working")
         append({"type": "event_msg", "payload": {"type": "task_complete",
                 "error": {"codex_error_info": "usage_limit_exceeded", "message": "PRIVATE-SENTINEL"}}})
-        wait_for(lambda: state("idle"))
+        wait_for(lambda: state("error"))
         hook("codex", "UserPromptSubmit")
         hook("codex", "Interrupt")  # All 9 characters must reach main's parser.
         assert state("idle")

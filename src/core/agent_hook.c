@@ -4,6 +4,7 @@
 #include "core/control.h"
 #include "utils/utf8.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -628,6 +629,58 @@ int agent_process_tty(pid_t pid) {
   return tty != 0;
 }
 
+pid_t agent_hook_front_process(const char *root, const char *comm,
+                               const char *cwd) {
+  if (!root || !comm || !cwd || cwd[0] != '/')
+    return 0;
+  DIR *dir = opendir(root);
+  if (!dir)
+    return 0;
+  pid_t found = 0;
+  int seen = 0;
+  struct dirent *entry;
+  while ((entry = readdir(dir)) && seen < 4096) {
+    char *tail;
+    errno = 0;
+    long value = strtol(entry->d_name, &tail, 10);
+    if (errno || *tail || value <= 1 || value > INT_MAX)
+      continue;
+    seen++;
+    char path[320], stat[512], name[64], where[PATH_MAX];
+    if (snprintf(path, sizeof(path), "%s/%ld/stat", root, value) >=
+        (int)sizeof(path))
+      continue;
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+      continue;
+    ssize_t length = read(fd, stat, sizeof(stat) - 1);
+    close(fd);
+    if (length <= 0)
+      continue;
+    stat[length] = '\0';
+    pid_t parent;
+    unsigned long tty = 0;
+    if (agent_hook_parse_stat(stat, name, sizeof(name), &parent) < 0 ||
+        strcmp(name, comm) || agent_hook_stat_tty(stat, &tty) < 0 || !tty)
+      continue;
+    snprintf(path, sizeof(path), "%s/%ld/cwd", root, value);
+    ssize_t n = readlink(path, where, sizeof(where) - 1);
+    if (n <= 0)
+      continue;
+    where[n] = '\0';
+    if (strcmp(where, cwd))
+      continue;
+    if (found) {
+      // Two candidates: a guess could put the sign on the wrong terminal.
+      found = 0;
+      break;
+    }
+    found = (pid_t)value;
+  }
+  closedir(dir);
+  return found;
+}
+
 static pid_t agent_parent(void) {
   pid_t pid = getppid();
   static const char *const SHELLS[] = {"sh",   "bash", "zsh",    "dash",
@@ -718,12 +771,20 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
     }
   }
   // A daemon with no controlling terminal must not keep a sign forever.
-  if (pid > 0 && agent_process_tty(pid) == 0)
+  if (pid > 0 && agent_process_tty(pid) == 0) {
     pid = 0;
+    // The hook ran in the agent's background server. The session still has
+    // a terminal if exactly one of its processes works in the same place.
+    char cwd[256];
+    if (adapter->process_name &&
+        (scanner.valid_fields & (1U << HOOK_FIELD_CWD)) &&
+        decode_path(scanner.cwd, cwd, sizeof(cwd)))
+      pid = agent_hook_front_process("/proc", adapter->process_name, cwd);
+  }
   char request[64];
-  static const char *const EVENTS[] = {"idle", "working",  "waiting",
-                                       "done", "start",    "rest",
-                                       "end",  "interrupt"};
+  static const char *const EVENTS[] = {"idle", "working",   "waiting",
+                                       "done", "start",     "rest",
+                                       "end",  "interrupt", "fail"};
   snprintf(request, sizeof(request), "ev %s %s %016" PRIx64 " %jd", agent,
            EVENTS[event], agent_hook_key(agent, &scanner), (intmax_t)pid);
   const char *debug = getenv("HERDCAT_HOOK_DEBUG");

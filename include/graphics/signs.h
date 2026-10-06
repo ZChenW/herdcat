@@ -16,7 +16,8 @@
 typedef enum {
   SIGN_RECT,
   SIGN_CUT,  // radius is the 45-degree corner cut; stroke is inset.
-  SIGN_CHECK
+  SIGN_CHECK,
+  SIGN_CROSS
 } sign_shape_kind_t;
 
 // Surface logical pixels, y growing downward. A RECT stroke is an inset
@@ -31,6 +32,8 @@ typedef struct {
   uint32_t fill, outline;
   double clip_x, clip_y, clip_w, clip_h;
   bool clipped, orbit;
+  // Full-motion waiting loops align their bitmap origins to physical pixels.
+  bool pixel_snap;
   // Painted after the cat. The switch-card holder leaves this false.
   bool above;
 } sign_shape_t;
@@ -45,6 +48,7 @@ typedef struct {
   double px, meta_px, gap;
   uint32_t color, meta_color;
   bool reverse, above;
+  bool pixel_snap;
   // Fan nameplates set back and tag_scale. Post leaves both at 0.
   // tag_scale is 1 when the label has settled; it dips toward 0.96 as it
   // hides. back is the nameplate fill, including alpha. caret draws a bar

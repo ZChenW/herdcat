@@ -249,3 +249,48 @@ int focus_current_seen(uint64_t focused, const focus_window_t *windows,
   }
   return (int)written;
 }
+
+int focus_current_query(uint64_t focused, const focus_window_t *windows,
+                        size_t windows_count,
+                        const agent_session_view_t *sessions, size_t count,
+                        const focus_pane_t *panes, size_t pane_count,
+                        uint64_t clicked_id, uint64_t clicked, uint64_t *keys,
+                        size_t capacity, uint64_t *chosen) {
+  if (!chosen)
+    return 0;
+  *chosen = 0;
+  if (!focused || !windows || !sessions || count > AGENT_SESSIONS_MAX)
+    return 0;
+  bool belongs[AGENT_SESSIONS_MAX] = {0};
+  bool split_found = false;
+  for (size_t i = 0; i < count; i++) {
+    belongs[i] = in_window(&sessions[i], focused, windows, windows_count);
+    uint64_t split = 0;
+    if (belongs[i] &&
+        reported_split(panes, pane_count, sessions[i].kitty_pid, &split))
+      split_found = true;
+  }
+  size_t written = 0;
+  int64_t updated = -1;
+  bool clicked_found = false;
+  for (size_t i = 0; i < count; i++) {
+    if (!belongs[i])
+      continue;
+    uint64_t split = 0;
+    if (split_found &&
+        (!reported_split(panes, pane_count, sessions[i].kitty_pid, &split) ||
+         sessions[i].kitty_window != split))
+      continue;
+    if (keys && written < capacity)
+      keys[written++] = sessions[i].key;
+    if (sessions[i].updated_ms >= updated) {
+      *chosen = sessions[i].key;
+      updated = sessions[i].updated_ms;
+    }
+    if (sessions[i].key == clicked)
+      clicked_found = true;
+  }
+  if (!split_found && clicked && clicked_found && clicked_id == focused)
+    *chosen = clicked;
+  return (int)written;
+}

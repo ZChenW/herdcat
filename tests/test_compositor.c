@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <wayland-server.h>
 
@@ -18,7 +19,8 @@ static struct wl_event_loop *loop;
 static unsigned commits, surfaces, live;
 static struct wl_resource *toplevel;
 static struct wl_resource *test_pointer, *test_seat;
-static bool drag_mode;
+static bool drag_mode, measure_mode;
+static int measure_frame_ms = 17, measure_release_ms = 16;
 struct test_rect {
   int x, y, width, height;
 };
@@ -44,6 +46,15 @@ struct test_surface {
   bool configure_pending, layered;
   char ns[64];
 };
+static void measure_event(const char *event, const char *name) {
+  if (!measure_mode)
+    return;
+  struct timespec now;
+  assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+  printf("%s %s %.9f\n", event, name,
+         (double)now.tv_sec + (double)now.tv_nsec / 1e9);
+  fflush(stdout);
+}
 static void destroy_request(struct wl_client *client,
                             struct wl_resource *resource) {
   (void)client;
@@ -69,6 +80,7 @@ struct delayed_release {
   struct wl_resource *buffer;
   struct wl_listener destroyed;
   struct wl_event_source *timer;
+  char name[32];
 };
 static void delayed_gone(struct wl_listener *listener, void *data) {
   (void)data;
@@ -80,6 +92,7 @@ static void delayed_gone(struct wl_listener *listener, void *data) {
 }
 static int delayed_send(void *data) {
   struct delayed_release *release = data;
+  measure_event("release", release->name);
   wl_buffer_send_release(release->buffer);
   wl_list_remove(&release->destroyed.link);
   wl_event_source_remove(release->timer);
@@ -90,12 +103,15 @@ static void delay_release(struct test_surface *surface) {
   struct delayed_release *release = calloc(1, sizeof(*release));
   assert(release);
   release->buffer = surface->buffer;
+  snprintf(release->name, sizeof(release->name), "%s", surface->monitor->name);
   wl_list_remove(&surface->buffer_destroy.link);
   surface->buffer = NULL;
   release->destroyed.notify = delayed_gone;
   wl_resource_add_destroy_listener(release->buffer, &release->destroyed);
   release->timer = wl_event_loop_add_timer(loop, delayed_send, release);
-  wl_event_source_timer_update(release->timer, 200);
+  // Measurement must not inherit the regression fixture's buffer starvation.
+  wl_event_source_timer_update(release->timer,
+                               measure_mode ? measure_release_ms : 200);
 }
 static void surface_destroyed(struct wl_resource *resource) {
   struct test_surface *surface = wl_resource_get_user_data(resource);
@@ -140,11 +156,40 @@ static void rectangle(struct wl_client *client, struct wl_resource *resource,
   (void)width;
   (void)height;
 }
+struct delayed_frame {
+  struct wl_resource *callback;
+  struct wl_event_source *timer;
+  const char *name;
+};
+static void frame_destroyed(struct wl_resource *resource) {
+  struct delayed_frame *pending = wl_resource_get_user_data(resource);
+  wl_event_source_remove(pending->timer);
+  free(pending);
+}
+static int frame_done(void *data) {
+  struct delayed_frame *pending = data;
+  measure_event("frame-done", pending->name);
+  wl_callback_send_done(pending->callback, 0);
+  wl_resource_destroy(pending->callback);
+  return 0;
+}
 static void frame(struct wl_client *client, struct wl_resource *resource,
                   uint32_t id) {
-  (void)resource;
+  struct test_surface *surface = wl_resource_get_user_data(resource);
   struct wl_resource *callback =
       wl_resource_create(client, &wl_callback_interface, 1, id);
+  if (measure_mode) {
+    // Immediate callbacks would turn continuous transitions into a busy loop.
+    struct delayed_frame *pending = calloc(1, sizeof(*pending));
+    assert(pending);
+    pending->callback = callback;
+    pending->name = surface->monitor ? surface->monitor->name : "unassigned";
+    measure_event("frame-request", pending->name);
+    pending->timer = wl_event_loop_add_timer(loop, frame_done, pending);
+    wl_resource_set_implementation(callback, NULL, pending, frame_destroyed);
+    wl_event_source_timer_update(pending->timer, measure_frame_ms);
+    return;
+  }
   wl_callback_send_done(callback, 0);
   wl_resource_destroy(callback);
 }
@@ -182,6 +227,7 @@ static void commit(struct wl_client *client, struct wl_resource *resource) {
     struct wl_shm_buffer *buffer = wl_shm_buffer_get(surface->buffer);
     assert(buffer && wl_shm_buffer_get_width(buffer) > 0);
     commits++;
+    measure_event("submit", surface->monitor->name);
     wl_shm_buffer_begin_access(buffer);
     uint32_t *pixels = wl_shm_buffer_get_data(buffer);
     size_t count = (size_t)wl_shm_buffer_get_stride(buffer) *
@@ -433,7 +479,9 @@ static void get_scale(struct wl_client *client, struct wl_resource *resource,
       break;
     }
   wp_fractional_scale_v1_send_preferred_scale(
-      scale, !strcmp(surface->monitor->name, "TEST-1") ? 150 : 240);
+      scale, measure_mode                                ? 120
+             : !strcmp(surface->monitor->name, "TEST-1") ? 150
+                                                         : 240);
 }
 static const struct wp_fractional_scale_manager_v1_interface
     scale_manager_impl = {.destroy = destroy_request,
@@ -647,6 +695,21 @@ static int stop(int signal, void *data) {
 }
 int main(void) {
   drag_mode = getenv("HERDCAT_TEST_DRAG") != NULL;
+  measure_mode = getenv("HERDCAT_TEST_MEASURE") != NULL;
+  if (measure_mode) {
+    const char *frame_ms = getenv("HERDCAT_TEST_FRAME_MS");
+    const char *release_ms = getenv("HERDCAT_TEST_RELEASE_MS");
+    if (frame_ms)
+      measure_frame_ms = atoi(frame_ms);
+    if (release_ms)
+      measure_release_ms = atoi(release_ms);
+    assert(measure_frame_ms > 0 && measure_frame_ms <= 1000);
+    assert(measure_release_ms > 0 && measure_release_ms <= 1000);
+    printf("measure timing frame=%d release=%d\n", measure_frame_ms,
+           measure_release_ms);
+    monitors[0].width = 2560;
+    monitors[0].height = 1440;
+  }
   server = wl_display_create();
   assert(server);
   wl_display_set_default_max_buffer_size(server, 4 * 1024 * 1024);
@@ -664,7 +727,7 @@ int main(void) {
   struct wl_event_source *timer = wl_event_loop_add_timer(loop, step, NULL);
   wl_event_source_remove(timer);
   struct wl_event_source *steps[4];
-  for (size_t i = 0; !drag_mode && i < 4; i++) {
+  for (size_t i = 0; !drag_mode && !measure_mode && i < 4; i++) {
     steps[i] = wl_event_loop_add_timer(loop, step, NULL);
     wl_event_source_timer_update(steps[i], (int)(i + 1) * 700);
   }

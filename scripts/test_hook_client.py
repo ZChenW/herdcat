@@ -6,9 +6,15 @@ from pathlib import Path
 import pty
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
+
+sys.dont_write_bytecode = True
+from runtime_test_helpers import run_on_pty
+
+run_on_pty()
 
 binary = str(Path('build/herdcat').resolve())
 with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:

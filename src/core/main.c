@@ -316,8 +316,11 @@ static int command(const char *request, char *response, size_t capacity) {
   } else if (strncmp(request, "state ", 6) == 0) {
     agent_state_t state;
     if (agent_state_parse(request + 6, &state) == 0) {
-      agent_event_t event;
+      agent_event_t event = AGENT_EVENT_FAIL;
       agent_event_parse(request + 6, &event);
+      // An error only replaces a turn in progress, so start one first.
+      if (state == AGENT_STATE_ERROR)
+        agent_apply(0, "manual", AGENT_EVENT_WORKING, 0);
       result = agent_apply(
           0, "manual", state == AGENT_STATE_IDLE ? AGENT_EVENT_END : event, 0);
     } else {
@@ -353,14 +356,20 @@ static int command(const char *request, char *response, size_t capacity) {
     }
     return 0;
   } else if (strcmp(request, "status") == 0) {
-    snprintf(
+    const char *input = input_status_name(
+        input_child_is_alive(), input_device_count(), input_denied_count());
+    int length = snprintf(
         response, capacity,
-        "running pid=%ld hidden=%s paused=%s input=%s devices=%u config=%s "
-        "agent=%s sessions=%d",
+        "running pid=%ld hidden=%s paused=%s input=%s devices=%u denied=%u "
+        "config=%s agent=%s sessions=%d",
         (long)getpid(), (int)hidden ? "yes" : "no", (int)paused ? "yes" : "no",
-        (int)input_child_is_alive() ? "connected" : "restarting",
-        input_device_count(), config_path,
+        input, input_device_count(), input_denied_count(), config_path,
         agent_state_name(animation_get_agent_state()), agent_sessions_count());
+    if (strcmp(input, "denied") == 0 && length > 0 &&
+        (size_t)length < capacity) {
+      snprintf(response + length, capacity - (size_t)length,
+               "\nNo keyboard readable: %s", input_access_hint());
+    }
     return 0;
   } else {
     { result = 1; }
@@ -368,22 +377,65 @@ static int command(const char *request, char *response, size_t capacity) {
   snprintf(response, capacity, "%s", result ? "request failed" : "ok");
   return result;
 }
+// How long a typed answer is believed without a hook event to confirm it.
+#define ANSWER_REVERT_S 60
+// Keys pressed right after focus arrives are the ones that moved it there.
+#define ANSWER_DWELL_MS 600
+static uint64_t focus_window_seen;
+static int64_t focus_window_since;
+static void note_key(void) {
+  int64_t now = monotonic_ms();
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  uint64_t keys[2];
+  // Only when the keys can be meant for no other session.
+  if (focus_watch_focused_id() == focus_window_seen &&
+      now - focus_window_since >= ANSWER_DWELL_MS &&
+      focus_watch_focused_keys(views, (size_t)count, keys, 2) == 1 &&
+      agent_sessions_answer(keys[0], now, ANSWER_REVERT_S)) {
+    overlay_signs_note_working(keys[0]);
+    wayland_request_redraw();
+    return;
+  }
+  overlay_signs_note_key();
+}
 static void note_window_focus(void) {
+  if (focus_watch_focused_id() != focus_window_seen) {
+    focus_window_seen = focus_watch_focused_id();
+    focus_window_since = monotonic_ms();
+  }
   agent_session_view_t views[AGENT_SESSIONS_MAX];
   int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
   uint64_t keys[AGENT_SESSIONS_MAX];
-  int focused =
-      focus_watch_focused_keys(views, (size_t)count, keys, AGENT_SESSIONS_MAX);
+  uint64_t newest = 0;
+  int focused = focus_watch_query(views, (size_t)count, keys,
+                                  AGENT_SESSIONS_MAX, &newest);
   bool watching = focus_watch_available();
   agent_sessions_observe_focus(watching, keys, (size_t)focused);
-  uint64_t newest = 0;
-  if (watching)
-    newest = focus_watch_focused_session(views, (size_t)count);
   overlay_signs_sync_focus(newest);
   int64_t now = monotonic_ms();
   for (int i = 0; i < focused; i++) {
     agent_sessions_note_focused(keys[i], now, config.agent_done_timeout);
   }
+}
+// Claude Code says nothing when Esc is pressed before it starts to answer.
+// Its terminal title going back to the at-rest mark is the only trace.
+static int64_t rest_deadline;
+static void note_window_rest(void) {
+  rest_deadline = 0;
+  if (!config.agent_interrupt_detect)
+    return;
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  uint64_t keys[AGENT_SESSIONS_MAX];
+  int64_t now = monotonic_ms();
+  int next_ms = -1;
+  int rested = focus_watch_rested_now(views, (size_t)count, now, keys,
+                                      AGENT_SESSIONS_MAX, &next_ms);
+  if (next_ms >= 0)
+    rest_deadline = now + next_ms;
+  for (int i = 0; i < rested; i++)
+    agent_sessions_interrupt(keys[i], now);
 }
 static void extra_ready(uint32_t token) {
   focus_watch_ready(token);
@@ -401,9 +453,12 @@ static void tick(void) {
   agent_watch_process(agent_sessions_remove_pid);
   focus_watch_poll();
   note_window_focus();
+  note_window_rest();
   agent_sessions_expire(monotonic_ms(), config.agent_stale_timeout);
   agent_refresh();
   control_process(command);
+  sign_draw_cache_update(agent_sessions_resolve() == AGENT_STATE_WAITING,
+                         monotonic_ms());
   session_store_flush(agent_sessions_generation(), monotonic_ms(), false);
   if (!input_child_is_alive() && monotonic_ms() >= input_retry_at) {
     input_retry_at = monotonic_ms() + 5000;
@@ -417,6 +472,11 @@ static void tick(void) {
   }
 }
 static int runtime_timeout(void) {
+  int rest_wait = -1;
+  if (rest_deadline) {
+    int64_t left = rest_deadline - monotonic_ms();
+    rest_wait = left <= 0 ? 0 : left > INT_MAX ? INT_MAX : (int)left;
+  }
   int candidates[] = {config_watcher_timeout(&watcher),
                       control_timeout(),
                       hypr_timeout(),
@@ -424,6 +484,8 @@ static int runtime_timeout(void) {
                       -1,
                       focus_timeout(),
                       focus_watch_timeout(),
+                      rest_wait,
+                      sign_draw_cache_timeout(monotonic_ms()),
                       session_store_timeout(monotonic_ms())};
   if (!input_child_is_alive()) {
     int64_t remaining = input_retry_at - monotonic_ms();
@@ -470,7 +532,8 @@ static void help(const char *program) {
       "  --focus KEY          Focus a session terminal (full key or unique "
       "prefix)\n"
       "  --pane PID ID        Report the focused kitty split\n"
-      "  --state NAME         Set manual state: idle, working, waiting, done\n"
+      "  --state NAME         Set manual state: idle, working, waiting, done,\n"
+      "                       error\n"
       "  --sessions           List tracked agent sessions\n"
       "  --reset-position     Restore configured positions on every output\n"
       "  --event NAME         Override stdin event (after --hook AGENT)\n"
@@ -542,7 +605,7 @@ static int run_application(bool watch, herdcat_error_t result) {
   if (result != HERDCAT_SUCCESS) {
     goto cleanup;
   }
-  animation_set_key_hook(overlay_signs_note_key);
+  animation_set_key_hook(note_key);
   result = wayland_init(&config);
   if (result != HERDCAT_SUCCESS) {
     goto cleanup;

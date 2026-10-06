@@ -50,4 +50,13 @@ int focus_current_seen(uint64_t focused, const focus_window_t *windows,
                        const focus_pane_t *panes, size_t pane_count,
                        uint64_t *keys, size_t capacity);
 
+// Both answers from one ancestry lookup per session. No ancestry survives
+// this call, so reparenting and window/PID changes are seen on the next query.
+int focus_current_query(uint64_t focused, const focus_window_t *windows,
+                        size_t windows_count,
+                        const agent_session_view_t *sessions, size_t count,
+                        const focus_pane_t *panes, size_t pane_count,
+                        uint64_t clicked_window, uint64_t clicked_key,
+                        uint64_t *keys, size_t capacity, uint64_t *chosen);
+
 #endif

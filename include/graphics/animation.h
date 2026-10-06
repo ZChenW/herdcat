@@ -4,6 +4,7 @@
 #include "config/config.h"
 #include "core/agent_state.h"
 #include "core/herdcat.h"
+#include "graphics/pixel_rect.h"
 #include "utils/error.h"
 
 #include <stdint.h>
@@ -64,5 +65,8 @@ void animation_cleanup(void);
 void blit_cached_frame(uint8_t *dest, int dest_w, int dest_h,
                        const uint8_t *src, int src_w, int src_h, int offset_x,
                        int offset_y);
+void blit_cached_frame_clip(uint8_t *dest, int dest_w, int dest_h,
+                            const uint8_t *src, int src_w, int src_h,
+                            int offset_x, int offset_y, pixel_rect_t clip);
 
 #endif  // ANIMATION_H

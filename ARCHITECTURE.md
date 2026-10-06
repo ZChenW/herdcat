@@ -25,9 +25,16 @@ stride, scaling, placement and clipping arithmetic uses checked wide values.
 
 `platform/outputs.c` owns stable output slots and protocol metadata.
 `platform/wayland.c` reconciles selections, creates and tears down overlays,
-and renders them. `platform/shm_buffer.c` owns buffer allocations and release
-lifetime. Automatic selection uses one available output; explicit missing
-outputs wait while other overlays continue. Configuration reload reconciles
+and runs their shared event loop.
+`platform/overlay_present.c` keeps damage, double-buffer selection, pixel
+painting, input regions, frame callbacks and surface commits together.
+`platform/overlay_pointer.c` holds pointer/seat callbacks, drag/click/cursor
+state and the cleanup used on pointer loss and overlay teardown.
+`src/platform/overlay_internal.h` shares existing overlay state and declarations
+privately between lifecycle, presentation and pointer handling.
+`platform/shm_buffer.c` owns buffer allocations and release lifetime. Automatic
+selection uses one available output; explicit missing outputs wait while other
+overlays continue. Configuration reload reconciles
 selection without restarting the process. Configure events determine actual
 surface dimensions.
 
@@ -73,9 +80,14 @@ mode 0600; descriptor-based opens reject symlinks and non-regular files. Reload,
 scale/output changes and reconnection clamp saved positions. `reset-position`
 removes the state file and resets all overlays without rewriting configuration.
 
-`config/config.c` parses and validates without input access. Flat files remain
-supported. `[monitor:NAME]` overrides appearance; `[global]` returns to global
-settings. Overrides are applied after all global settings, independent of
+`config/config.c` owns loading, diagnostics, strict/tolerant policy, defaults
+and monitor overrides without input access.
+`config/config_parse.c` holds existing file, section and key/value parsing.
+`config/config_validate.c` holds existing range checks and normalization.
+`src/config/config_internal.h` shares configuration helpers, ranges and mutable
+parse/diagnostic state inside this one configuration module.
+Flat files remain supported. `[monitor:NAME]` overrides appearance; `[global]`
+returns to global settings. Overrides are applied after all global settings, independent of
 section order. Input and timing stay global. Startup remains tolerant;
 strict checking and reload reject malformed, unreadable and missing files.
 Reload creates a temporary configuration before swapping the active one.
@@ -95,7 +107,7 @@ signal an unrelated process group.
 
 `core/agent_sessions.c` owns a fixed 32-slot table keyed by the FNV-1a hash of
 agent and session ID; key zero is the manual session. The table resolves waiting
-before done, working and idle. It owns all done/stale deadlines and unread completion; animation only
+before error, done, working and idle. It owns all done/stale deadlines and unread completion; animation only
 receives the resolved state and redraws when it changes. With signs off, display priority is scheduled sleep, held paws, resolved agent
 artwork, idle sleep, then idle frame. Enabled signs suppress whole-cat agent
 artwork, retaining paw and sleep animation.
@@ -161,8 +173,21 @@ The backend is unavailable outside niri. No shell commands are constructed.
 
 `graphics/signs.c` is a pure model: supplied time, selected session views,
 configuration and pointer state produce shared shape/text/hit lists for fan and
-post. `graphics/sign_draw.c` rasterizes NanoSVG shapes into premultiplied BGRA
-with a bounded bitmap cache. `graphics/text.c` uses FreeType grayscale glyphs,
+post.
+`graphics/signs_fan.c` holds the existing fan orbit and plate-layout functions.
+`graphics/signs_post.c` holds post-board layout, while pole/slot assembly stays
+inside the shared `signs_frame` function.
+`graphics/signs_menu.c` holds the switch-card geometry and glyph-layout functions.
+`src/graphics/signs_internal.h` shares layout types, constants and declarations
+privately without extending the model's public interface.
+`graphics/sign_draw.c` rasterizes NanoSVG shapes into premultiplied BGRA
+with a bitmap LRU bounded by 192 slots and 4 MiB of pixels, including settled
+nameplate backgrounds. Full-motion waiting shapes align bitmap origins to
+physical pixels. After 60 seconds without any waiting session, a one-shot
+deadline releases waiting phase bitmaps, retaining those also used by ordinary
+shapes. On glibc, this also returns freed heap pages to the kernel. The core
+session tick cancels that deadline when waiting resumes.
+`graphics/text.c` uses FreeType grayscale glyphs,
 a 512-entry glyph LRU, bounded faces and Fontconfig per-codepoint fallback.
 Scale changes clear glyph/bitmap caches; a font reload clears both. There is no
 HarfBuzz shaping (no RTL, ligatures or combining-character layout).
@@ -171,7 +196,9 @@ HarfBuzz shaping (no RTL, ligatures or combining-character layout).
 150 ms close delay, surface clearance, damage unions and typing desk. Wayland
 only consumes its frame, input rectangles and next wake time. Transitions ask
 for frame callbacks; settled working dots wake every 180 ms and waiting loops
-every 33 ms. Reduced disables loops; off makes transitions instantaneous.
+at 48 phase boundaries per 1500 ms cycle (31.25 ms per phase), sharing the
+same 25 positions on the return trip. Reduced disables loops; off makes
+transitions instantaneous.
 Visible elapsed-minute labels retain a minute deadline. A full-motion desk
 caret has a 500 ms deadline only while visible. No sessions, hover or typing
 means no sign-related periodic wakes. Hidden overlays schedule no sign frames.
@@ -188,7 +215,9 @@ original cat geometry and agent frames; completion policy remains independent.
 `platform/focus_watch.c` reads niri's asynchronous EventStream into a bounded
 window/PID map, including initial is_focused state. Its fd joins agent_watch's
 epoll, preserving six basic fds plus the control socket in the seven-slot poll
-budget. Ancestor matches are cached and invalidated on window/PID changes.
+budget. `focus_current_query` resolves ancestry once per session for both the
+seen and chosen results; no ancestry survives the query, so reparenting and
+window/PID changes are observed on the next query.
 Connection loss backs off; absent niri disables the desk and treats completions
 as unread. Successful focus observations (or sign clicks) acknowledge unread
 completion. Submissions and session removal also clear unread.
@@ -202,9 +231,16 @@ presence of paw activity is used, never key contents. The confirmed desk top is
 ## Switch card, font panel and stored choices
 
 `graphics/signs.c` also lays out the switch card (style, language, font row)
-with the sign model's shapes, texts and hit rectangles. `platform/overlay_signs.c`
-handles the right button, the 800 ms leave and 6 s idle timers, the paw tap
-and the half-second debounce before a font stepped by wheel is saved.
+with the sign model's shapes, texts and hit rectangles.
+`platform/overlay_menu.c` holds existing menu choices, preview restoration, save
+and close deadlines, font-panel anchors and switch-card button/scroll handling.
+`src/platform/overlay_signs_internal.h` privately shares the existing per-output
+lanes and interaction state needed to preserve menu/frame ordering.
+`platform/overlay_signs.c` keeps per-output frames, damage, regions and typing
+desk; its existing step still orders menu updates, frame construction and panel
+synchronization without changing behavior.
+The 800 ms leave and 6 s idle timers, paw tap and half-second font-save debounce
+remain unchanged.
 
 `graphics/font_panel.c` is the panel's pure model and drawing: two columns,
 ten visible rows, a three-way filter, hover and selection. Every box has a

@@ -51,7 +51,7 @@ static void test_mapping(void) {
                         AGENT_EVENT_WORKING,
                         AGENT_EVENT_WAITING,
                         AGENT_EVENT_DONE,
-                        AGENT_EVENT_IDLE,
+                        AGENT_EVENT_FAIL,
                         AGENT_EVENT_IDLE,
                         AGENT_EVENT_END,
                         -1,
@@ -393,7 +393,44 @@ static void test_repo_name(void) {
   remove_tree(root);
 }
 
+static void fake_process(const char *root, int pid, const char *comm, int tty,
+                         const char *cwd) {
+  char path[256], line[128];
+  snprintf(path, sizeof(path), "%s/%d", root, pid);
+  TEST_ASSERT(mkdir(path, 0700) == 0);
+  snprintf(path, sizeof(path), "%s/%d/stat", root, pid);
+  FILE *file = fopen(path, "w");
+  TEST_ASSERT(file);
+  snprintf(line, sizeof(line), "%d (%s) S 1 %d %d %d 0 0\n", pid, comm, pid,
+           pid, tty);
+  TEST_ASSERT(fputs(line, file) > 0 && fclose(file) == 0);
+  snprintf(path, sizeof(path), "%s/%d/cwd", root, pid);
+  TEST_ASSERT(symlink(cwd, path) == 0);
+}
+
+static void test_front_process(void) {
+  char root[] = "/tmp/herdcat-front-XXXXXX";
+  TEST_ASSERT(mkdtemp(root));
+  fake_process(root, 50, "codex", 0, "/work/a");      // The server: no tty.
+  fake_process(root, 60, "codex", 34817, "/work/a");  // Its terminal program.
+  fake_process(root, 70, "codex", 34818, "/work/b");
+  fake_process(root, 80, "zsh", 34819, "/work/a");
+  TEST_ASSERT(agent_hook_front_process(root, "codex", "/work/a") == 60);
+  TEST_ASSERT(agent_hook_front_process(root, "codex", "/work/b") == 70);
+  TEST_ASSERT(agent_hook_front_process(root, "codex", "/work/c") == 0);
+  TEST_ASSERT(agent_hook_front_process(root, "claude", "/work/a") == 0);
+  TEST_ASSERT(agent_hook_front_process(root, "codex", "work/a") == 0);
+  TEST_ASSERT(agent_hook_front_process(root, "codex", NULL) == 0);
+  TEST_ASSERT(agent_hook_front_process("/nonexistent", "codex", "/work/a") ==
+              0);
+  // Two terminals in one directory: no guess.
+  fake_process(root, 90, "codex", 34820, "/work/a");
+  TEST_ASSERT(agent_hook_front_process(root, "codex", "/work/a") == 0);
+  remove_tree(root);
+}
+
 int main(void) {
+  test_front_process();
   test_cwd();
   test_repo_name();
   test_mapping();

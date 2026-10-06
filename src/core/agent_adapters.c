@@ -2,10 +2,12 @@
 
 #include <string.h>
 
+// clang-format off
 #define COUNT(items)      (sizeof(items) / sizeof((items)[0]))
 #define RULE(name, event) {name, HOOK_FIELD_NONE, NULL, event, false}
 #define META(name, event) {name, HOOK_FIELD_NONE, NULL, event, true}
 #define WHEN(name, field, value, event) {name, field, value, event, false}
+// clang-format on
 
 static const agent_hook_alias_t CLAUDE_FIELDS[] = {
     {"transcript_path",   HOOK_FIELD_TRANSCRIPT,   0, false},
@@ -23,7 +25,7 @@ static const agent_hook_rule_t CLAUDE_RULES[] = {
     RULE("PostToolUseFailure", AGENT_EVENT_WORKING),
     RULE("PermissionRequest", AGENT_EVENT_WAITING),
     RULE("Stop", AGENT_EVENT_DONE),
-    RULE("StopFailure", AGENT_EVENT_IDLE),
+    RULE("StopFailure", AGENT_EVENT_FAIL),
     RULE("Interrupt", AGENT_EVENT_IDLE),
     RULE("SessionEnd", AGENT_EVENT_END),
     WHEN("Notification", HOOK_FIELD_NOTIFICATION, "idle_prompt",
@@ -43,7 +45,7 @@ static const agent_hook_rule_t CODEX_RULES[] = {
     RULE("PostToolUseFailure", AGENT_EVENT_WORKING),
     RULE("PermissionRequest", AGENT_EVENT_WAITING),
     RULE("Stop", AGENT_EVENT_DONE),
-    RULE("StopFailure", AGENT_EVENT_INTERRUPT),
+    RULE("StopFailure", AGENT_EVENT_FAIL),
     RULE("Interrupt", AGENT_EVENT_INTERRUPT),
     RULE("SessionEnd", AGENT_EVENT_END),
     WHEN("Notification", HOOK_FIELD_NOTIFICATION, "idle_prompt",
@@ -83,8 +85,8 @@ static const agent_hook_rule_t GROK_RULES[] = {
     RULE("permission_request", AGENT_EVENT_WAITING),
     RULE("Stop", AGENT_EVENT_DONE),
     RULE("stop", AGENT_EVENT_DONE),
-    RULE("StopFailure", AGENT_EVENT_INTERRUPT),
-    RULE("stop_failure", AGENT_EVENT_INTERRUPT),
+    RULE("StopFailure", AGENT_EVENT_FAIL),
+    RULE("stop_failure", AGENT_EVENT_FAIL),
     RULE("StopCancelled", AGENT_EVENT_INTERRUPT),
     RULE("stop_cancelled", AGENT_EVENT_INTERRUPT),
     RULE("Interrupt", AGENT_EVENT_INTERRUPT),
@@ -117,7 +119,7 @@ static const agent_hook_rule_t KIMI_RULES[] = {
     RULE("PermissionResult", AGENT_EVENT_WORKING),
     RULE("PermissionRequest", AGENT_EVENT_WAITING),
     RULE("Stop", AGENT_EVENT_DONE),
-    RULE("StopFailure", AGENT_EVENT_INTERRUPT),
+    RULE("StopFailure", AGENT_EVENT_FAIL),
     RULE("Interrupt", AGENT_EVENT_INTERRUPT),
     RULE("SessionEnd", AGENT_EVENT_END),
     WHEN("Notification", HOOK_FIELD_NOTIFICATION, "idle_prompt",
@@ -145,7 +147,7 @@ static const agent_hook_rule_t CURSOR_RULES[] = {
     RULE("postToolUse", AGENT_EVENT_WORKING),
     WHEN("stop", HOOK_FIELD_STATUS, "completed", AGENT_EVENT_DONE),
     WHEN("stop", HOOK_FIELD_STATUS, "aborted", AGENT_EVENT_INTERRUPT),
-    WHEN("stop", HOOK_FIELD_STATUS, "error", AGENT_EVENT_INTERRUPT),
+    WHEN("stop", HOOK_FIELD_STATUS, "error", AGENT_EVENT_FAIL),
     RULE("sessionEnd", AGENT_EVENT_END),
     // afterShellExecution/postToolUseFailure can follow stop(aborted).
 };
@@ -164,10 +166,10 @@ static const agent_hook_rule_t COPILOT_RULES[] = {
     RULE("postToolUse", AGENT_EVENT_WORKING),
     RULE("postToolUseFailure", AGENT_EVENT_WORKING),
     WHEN("agentStop", HOOK_FIELD_STATUS, "end_turn", AGENT_EVENT_DONE),
-    WHEN("agentStop", HOOK_FIELD_STATUS, "error", AGENT_EVENT_INTERRUPT),
+    WHEN("agentStop", HOOK_FIELD_STATUS, "error", AGENT_EVENT_FAIL),
     WHEN("agentStop", HOOK_FIELD_STATUS, "aborted", AGENT_EVENT_INTERRUPT),
     WHEN("agentStop", HOOK_FIELD_STATUS, "interrupted", AGENT_EVENT_INTERRUPT),
-    RULE("errorOccurred", AGENT_EVENT_INTERRUPT),
+    RULE("errorOccurred", AGENT_EVENT_FAIL),
     RULE("sessionEnd", AGENT_EVENT_END),
     WHEN("notification", HOOK_FIELD_NOTIFICATION, "permission_prompt",
          AGENT_EVENT_WAITING),
@@ -190,9 +192,9 @@ static const agent_hook_rule_t PI_RULES[] = {
     RULE("tool_call", AGENT_EVENT_WORKING),
     RULE("tool_result", AGENT_EVENT_WORKING),
     WHEN("agent_end", HOOK_FIELD_STATUS, "stop", AGENT_EVENT_DONE),
-    WHEN("agent_end", HOOK_FIELD_STATUS, "error", AGENT_EVENT_INTERRUPT),
+    WHEN("agent_end", HOOK_FIELD_STATUS, "error", AGENT_EVENT_FAIL),
     WHEN("agent_end", HOOK_FIELD_STATUS, "aborted", AGENT_EVENT_INTERRUPT),
-    WHEN("agent_end", HOOK_FIELD_STATUS, "length", AGENT_EVENT_INTERRUPT),
+    WHEN("agent_end", HOOK_FIELD_STATUS, "length", AGENT_EVENT_FAIL),
     RULE("session_shutdown", AGENT_EVENT_END),
 };
 static const agent_hook_rule_t OPENCODE_RULES[] = {
@@ -205,7 +207,7 @@ static const agent_hook_rule_t OPENCODE_RULES[] = {
     RULE("permission.replied", AGENT_EVENT_WORKING),
     RULE("session.execution.succeeded", AGENT_EVENT_DONE),
     RULE("session.execution.interrupted", AGENT_EVENT_INTERRUPT),
-    RULE("session.execution.failed", AGENT_EVENT_INTERRUPT),
+    RULE("session.execution.failed", AGENT_EVENT_FAIL),
     RULE("session.deleted", AGENT_EVENT_END),
 };
 static const agent_adapter_t ADAPTERS[] = {
@@ -229,6 +231,7 @@ static const agent_adapter_t ADAPTERS[] = {
      .json_stdout = false,
      .stop_guard = true,
      .explicit_pid = false,
+     .rest_title = true,
      .process_name = "claude"},
     {.name = "codex",
      .interrupt_source = AGENT_SIGNAL_HOOK,

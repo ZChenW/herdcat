@@ -80,7 +80,7 @@ static void test_grok(void) {
   adapter_check("grok", "{\"hookEventName\":\"stop_cancelled\"}", NULL,
                 AGENT_EVENT_INTERRUPT);
   adapter_check("grok", "{\"hook_event_name\":\"StopFailure\"}", NULL,
-                AGENT_EVENT_INTERRUPT);
+                AGENT_EVENT_FAIL);
   adapter_check("grok", "{\"hookEventName\":\"stop\",\"stopHookActive\":true}",
                 NULL, -1);
   adapter_check("grok", "{\"hookEventName\":\"stop\",\"stopHookActive\":false}",
@@ -108,7 +108,7 @@ static void test_cursor(void) {
                 "{\"hook_event_name\":\"stop\",\"status\":\"aborted\"}", NULL,
                 AGENT_EVENT_INTERRUPT);
   adapter_check("cursor", "{\"hook_event_name\":\"stop\",\"status\":\"error\"}",
-                NULL, AGENT_EVENT_INTERRUPT);
+                NULL, AGENT_EVENT_FAIL);
   adapter_check("cursor", "{\"hook_event_name\":\"stop\"}", NULL, -1);
   adapter_check("cursor", "{\"hook_event_name\":\"stop\",\"status\":false}",
                 NULL, -1);
@@ -144,19 +144,18 @@ int main(int argc, char **argv) {
                 AGENT_EVENT_DONE);
   adapter_check("opencode", "{}", "session.execution.interrupted",
                 AGENT_EVENT_INTERRUPT);
-  adapter_check("opencode", "{}", "session.execution.failed",
-                AGENT_EVENT_INTERRUPT);
+  adapter_check("opencode", "{}", "session.execution.failed", AGENT_EVENT_FAIL);
   adapter_check("opencode", "{}", "session.deleted", AGENT_EVENT_END);
   adapter_check("opencode", "{}", "session.step.failed", -1);
   adapter_check("opencode", "{}", "session.status", -1);
   adapter_check("pi", "{\"stopReason\":\"stop\"}", "agent_end",
                 AGENT_EVENT_DONE);
   adapter_check("pi", "{\"stopReason\":\"error\"}", "agent_end",
-                AGENT_EVENT_INTERRUPT);
+                AGENT_EVENT_FAIL);
   adapter_check("pi", "{\"stopReason\":\"aborted\"}", "agent_end",
                 AGENT_EVENT_INTERRUPT);
   adapter_check("pi", "{\"stopReason\":\"length\"}", "agent_end",
-                AGENT_EVENT_INTERRUPT);
+                AGENT_EVENT_FAIL);
   adapter_check("pi", "{}", "agent_end", -1);
   adapter_check("pi", "{\"parent_session\":\"parent\"}", "agent_start", -1);
   agent_hook_scanner_t pid_scan;
@@ -190,9 +189,9 @@ int main(int argc, char **argv) {
   adapter_check("copilot", "{\"stopReason\":\"end_turn\"}", "agentStop",
                 AGENT_EVENT_DONE);
   adapter_check("copilot", "{\"stopReason\":\"error\"}", "agentStop",
-                AGENT_EVENT_INTERRUPT);
+                AGENT_EVENT_FAIL);
   adapter_check("copilot", "{}", "agentStop", -1);
-  adapter_check("copilot", "{}", "errorOccurred", AGENT_EVENT_INTERRUPT);
+  adapter_check("copilot", "{}", "errorOccurred", AGENT_EVENT_FAIL);
   adapter_check("copilot", "{}", "sessionEnd", AGENT_EVENT_END);
   TEST_ASSERT(!agent_adapter_find("kimi")->json_stdout);
   adapter_check("kimi", "{\"hook_event_name\":\"PermissionRequest\"}", NULL,

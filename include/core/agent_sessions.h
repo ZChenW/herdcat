@@ -21,6 +21,8 @@ typedef enum {
   AGENT_EVENT_REST,
   AGENT_EVENT_END,
   AGENT_EVENT_INTERRUPT,
+  // working/waiting -> error. Never creates a session.
+  AGENT_EVENT_FAIL,
   AGENT_EVENT_COUNT
 } agent_event_t;
 
@@ -31,7 +33,7 @@ typedef struct {
   agent_state_t state;
   pid_t pid;
   int64_t created_ms, state_since_ms, updated_ms;
-  // Set while a done sign is waiting for someone to look at it.
+  // Set while a done or error sign is waiting for someone to look at it.
   bool unread;
   // Kitty process and split. Both stay 0 until a socket is stored.
   pid_t kitty_pid;
@@ -39,6 +41,12 @@ typedef struct {
 } agent_session_view_t;
 
 int agent_sessions_set_name(uint64_t key, const char *name);
+// A second id from a process that already has a row takes the row over once
+// it carries a name, a session record path or a start event.
+void agent_sessions_adopt(uint64_t key);
+// A row made by process discovery. Any real id from that process replaces
+// its key at once and keeps its name until the session names itself.
+void agent_sessions_set_provisional(uint64_t key);
 int agent_sessions_snapshot(agent_session_view_t *out, size_t capacity);
 // Input is a creation-ordered snapshot. Choose active then recent, retain
 // order.
@@ -47,6 +55,11 @@ int agent_sessions_select(const agent_session_view_t *input, size_t count,
 int agent_event_parse(const char *name, agent_event_t *out);
 void agent_sessions_reset(void);
 void agent_sessions_interrupt(uint64_t key, int64_t now_ms);
+void agent_sessions_fail(uint64_t key, int64_t now_ms);
+// Agents report a question but not its answer. A key press in the waiting
+// session's terminal shows it as working; if no event follows within
+// revert_s it goes back to waiting. True when the state changed.
+bool agent_sessions_answer(uint64_t key, int64_t now_ms, int revert_s);
 int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
                          pid_t pid, int64_t now_ms, int done_timeout_s,
                          bool *is_new);

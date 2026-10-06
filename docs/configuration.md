@@ -28,7 +28,7 @@
 | `idle_frame`               | 0-4               | 0        | Frame shown when idle                |
 | `idle_sleep_timeout`       | seconds           | 0        | Sleep after idle (0=disabled)        |
 | `agent_done_timeout`       | 0-3600 seconds    | 5        | Return done to idle (0=stay)         |
-| `agent_interrupt_detect`   | 0/1              | 1        | Watch interruption/error records    |
+| `agent_interrupt_detect`   | 0/1              | 1        | Detect interrupted and failed turns |
 | `agent_stale_timeout`      | 0-86400 seconds   | 600      | Clear stale work (0=disabled)        |
 | `hotplug_scan_interval`    | seconds           | 30       | Device rescan interval (0=once)      |
 | `enable_scheduled_sleep`   | 0/1               | 0        | Enable time-based sleep schedule     |
@@ -83,7 +83,7 @@ herdcat [OPTIONS]
   --doctor            Check config, protocols, outputs and input permissions
   --hide / --show     Change visibility of every overlay
   --pause / --resume  Show idle frame, discard input, or resume animation
-  --state NAME        Set manual state: idle, working, waiting, done
+  --state NAME        Set manual state: idle, working, waiting, done, error
   --sessions          List tracked agent sessions
   --pane PID ID       Report the focused kitty split
   --hook AGENT        Read a lifecycle event from stdin
@@ -100,6 +100,10 @@ controls never rewrite config files. Failed commands return nonzero.
 
 Agent sessions are resolved by priority and share one indicator across outputs.
 `--status` reports `agent=NAME` and `sessions=N`; `--sessions` lists each session.
+Its `input=` field is `connected` once a keyboard is open, `denied` when none is
+and some devices refused access (`denied=N` counts them, and a second line says
+how to grant access), `searching` while no keyboard exists, and `restarting`
+while the input helper restarts.
 See the session model and hook setup below.
 
 When both input paths and names are empty, accessible keyboard-capable evdev

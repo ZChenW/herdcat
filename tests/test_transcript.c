@@ -66,8 +66,13 @@ static void parser(void) {
       "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\","
       "\"error\":[]}}",
       "{\"type\":\"response_item\",\"payload\":{\"type\":\"turn_aborted\"}}"};
-  for (size_t i = 0; i < sizeof(codex) / sizeof(codex[0]); i++)
+  for (size_t i = 0; i < sizeof(codex) / sizeof(codex[0]); i++) {
     TEST_ASSERT(hit("codex", codex[i]) == (i < 2));
+    // Only the errored completion is a failure; an abort is a cancel.
+    TEST_ASSERT(agent_transcript_failed("codex", codex[i], strlen(codex[i])) ==
+                (i == 0));
+  }
+  TEST_ASSERT(!agent_transcript_failed("claude", MARKER, strlen(MARKER)));
 }
 static void hook_path(void) {
   agent_hook_scanner_t s;
@@ -237,7 +242,7 @@ int main(void) {
   append(fd, "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\","
              "\"error\":{}}}\n");
   drain();
-  state(AGENT_STATE_IDLE);  // Codex error has no Claude prompt guard.
+  state(AGENT_STATE_ERROR);  // Codex error has no Claude prompt guard.
   agent_sessions_configure_done(true, now, 5);
   agent_sessions_apply(1, "codex", AGENT_EVENT_DONE, 0, now, 5, NULL);
   agent_sessions_interrupt(1, now);

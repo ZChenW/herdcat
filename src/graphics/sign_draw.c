@@ -8,10 +8,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __GLIBC__
+#  include <malloc.h>
+#endif
 
-#define CACHE_SLOTS 16
-#define SHAPE_PAD   3.0
-#define SVG_BYTES   1024
+#define CACHE_SLOTS   192
+#define CACHE_BYTES   ((size_t)4 * 1024 * 1024)
+#define SHAPE_PAD     3.0
+#define SVG_BYTES     1024
+#define CACHE_IDLE_MS 60000
 
 typedef struct {
   int x, y, r, b;
@@ -20,18 +25,83 @@ typedef struct {
   uint64_t key, used;
   int w, h;
   uint8_t *pixels;
+  bool phase;
 } cache_slot_t;
 
 static NSVGrasterizer *rasterizer;
 static cache_slot_t cache[CACHE_SLOTS];
 static uint64_t cache_clock;
 static int cache_scale;
+static size_t cache_bytes;
+static int cache_phases;
+static int64_t cache_release_at;
 
-static void cache_clear(void) {
+#ifdef TEST_BUILD
+static uint64_t cache_hits, cache_misses;
+static bool cache_disabled;
+sign_draw_cache_stats_t sign_draw_cache_stats(void) {
+  sign_draw_cache_stats_t stats = {.hits = cache_hits,
+                                   .misses = cache_misses,
+                                   .slot_limit = CACHE_SLOTS,
+                                   .byte_limit = CACHE_BYTES};
   for (int i = 0; i < CACHE_SLOTS; i++) {
-    free(cache[i].pixels);
-    cache[i] = (cache_slot_t){0};
+    if (cache[i].pixels) {
+      stats.entries++;
+      stats.bytes += (size_t)cache[i].w * (size_t)cache[i].h * 4;
+      if (cache[i].phase) {
+        stats.phase_entries++;
+        stats.phase_bytes += (size_t)cache[i].w * (size_t)cache[i].h * 4;
+      }
+    }
   }
+  return stats;
+}
+void sign_draw_cache_reset_stats(void) {
+  cache_hits = cache_misses = 0;
+}
+void sign_draw_cache_disable(bool disable) {
+  cache_disabled = disable;
+}
+#endif
+
+static void cache_drop(cache_slot_t *slot) {
+  if (slot->phase)
+    cache_phases--;
+  if (slot->pixels)
+    cache_bytes -= (size_t)slot->w * (size_t)slot->h * 4;
+  free(slot->pixels);
+  *slot = (cache_slot_t){0};
+}
+static void cache_clear(void) {
+  for (int i = 0; i < CACHE_SLOTS; i++)
+    cache_drop(&cache[i]);
+  cache_release_at = 0;
+}
+
+void sign_draw_cache_update(bool waiting, int64_t now_ms) {
+  if (waiting || !cache_phases) {
+    cache_release_at = 0;
+    return;
+  }
+  if (!cache_release_at)
+    cache_release_at = now_ms + CACHE_IDLE_MS;
+  if (now_ms < cache_release_at)
+    return;
+  for (int i = 0; i < CACHE_SLOTS; i++)
+    if (cache[i].phase)
+      cache_drop(&cache[i]);
+#ifdef __GLIBC__
+  // Small bitmaps share the heap with live font objects. Return the freed
+  // pages as well, instead of retaining them in the allocator indefinitely.
+  malloc_trim(0);
+#endif
+  cache_release_at = 0;
+}
+int sign_draw_cache_timeout(int64_t now_ms) {
+  if (!cache_phases || !cache_release_at)
+    return -1;
+  int64_t left = cache_release_at - now_ms;
+  return left > 0 ? (int)left : 0;
 }
 
 static pix_t pix_of(double x, double y, double w, double h, double scale) {
@@ -68,19 +138,18 @@ static void premultiply(uint8_t *rgba, int count) {
 }
 static void blend(uint8_t *dst, int dw, int dh, const uint8_t *src, int sw,
                   int sh, int ox, int oy, pix_t limit) {
-  for (int y = 0; y < sh; y++) {
-    int dy = oy + y;
-    if (dy < 0 || dy >= dh || dy < limit.y || dy >= limit.b)
-      continue;
-    for (int x = 0; x < sw; x++) {
-      int dx = ox + x;
-      if (dx < 0 || dx >= dw || dx < limit.x || dx >= limit.r)
-        continue;
-      const uint8_t *s = src + ((size_t)y * (size_t)sw + (size_t)x) * 4;
+  pix_t clip = intersect(intersect(limit, (pix_t){0, 0, dw, dh}),
+                         (pix_t){ox, oy, ox + sw, oy + sh});
+  if (clip.r <= clip.x || clip.b <= clip.y)
+    return;
+  for (int dy = clip.y; dy < clip.b; dy++) {
+    const uint8_t *s =
+        src + ((size_t)(dy - oy) * (size_t)sw + (size_t)(clip.x - ox)) * 4;
+    uint8_t *d = dst + ((size_t)dy * (size_t)dw + (size_t)clip.x) * 4;
+    for (int dx = clip.x; dx < clip.r; dx++, s += 4, d += 4) {
       unsigned sa = s[3];
       if (!sa)
         continue;
-      uint8_t *d = dst + ((size_t)dy * (size_t)dw + (size_t)dx) * 4;
       if (sa == 255) {
         memcpy(d, s, 4);
         continue;
@@ -106,18 +175,38 @@ static cache_slot_t *cache_find(uint64_t key, int w, int h) {
   }
   return NULL;
 }
-static void cache_store(uint64_t key, uint8_t *pixels, int w, int h) {
-  cache_slot_t *slot = &cache[0];
+static cache_slot_t *cache_oldest(void) {
+  cache_slot_t *oldest = NULL;
+  for (int i = 0; i < CACHE_SLOTS; i++) {
+    if (cache[i].pixels && (!oldest || cache[i].used < oldest->used))
+      oldest = &cache[i];
+  }
+  return oldest;
+}
+static void cache_store(uint64_t key, uint8_t *pixels, int w, int h,
+                        bool phase) {
+  size_t bytes = (size_t)w * (size_t)h * 4;
+  while (cache_bytes + bytes > CACHE_BYTES)
+    cache_drop(cache_oldest());
+  cache_slot_t *slot = NULL;
   for (int i = 0; i < CACHE_SLOTS; i++) {
     if (!cache[i].pixels) {
       slot = &cache[i];
       break;
     }
-    if (cache[i].used < slot->used)
-      slot = &cache[i];
   }
-  free(slot->pixels);
-  *slot = (cache_slot_t){key, ++cache_clock, w, h, pixels};
+  if (!slot)
+    slot = cache_oldest();
+  cache_drop(slot);
+  *slot = (cache_slot_t){.key = key,
+                         .used = ++cache_clock,
+                         .w = w,
+                         .h = h,
+                         .pixels = pixels,
+                         .phase = phase};
+  if (phase)
+    cache_phases++;
+  cache_bytes += bytes;
 }
 static int append_rect(char *svg, int used, double x, double y, double w,
                        double h, double radius, uint32_t color) {
@@ -227,6 +316,21 @@ static int build_svg(char *svg, int bw, int bh, const sign_shape_t *shape,
     if (wrote < 0 || used + wrote >= SVG_BYTES)
       return -1;
     used += wrote;
+  } else if (shape->kind == SIGN_CROSS) {
+    // Two strokes of equal length, so the mark stays square in any box.
+    double arm = fmin(w, h) / 2 - stroke / 2;
+    double mx = lx + w / 2, my = ly + h / 2;
+    int wrote = snprintf(
+        svg + used, SVG_BYTES - (size_t)used,
+        "<path d=\"M%.3f %.3f L%.3f %.3f M%.3f %.3f L%.3f %.3f\" fill=\"none\" "
+        "stroke=\"#%06x\" stroke-opacity=\"%.4f\" stroke-width=\"%.3f\" "
+        "stroke-linecap=\"round\"/>",
+        mx - arm, my - arm, mx + arm, my + arm, mx + arm, my - arm, mx - arm,
+        my + arm, shape->outline & 0xffffffU, (shape->outline >> 24) / 255.0,
+        stroke);
+    if (wrote < 0 || used + wrote >= SVG_BYTES)
+      return -1;
+    used += wrote;
   } else if (shape->kind == SIGN_CUT) {
     double cut = fmin(radius, fmin(w, h) / 2);
     if (stroke > .05 && (shape->outline >> 24)) {
@@ -255,6 +359,10 @@ static int build_svg(char *svg, int bw, int bh, const sign_shape_t *shape,
 static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
                        double scale, pix_t bounds, bool store) {
   double x = shape->x * scale, y = shape->y * scale;
+  if (shape->pixel_snap) {
+    x = round(x);
+    y = round(y);
+  }
   double w = shape->w * scale, h = shape->h * scale;
   double radius = shape->radius * scale, stroke = shape->stroke * scale;
   if (w <= 0.05 || h <= 0.05)
@@ -265,6 +373,10 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
   if (orbit) {
     rot_x = shape->origin_x * scale;
     rot_y = shape->origin_y * scale;
+    if (shape->pixel_snap) {
+      rot_x = round(rot_x);
+      rot_y = round(rot_y);
+    }
     min_x = min_y = 1e9;
     max_x = max_y = -1e9;
     for (int i = 0; i < 4; i++) {
@@ -282,7 +394,7 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
     }
   }
   double pad = SHAPE_PAD + (orbit ? 0 : spin_extra(w, h, shape->rotation));
-  if (shape->kind == SIGN_CHECK)
+  if (shape->kind == SIGN_CHECK || shape->kind == SIGN_CROSS)
     pad += stroke;
   int left = (int)floor(min_x - pad), top = (int)floor(min_y - pad);
   int right = (int)ceil(max_x + pad), bottom = (int)ceil(max_y + pad);
@@ -290,6 +402,9 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
   if (bw <= 0 || bh <= 0 || bw > 8192 || bh > 8192)
     return;
   bool cacheable = store && (size_t)bw * (size_t)bh <= (size_t)512 * 512;
+#ifdef TEST_BUILD
+  cacheable = cacheable && !cache_disabled;
+#endif
   pix_t limit = bounds;
   if (shape->clipped)
     limit = intersect(limit, pix_of(shape->clip_x, shape->clip_y, shape->clip_w,
@@ -297,11 +412,23 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
   if (limit.r <= limit.x || limit.b <= limit.y)
     return;
   uint64_t key = shape_key(shape, x, y, w, h, radius, stroke);
+  key = mix(key, (uint64_t)cache_scale);
   if (orbit) {
     key = mix(key, quantize(rot_x - x));
     key = mix(key, quantize(rot_y - y));
   }
   cache_slot_t *slot = cacheable ? cache_find(key, bw, bh) : NULL;
+  // A bitmap also used by a settled non-waiting shape is worth retaining.
+  if (slot && slot->phase && !shape->pixel_snap) {
+    slot->phase = false;
+    cache_phases--;
+  }
+#ifdef TEST_BUILD
+  if (slot)
+    cache_hits++;
+  else
+    cache_misses++;
+#endif
   uint8_t *pixels = slot ? slot->pixels : NULL;
   if (!pixels) {
     char svg[SVG_BYTES];
@@ -323,14 +450,14 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
     nsvgDelete(image);
     premultiply(pixels, bw * bh);
     if (cacheable)
-      cache_store(key, pixels, bw, bh);
+      cache_store(key, pixels, bw, bh, shape->pixel_snap);
   }
   blend(dst, dw, dh, pixels, bw, bh, left, top, limit);
   if (!slot && !cacheable)
     free(pixels);
 }
 static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
-                     double scale, pix_t bounds) {
+                     double scale, pix_t bounds, bool store) {
   double s = text->tag_scale > 0.05 ? text->tag_scale : 1;
   float name_px = (float)(text->px * s);
   int name_w = text_measure(text->value, name_px, true);
@@ -349,7 +476,14 @@ static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
   double line_top = box_top + border + pad_t;
   double baseline = text_baseline(line_top, line_h, name_px, true);
   double left = text->x - box_w / 2;
+  if (text->pixel_snap) {
+    left = round(left * scale) / scale;
+    box_top = round(box_top * scale) / scale;
+    line_top = box_top + border + pad_t;
+    baseline = text_baseline(line_top, line_h, name_px, true);
+  }
   sign_shape_t plate = {.kind = SIGN_RECT,
+                        .pixel_snap = text->pixel_snap,
                         .x = left,
                         .y = box_top,
                         .w = box_w,
@@ -358,7 +492,7 @@ static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
                         .stroke = border,
                         .fill = text->back,
                         .outline = text->color};
-  draw_shape(dst, dw, dh, &plate, scale, bounds, false);
+  draw_shape(dst, dw, dh, &plate, scale, bounds, store);
   double name_x = left + border + pad_x;
   double meta_x = name_x + name_w + gap;
   pix_t clip = intersect(bounds, pix_of(left, box_top, box_w, box_h, scale));
@@ -374,9 +508,9 @@ static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
                    (float)(text->meta_px * s), false, text->meta_color, 0, box);
 }
 static void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
-                      double scale, pix_t bounds) {
+                      double scale, pix_t bounds, bool store) {
   if (text->back >> 24) {
-    draw_tag(dst, dw, dh, text, scale, bounds);
+    draw_tag(dst, dw, dh, text, scale, bounds, store);
     return;
   }
   float name_px = (float)text->px;
@@ -408,7 +542,14 @@ static void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
   double budget = text->w - text->gap - meta_w;
   if (budget < 0)
     budget = 0;
-  double name_x = text->reverse ? text->x + meta_w + text->gap : text->x;
+  // A board left of the pole is a mirror image: the name stays beside the
+  // icon at the pole end, the note at the far end.
+  double name_x = text->x;
+  if (text->reverse) {
+    double name_w =
+        text->value[0] ? text_measure(text->value, name_px, true) : 0;
+    name_x = text->x + text->w - (name_w < budget ? name_w : budget);
+  }
   double meta_x = text->reverse ? text->x : text->x + text->w - meta_w;
   pix_t clip = intersect(
       bounds, pix_of(text->x, text->clip_y, text->w, text->clip_h, scale));
@@ -429,7 +570,9 @@ static void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
     double caret_w = text->px * (2.0 / 12.0);
     sign_shape_t bar = {.kind = SIGN_RECT,
                         .x = name_x + used + text->gap,
-                        .y = baseline - metrics.ascent,
+                        // Centred on the line's ink, not hung from its top.
+                        .y = baseline - (metrics.ascent - metrics.descent) / 2 -
+                             text->px / 2,
                         .w = caret_w,
                         .h = text->px,
                         .radius = caret_w / 2,
@@ -442,17 +585,29 @@ static void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
 }
 void sign_draw(uint8_t *dst, int dw, int dh, int scale_120,
                const sign_frame_t *frame, sign_draw_layer_t layer) {
+  sign_draw_clip(dst, dw, dh, scale_120, frame, layer,
+                 (pixel_rect_t){0, 0, dw, dh});
+}
+void sign_draw_clip(uint8_t *dst, int dw, int dh, int scale_120,
+                    const sign_frame_t *frame, sign_draw_layer_t layer,
+                    pixel_rect_t clip) {
   if (!dst || !frame || dw <= 0 || dh <= 0 || scale_120 < 1 ||
       frame->bounds_w <= 0 || frame->bounds_h <= 0)
     return;
+  clip = pixel_rect_clip(clip, dw, dh);
+  if (clip.w <= 0 || clip.h <= 0)
+    return;
   double scale = scale_120 / 120.0;
-  if (cache_scale != scale_120) {
-    cache_clear();
-    cache_scale = scale_120;
-  }
+  // Outputs with different scales are drawn in turn. The key carries the
+  // scale, so each keeps its own bitmaps instead of clearing the other's.
+  cache_scale = scale_120;
   text_set_scale(scale_120);
   pix_t bounds = pix_of(frame->bounds_x, frame->bounds_y, frame->bounds_w,
                         frame->bounds_h, scale);
+  bounds = intersect(bounds,
+                     (pix_t){clip.x, clip.y, clip.x + clip.w, clip.y + clip.h});
+  if (bounds.r <= bounds.x || bounds.b <= bounds.y)
+    return;
   bool store = !frame->transitioning;
   for (int i = 0; i < frame->shape_count; i++) {
     const sign_shape_t *shape = &frame->shapes[i];
@@ -463,7 +618,7 @@ void sign_draw(uint8_t *dst, int dw, int dh, int scale_120,
   for (int i = 0; i < frame->text_count; i++) {
     const sign_text_t *text = &frame->texts[i];
     if (text->above == (layer == SIGN_DRAW_OVER))
-      draw_text(dst, dw, dh, text, scale, bounds);
+      draw_text(dst, dw, dh, text, scale, bounds, store);
   }
 }
 void sign_draw_cleanup(void) {

@@ -4,8 +4,8 @@
 
 #include <string.h>
 
-static const char *const STATE_NAMES[AGENT_STATE_COUNT] = {"idle", "working",
-                                                           "waiting", "done"};
+static const char *const STATE_NAMES[AGENT_STATE_COUNT] = {
+    "idle", "working", "waiting", "done", "error"};
 
 int agent_state_parse(const char *name, agent_state_t *out) {
   if (!name || !out) {

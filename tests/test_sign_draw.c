@@ -250,8 +250,7 @@ static void test_agent_shapes(const char *snapshot) {
       in.hover_key = 1;
       signs_frame(&model, &in, &frame);
       TEST_ASSERT(frame.text_count &&
-                  (strstr(frame.texts[0].meta, labels[i]) != NULL) ==
-                      (style == SIGN_STYLE_FAN || i >= 2));
+                  strstr(frame.texts[0].meta, labels[i]) != NULL);
     }
   }
   if (snapshot) {

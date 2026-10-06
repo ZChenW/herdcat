@@ -8,6 +8,9 @@
 typedef struct {
   uint64_t id;
   pid_t pid;
+  // Nonzero while the title starts with the mark an agent shows at rest.
+  // The parser stores 1; focus_watch replaces it with when that began.
+  int64_t resting_since_ms;
 } focus_window_t;
 typedef enum {
   FOCUS_PENDING,
@@ -20,6 +23,10 @@ int focus_parse_windows(const char *json, size_t length, focus_window_t *out,
                         size_t capacity);
 bool focus_find_window(pid_t pid, const focus_window_t *windows, size_t count,
                        uint64_t *id);
+#ifdef TEST_BUILD
+void focus_reset_stat_reads(void);
+unsigned focus_stat_reads(void);
+#endif
 bool focus_available(void);
 int focus_session_window(pid_t agent_pid);
 // After niri focuses the window. True provides a split id and socket.

@@ -5,12 +5,12 @@
 
 A desktop cat for Wayland that herds your coding agents: it types along with you and holds up a sign for every agent session.
 
-![Signs in the fan style](docs/screenshots/session-signs/fan.png)
+![herdcat demo](docs/demo.gif)
 
 ## Features
 
 - 🪧 One sign per agent session, with its name and state
-- 🚦 Working, waiting for approval, done and idle at a glance
+- 🚦 Working, waiting for approval, done, stopped on error and idle at a glance
 - 🖱️ Click a sign to jump to that session's terminal (niri, kitty splits)
 - 🔔 Finished sessions stay up until you have looked at them
 - ⌨️ The sign of the terminal you type in comes down under the paws
@@ -34,6 +34,8 @@ cd herdcat/packaging/arch && makepkg -si
 git clone https://github.com/ZChenW/herdcat.git
 cd herdcat && make && sudo make install
 ```
+
+A Nix flake is included (`nix run github:ZChenW/herdcat`, modules in [`nix/`](nix/NIXOS.md)). CI builds it on every push, but the author does not run NixOS; sign options that have no module option go through `extraConfig`.
 
 ### Setup Permissions
 
@@ -113,9 +115,22 @@ Style, language and font can also be changed from the right-click card; those ch
 <details>
 <summary>Permission denied on input device</summary>
 
+`herdcat --status` shows `input=denied` and `herdcat --list-devices` says which
+fix applies.
+
 ```bash
 sudo usermod -a -G input $USER
 # Then log out and back in
+```
+
+Joining the group only reaches processes started after a new login. If
+`getent group input` lists you but `id` does not, restart herdcat in a shell
+that has the group:
+
+```bash
+systemctl --user stop herdcat
+newgrp input
+herdcat --watch-config
 ```
 
 </details>

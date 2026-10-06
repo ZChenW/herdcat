@@ -227,10 +227,14 @@ static bool feed(transcript_t *slot, const char *data, size_t length,
           !slot->skipping &&
           (strcmp(slot->agent, "claude") || now - slot->submitted_ms >= 1000) &&
           agent_transcript_interrupted(slot->agent, slot->line, slot->used);
+      size_t used = slot->used;
       slot->used = 0;
       slot->skipping = false;
       if (hit) {
-        agent_sessions_interrupt(slot->key, now);
+        if (agent_transcript_failed(slot->agent, slot->line, used))
+          agent_sessions_fail(slot->key, now);
+        else
+          agent_sessions_interrupt(slot->key, now);
         return true;
       }
     } else if (!slot->skipping) {
@@ -334,6 +338,7 @@ int transcript_watch_command(const char *request, int64_t now_ms) {
       sscanf(request, "path %16[0-9a-fA-F]%n", key, &end) != 1 || end != 21 ||
       request[21] != ' ' || request[22] != '/' || !strtoull(key, NULL, 16))
     return 1;
+  agent_sessions_adopt(strtoull(key, NULL, 16));
   transcript_watch_path(strtoull(key, NULL, 16), request + 22, now_ms);
   return 0;
 }

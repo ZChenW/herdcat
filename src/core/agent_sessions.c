@@ -23,6 +23,13 @@ typedef struct {
   int64_t done_until_ms;
   bool unread;
   char transcript[AGENT_TRANSCRIPT_PATH_MAX + 1];
+  // The latest other session id the same process reported with. See adopt().
+  uint64_t alias;
+  // Found by scanning processes; the first real id takes the row over.
+  bool provisional;
+  // Shown as working on the strength of a key press. Goes back to waiting
+  // at this time unless a hook event confirms the answer first.
+  int64_t answered_until_ms;
 } agent_session_t;
 
 static uint64_t next_order;
@@ -42,7 +49,8 @@ static uint64_t focused_keys[AGENT_SESSIONS_MAX];
 static size_t focused_count;
 static int applied_done_timeout;
 static const char *const EVENT_NAMES[AGENT_EVENT_COUNT] = {
-    "idle", "working", "waiting", "done", "start", "rest", "end", "interrupt"};
+    "idle", "working", "waiting",   "done", "start",
+    "rest", "end",     "interrupt", "fail"};
 
 int agent_event_parse(const char *name, agent_event_t *out) {
   if (!name || !out) {
@@ -106,6 +114,48 @@ static agent_session_t *find_session(uint64_t key) {
   return NULL;
 }
 
+// One agent process is one sign. Codex worker threads and Grok's start-up
+// report under ids of their own; those join the row their process already
+// has instead of replacing it. Such an id only moves working and waiting.
+static agent_session_t *find_alias(uint64_t key) {
+  for (int i = 0; key && i < AGENT_SESSIONS_MAX; i++) {
+    if (sessions[i].used && sessions[i].alias == key) {
+      return &sessions[i];
+    }
+  }
+  return NULL;
+}
+
+static agent_session_t *find_process(const char *agent, pid_t pid) {
+  for (int i = 0; pid > 0 && i < AGENT_SESSIONS_MAX; i++) {
+    if (sessions[i].used && sessions[i].pid == pid &&
+        !strcmp(sessions[i].agent, agent)) {
+      return &sessions[i];
+    }
+  }
+  return NULL;
+}
+
+// The id that names itself is the one the user is talking to.
+static void promote(agent_session_t *s, uint64_t key) {
+  s->alias = s->provisional ? 0 : s->key;
+  s->provisional = false;
+  s->key = key;
+  touch_sessions();
+}
+
+void agent_sessions_set_provisional(uint64_t key) {
+  agent_session_t *s = find_session(key);
+  if (s)
+    s->provisional = true;
+}
+
+void agent_sessions_adopt(uint64_t key) {
+  agent_session_t *s = find_session(key) ? NULL : find_alias(key);
+  if (s)
+    promote(s, key);
+}
+
 static agent_session_t *available_slot(void) {
   agent_session_t *oldest = NULL;
   agent_session_t *idle = NULL;
@@ -125,6 +175,11 @@ static agent_session_t *available_slot(void) {
   return idle ? idle : oldest;
 }
 
+// Both are shown until someone has looked at them.
+static bool finished(agent_state_t state) {
+  return state == AGENT_STATE_DONE || state == AGENT_STATE_ERROR;
+}
+
 static int64_t deadline(int64_t now_ms, int timeout_s) {
   int64_t duration = (int64_t)timeout_s * 1000;
   return now_ms > INT64_MAX - duration ? INT64_MAX : now_ms + duration;
@@ -136,7 +191,7 @@ void agent_sessions_note_focused(uint64_t key, int64_t now_ms,
     return;
   }
   agent_session_t *s = find_session(key);
-  if (!s || !s->unread || s->state != AGENT_STATE_DONE) {
+  if (!s || !s->unread || !finished(s->state)) {
     return;
   }
   s->unread = false;
@@ -159,7 +214,7 @@ void agent_sessions_configure_done(bool sticky, int64_t now_ms,
   bool changed = false;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     agent_session_t *s = &sessions[i];
-    if (s->used && s->unread && s->state == AGENT_STATE_DONE) {
+    if (s->used && s->unread && finished(s->state)) {
       s->unread = false;
       s->done_until_ms =
           done_timeout_s > 0 ? deadline(now_ms, done_timeout_s) : 0;
@@ -215,6 +270,26 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   }
   applied_done_timeout = done_timeout_s;
   agent_session_t *s = find_session(key);
+  if (!s && key) {
+    agent_session_t *host = find_alias(key);
+    if (!host)
+      host = find_process(agent, pid);
+    if (host && host->provisional) {
+      promote(host, key);
+      s = host;
+    } else if (host && event == AGENT_EVENT_START) {
+      // A new conversation in the same process starts from idle.
+      promote(host, key);
+      host->state = AGENT_STATE_IDLE;
+      host->state_since_ms = now_ms;
+      s = host;
+    } else if (host) {
+      if (event != AGENT_EVENT_WORKING && event != AGENT_EVENT_WAITING)
+        return 0;
+      host->alias = key;
+      s = host;
+    }
+  }
   if (event == AGENT_EVENT_END) {
     if (s) {
       memset(s, 0, sizeof(*s));
@@ -222,7 +297,7 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
     }
     return 0;
   }
-  if (event == AGENT_EVENT_INTERRUPT &&
+  if ((event == AGENT_EVENT_INTERRUPT || event == AGENT_EVENT_FAIL) &&
       (!s ||
        (s->state != AGENT_STATE_WORKING && s->state != AGENT_STATE_WAITING)))
     return 0;
@@ -246,6 +321,7 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   bool created = is_new && *is_new;
   pid_t previous_pid = s->pid;
   s->updated_ms = now_ms;
+  s->answered_until_ms = 0;
   if (pid > 0 && pid != s->pid) {
     s->pid = pid;
     s->watched = false;
@@ -266,9 +342,10 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   case AGENT_EVENT_WAITING:
     s->state = AGENT_STATE_WAITING;
     break;
+  case AGENT_EVENT_FAIL:
   case AGENT_EVENT_DONE: {
     bool seen = !done_sticky || key_is_focused(key);
-    s->state = AGENT_STATE_DONE;
+    s->state = event == AGENT_EVENT_FAIL ? AGENT_STATE_ERROR : AGENT_STATE_DONE;
     s->unread = !seen;
     s->done_until_ms =
         seen && done_timeout_s > 0 ? deadline(now_ms, done_timeout_s) : 0;
@@ -284,7 +361,7 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   }
   if (s->state != previous)
     s->state_since_ms = now_ms;
-  if (s->state != AGENT_STATE_DONE) {
+  if (!finished(s->state)) {
     s->done_until_ms = 0;
     s->unread = false;
   }
@@ -299,12 +376,14 @@ static int64_t session_deadline(const agent_session_t *s, int stale_timeout_s) {
   if (!s->used) {
     return 0;
   }
-  if (s->state == AGENT_STATE_DONE) {
+  if (finished(s->state)) {
+    if (s->unread && s->pid <= 0 && stale_timeout_s > 0)
+      return deadline(s->updated_ms, stale_timeout_s);
     return s->done_until_ms;
   }
   // A session with no pid cannot be tied to a window or a process exit.
   // Drop it after it has been idle with no events for the stale timeout.
-  // Unread done stays above and does not time out.
+  // Finished signs above first wait for acknowledgement and then fold.
   if (stale_timeout_s > 0 && s->pid <= 0 && s->state == AGENT_STATE_IDLE) {
     return deadline(s->updated_ms, stale_timeout_s);
   }
@@ -316,21 +395,50 @@ static int64_t session_deadline(const agent_session_t *s, int stale_timeout_s) {
   return 0;
 }
 
+bool agent_sessions_answer(uint64_t key, int64_t now_ms, int revert_s) {
+  agent_session_t *s = find_session(key);
+  if (!s || s->state != AGENT_STATE_WAITING || now_ms < 0 || revert_s <= 0)
+    return false;
+  s->state = AGENT_STATE_WORKING;
+  s->state_since_ms = now_ms;
+  s->answered_until_ms = deadline(now_ms, revert_s);
+  touch_sessions();
+  return true;
+}
+
 bool agent_sessions_expire(int64_t now_ms, int stale_timeout_s) {
   bool changed = false;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+    agent_session_t *answered = &sessions[i];
+    if (answered->used && answered->answered_until_ms &&
+        now_ms >= answered->answered_until_ms) {
+      // Nothing followed the key press: the question is still open.
+      answered->answered_until_ms = 0;
+      if (answered->state == AGENT_STATE_WORKING) {
+        answered->state = AGENT_STATE_WAITING;
+        answered->state_since_ms = now_ms;
+        changed = true;
+      }
+    }
     int64_t until = session_deadline(&sessions[i], stale_timeout_s);
     if (until > 0 && now_ms >= until) {
-      if (sessions[i].pid <= 0 && sessions[i].state == AGENT_STATE_IDLE) {
+      if (finished(sessions[i].state) && sessions[i].unread) {
+        sessions[i].unread = false;
+        sessions[i].done_until_ms = applied_done_timeout > 0
+                                        ? deadline(now_ms, applied_done_timeout)
+                                        : 0;
+      } else if (sessions[i].pid <= 0 &&
+                 sessions[i].state == AGENT_STATE_IDLE) {
         memset(&sessions[i], 0, sizeof(sessions[i]));
       } else {
+        bool was_finished = finished(sessions[i].state);
         sessions[i].state = AGENT_STATE_IDLE;
         sessions[i].state_since_ms = now_ms;
         sessions[i].done_until_ms = 0;
         sessions[i].unread = false;
         // The stale working/waiting transition lands on idle at the same
         // instant the no-pid idle lifetime is already over.
-        if (sessions[i].pid <= 0 && stale_timeout_s > 0 &&
+        if (!was_finished && sessions[i].pid <= 0 && stale_timeout_s > 0 &&
             now_ms >= deadline(sessions[i].updated_ms, stale_timeout_s)) {
           memset(&sessions[i], 0, sizeof(sessions[i]));
         }
@@ -409,7 +517,8 @@ bool agent_sessions_kitty(pid_t pid, uint64_t *window, char *listen,
 }
 
 agent_state_t agent_sessions_resolve(void) {
-  static const int PRIORITY[AGENT_STATE_COUNT] = {0, 1, 3, 2};
+  // waiting > error > done > working > idle
+  static const int PRIORITY[AGENT_STATE_COUNT] = {0, 1, 4, 2, 3};
   agent_state_t result = AGENT_STATE_IDLE;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     if (sessions[i].used && PRIORITY[sessions[i].state] > PRIORITY[result]) {
@@ -423,6 +532,9 @@ int64_t agent_sessions_next_deadline(int stale_timeout_s) {
   int64_t next = 0;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     int64_t until = session_deadline(&sessions[i], stale_timeout_s);
+    int64_t answered = sessions[i].used ? sessions[i].answered_until_ms : 0;
+    if (answered > 0 && (!until || answered < until))
+      until = answered;
     if (until > 0 && (!next || until < next)) {
       next = until;
     }
@@ -502,6 +614,7 @@ int agent_sessions_pids(pid_t *pids, size_t capacity) {
 int agent_sessions_set_name(uint64_t key, const char *name) {
   if (!utf8_label_valid(name, 40))
     return -1;
+  agent_sessions_adopt(key);
   agent_session_t *s = find_session(key);
   if (s && strcmp(s->name, name)) {
     snprintf(s->name, sizeof(s->name), "%s", name);
@@ -581,7 +694,7 @@ int agent_sessions_restore(const agent_session_record_t *record, int64_t now_ms,
                          .state = state,
                          .pid = record->pid,
                          .updated_ms = updated,
-                         .unread = state == AGENT_STATE_DONE && unread};
+                         .unread = finished(state) && unread};
   memcpy(s->agent, record->agent, strlen(record->agent) + 1);
   if (utf8_label_valid(record->name, 40))
     snprintf(s->name, sizeof(s->name), "%s", record->name);
@@ -590,7 +703,7 @@ int agent_sessions_restore(const agent_session_record_t *record, int64_t now_ms,
              (uint16_t)(record->key >> 48));
   if (transcript_ok(record->transcript))
     memcpy(s->transcript, record->transcript, strlen(record->transcript) + 1);
-  if (s->state == AGENT_STATE_DONE && !s->unread && done_timeout_s > 0)
+  if (finished(s->state) && !s->unread && done_timeout_s > 0)
     s->done_until_ms = deadline(now_ms, done_timeout_s);
   applied_done_timeout = done_timeout_s;
   if (s->pid > 0)
@@ -662,5 +775,12 @@ void agent_sessions_interrupt(uint64_t key, int64_t now_ms) {
   agent_session_t *s = find_session(key);
   if (s)
     agent_sessions_apply(key, s->agent, AGENT_EVENT_INTERRUPT, 0, now_ms,
+                         applied_done_timeout, NULL);
+}
+
+void agent_sessions_fail(uint64_t key, int64_t now_ms) {
+  agent_session_t *s = find_session(key);
+  if (s)
+    agent_sessions_apply(key, s->agent, AGENT_EVENT_FAIL, 0, now_ms,
                          applied_done_timeout, NULL);
 }

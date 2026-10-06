@@ -2,25 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.0] - 2026-10-04
+## [0.1.0] - 2026-10-05
 
 First release of herdcat, based on wayland-bongocat 2.0.2.
 
 ### Added
 
-- **Session signs** - One sign per coding agent session with its name and
-  state, in a fan or a signpost style. Click a sign to jump to its terminal.
+- **Session signs** - One sign per coding agent session with its name, agent
+  and state, in a fan or a signpost style. Click a sign to jump to its
+  terminal, including a single kitty split.
+- **Five states** - Working, waiting for approval, done, stopped on error and
+  idle. Done and error signs stay up, with a dot, until they have been seen.
 - **Eight agents** - Claude Code, Codex, Grok, Kimi Code, Cursor Agent, Copilot
   CLI, Pi and opencode, through `herdcat --hook <agent>` and two bridges.
-- **Unread and typing desk** - Finished sessions stay up until seen; the sign
-  of the terminal being typed in comes down under the paws.
+- **Typing desk** - The sign of the terminal being typed in comes down under
+  the paws.
 - **Switch card and font panel** - Right-click to change style, language and
-  font.
+  font, with a live preview on the real signs.
 - **Dragging** - Move the cat with the pointer; the position is remembered.
+- **Silent state changes** - Things agents do not report are inferred: Esc
+  before Claude Code starts to answer (from the terminal title), an answered
+  question (from a key press, confirmed by the next event), interrupted and
+  failed turns (from the session record), and a Codex session run by its
+  background server (matched to its terminal by working directory).
+- **One sign per process** - Worker threads and changing session ids of one
+  agent process share a sign. Sessions with no process, such as opencode,
+  fold their unread sign after `agent_stale_timeout`.
+- **Keyboard permission errors** - `--status` says `input=denied` with a count
+  and explains the fix when no keyboard can be opened.
 
 ### Changed
 
 - The command, config directory, state files and socket are named `herdcat`.
+- Rendering repaints only what changed and caches the frames of looping
+  animations. A waiting sign costs about 2% of one core instead of 18%; an
+  idle cat does not wake up at all.
 
 Entries below are the history of wayland-bongocat.
 

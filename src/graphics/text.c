@@ -227,8 +227,9 @@ fail:
 void text_set_scale(int scale) {
   if (scale < 1 || scale > 960 || scale == scale_120)
     return;
+  // Glyphs are keyed by their physical size, so two outputs with different
+  // scales share the cache instead of emptying it on every frame.
   scale_120 = scale;
-  clear_glyphs();
 }
 static bool main_family(const char *family) {
   return !family || !*family || (family_name && !strcmp(family, family_name));
