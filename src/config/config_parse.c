@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "config/config.h"
+#include "config/nameplate.h"
 #include "config/sign_options.h"
 #include "config_internal.h"
 #include "core/herdcat.h"
@@ -57,7 +58,9 @@ static herdcat_error_t
 config_parse_integer_key(config_t *config, const char *key, const char *value) {
   // Identify which field this key maps to (NULL = not an integer key)
   int *target = NULL;
-  if (strcmp(key, "sign_max") == 0) {
+  if (strcmp(key, "sign_title_length") == 0) {
+    target = &config->sign_title_length;
+  } else if (strcmp(key, "sign_max") == 0) {
     target = &config->sign_max;
   } else if (strcmp(key, "sign_font_size") == 0) {
     target = &config->sign_font_size;
@@ -142,6 +145,7 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
     const char *key;
     int minimum, maximum;
   } ranges[] = {
+      {"sign_title_length",       0,  64            },
       {"sign_max",                1,  5             },
       {"sign_font_size",          10, 20            },
       {"cat_height",              10, 200           },
@@ -174,6 +178,14 @@ static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
     const char *key, *value;
     int number;
   } signs[] = {
+      {"sign_name",       "auto",    SIGN_NAME_PROJECT },
+      {"sign_name",       "project", SIGN_NAME_PROJECT },
+      {"sign_name",       "title",   SIGN_NAME_TITLE   },
+      {"sign_name_extra", "off",     SIGN_EXTRA_OFF    },
+      {"sign_name_extra", "inline",  SIGN_EXTRA_INLINE },
+      {"sign_name_extra", "end",     SIGN_EXTRA_END    },
+      {"sign_name_extra", "above",   SIGN_EXTRA_ABOVE  },
+      {"sign_name_extra", "below",   SIGN_EXTRA_BELOW  },
       {"sign_style",      "fan",     SIGN_STYLE_FAN    },
       {"sign_style",      "post",    SIGN_STYLE_POST   },
       {"sign_style",      "off",     SIGN_STYLE_OFF    },
@@ -195,7 +207,11 @@ static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
   for (size_t i = 0; i < sizeof(signs) / sizeof(signs[0]); i++) {
     if (strcmp(key, signs[i].key) || strcmp(value, signs[i].value))
       continue;
-    if (!strcmp(key, "sign_style"))
+    if (!strcmp(key, "sign_name"))
+      config->sign_name = (sign_name_t)signs[i].number;
+    else if (!strcmp(key, "sign_name_extra"))
+      config->sign_name_extra = (sign_name_extra_t)signs[i].number;
+    else if (!strcmp(key, "sign_style"))
       config->sign_style = (sign_style_t)signs[i].number;
     else if (!strcmp(key, "sign_theme"))
       config->sign_theme = (sign_theme_t)signs[i].number;
@@ -338,7 +354,22 @@ static herdcat_error_t config_parse_monitor_list(config_t *config,
 
 static herdcat_error_t
 config_parse_string_key(config_t *config, const char *key, const char *value) {
-  if (strcmp(key, "sign_font") == 0) {
+  if (strcmp(key, "sign_nameplate") == 0) {
+    size_t at = 0;
+    const char *reason = nameplate_validate(value, &at);
+    if (reason) {
+      char message[128];
+      snprintf(message, sizeof(message), "byte %zu: %s", at + 1, reason);
+      diagnostic(key, message);
+      if (strict_parse)
+        return HERDCAT_ERROR_CONFIG;
+      config->sign_nameplate[0] = 0;
+      return HERDCAT_SUCCESS;
+    }
+    snprintf(config->sign_nameplate, sizeof(config->sign_nameplate), "%s",
+             value);
+    return HERDCAT_SUCCESS;
+  } else if (strcmp(key, "sign_font") == 0) {
     if (strlen(value) >= sizeof(config->sign_font))
       return HERDCAT_ERROR_INVALID_PARAM;
     for (const unsigned char *p = (const unsigned char *)value; *p; p++)

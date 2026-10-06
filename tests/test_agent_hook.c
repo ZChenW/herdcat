@@ -429,7 +429,83 @@ static void test_front_process(void) {
   remove_tree(root);
 }
 
+static void test_prompt(void) {
+  const char *inputs[] = {" hello   world ", "\\n  hello\\t  world  ",
+                          "hello\\nignored", "\\u4f60\\u597d \\ud83d\\ude3a",
+                          " /help",          "  \\n\\t ",
+                          "bad\\u0000text",  "bad\\u007ftext",
+                          "\\ud800",         "\\udc00",
+                          "你好世界"};
+  const char *expected[] = {"hello world", "hello world", "hello",   "你好 😺",
+                            NULL,          NULL,          NULL,      NULL,
+                            NULL,          NULL,          "你好世界"};
+  for (size_t i = 0; i < sizeof(inputs) / sizeof(*inputs); i++) {
+    char json[512];
+    snprintf(json, sizeof(json),
+             "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"%s\"}",
+             inputs[i]);
+    for (size_t chunk = 1; chunk <= 256; chunk *= 2) {
+      agent_hook_scanner_t s = scan(json, chunk, true);
+      char out[AGENT_TITLE_MAX + 1];
+      TEST_ASSERT(agent_hook_prompt(&s, NULL, out) == (expected[i] != NULL));
+      TEST_ASSERT(!strcmp(out, expected[i] ? expected[i] : ""));
+    }
+  }
+  agent_hook_scanner_t s = scan(
+      "{\"hook_event_name\":\"PreToolUse\",\"prompt\":\"ignored\"}", 1, true);
+  char out[AGENT_TITLE_MAX + 1];
+  TEST_ASSERT(!agent_hook_prompt(&s, NULL, out));
+  s = scan("{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":7}", 1, true);
+  TEST_ASSERT(!agent_hook_prompt(&s, NULL, out));
+  s = scan("{\"hook_event_name\":\"UserPromptSubmit\",\"nested\":{\"prompt\":"
+           "\"no\"}}",
+           1, true);
+  TEST_ASSERT(!agent_hook_prompt(&s, NULL, out));
+  // A long leading pad and body do not change the bounded prefix storage.
+  agent_hook_scan_init(&s);
+  const char *prefix =
+      "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"";
+  agent_hook_scan_feed(&s, prefix, strlen(prefix));
+  char block[4096];
+  memset(block, ' ', sizeof(block));
+  agent_hook_scan_feed(&s, block, sizeof(block));
+  agent_hook_scan_feed(&s, block, sizeof(block));
+  for (int i = 0; i < 40; i++)
+    agent_hook_scan_feed(&s, "猫", 3);
+  memset(block, 'x', sizeof(block));
+  agent_hook_scan_feed(&s, block, sizeof(block));
+  agent_hook_scan_feed(&s, "\"}", 2);
+  TEST_ASSERT(agent_hook_scan_finish(&s) && agent_hook_prompt(&s, NULL, out));
+  TEST_ASSERT(strlen(out) == 96);
+  for (int i = 0; i < 32; i++)
+    TEST_ASSERT(!memcmp(out + i * 3, "猫", 3));
+}
+static void test_hook_title(void) {
+  const char *inputs[] = {"\"Bridge title\"",
+                          "\"\\u4f60\\u597d\"",
+                          "\"New session - timestamp\"",
+                          "\"\"",
+                          "7",
+                          "\"bad\\nline\"",
+                          "\"\\ud800\"",
+                          "\"bad\\u0000text\""};
+  const char *expected[] = {"Bridge title", "你好", NULL, NULL,
+                            NULL,           NULL,   NULL, NULL};
+  for (size_t i = 0; i < sizeof(inputs) / sizeof(*inputs); i++) {
+    char json[256], out[97];
+    snprintf(json, sizeof(json), "{\"title\":%s}", inputs[i]);
+    agent_hook_scanner_t s;
+    agent_hook_scan_adapter(&s, agent_adapter_find("opencode"));
+    for (size_t j = 0; j < strlen(json); j++)
+      agent_hook_scan_feed(&s, json + j, 1);
+    TEST_ASSERT(agent_hook_scan_finish(&s));
+    TEST_ASSERT(agent_hook_title(&s, out) == (expected[i] != NULL));
+    TEST_ASSERT(!strcmp(out, expected[i] ? expected[i] : ""));
+  }
+}
 int main(void) {
+  test_prompt();
+  test_hook_title();
   test_front_process();
   test_cwd();
   test_repo_name();

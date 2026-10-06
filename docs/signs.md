@@ -1,6 +1,7 @@
 # Session signs
 
-Each session gets a sign named after its working directory. Claude uses a
+Each session gets a sign with a bold working-directory name and a secondary
+session title by default. Missing titles are omitted. Claude uses a
 rounded rectangle and Codex a circle. Click a plate to jump to its terminal on
 niri, including across workspaces; dragging a plate moves the whole cat.
 Missing window targets shake briefly. The cat keeps its typing and sleep frames.
@@ -67,8 +68,9 @@ WezTerm, a click activates the pane first, then compares its title with niri's
 windows, removing a leading `[i/n] `. Exact matches win over prefix/suffix
 matches; an ambiguous or missing title falls back to the first window. Titles
 are bounded to 96 bytes and used only in memory. Identical titles cannot identify
-a system window reliably. Ghostty uses a title only when exactly one candidate
-contains the session name (the repository root name). It has no external
+a system window reliably. Ghostty and WezTerm first use a unique window title
+containing the full session title, then fall back to the previous matching rules.
+Ghostty's fallback requires exactly one candidate containing the directory name. It has no external
 interface for selecting a tab or split; several sessions in one window share
 window-level focus and acknowledgement.
 
@@ -204,6 +206,10 @@ This requires niri's event stream and uses activity only, never key contents.
 | `sign_language` | `auto`, `en`, `zh` |
 | `sign_done` | `sticky`, `timeout` |
 | `sign_typing_desk` | `1`, `0` |
+| `sign_name` | `project`, `title` |
+| `sign_name_extra` | `inline`, `off`, `end`, `above`, `below` |
+| `sign_title_length` | `16`; 0–64 codepoints, 0 = unlimited |
+| `sign_nameplate` | unset; fan template, ≤160 UTF-8 bytes, ≤2 lines |
 
 The cat artwork keeps its original colours in both themes. The default is light;
 automatic selection follows the XDG desktop portal through busctl without a
@@ -260,3 +266,58 @@ listens for Settings `SettingChanged` signals. Portal value 1 selects dark;
 older portals. Listener failures reconnect with bounded backoff. Explicit light
 and dark never start theme subprocesses. The card offers sun / automatic
 (display icon) / moon; saved light/dark choices remain readable.
+
+## Configurable names and fan templates
+
+The default `project` + `inline` shows a bold directory followed by a secondary
+title. Missing or equal titles are omitted, preserving the earlier appearance.
+Same-directory sessions keep the same main name, without numbering.
+
+Use `project` + `off` for directory only, `title` + `off` for title only,
+`title` + `inline` for title before directory, `project` + `inline` for directory
+before title, and `end` to place the extra after status. `above` / `below` use
+a secondary row, omitted when the surface has insufficient clearance. The
+post shows the extra after the main name in all four enabled positions; on
+both sides of the pole the main name stays nearest the icon. It uses secondary
+ink and metadata size, truncates with `…` into the space before agent/status,
+and disappears when less than 24 logical pixels remain. `off` hides the extra
+on both styles. The typing desk always shows only the main name.
+
+```ini
+sign_name=project
+sign_name_extra=end
+sign_title_length=8
+```
+
+Every fan tag uses a template. The built-ins are `**{name}**  {agent} · {state}`
+(`off`), with the other name inserted inline, appended at the end, or placed on
+a row above/below. A custom `sign_nameplate` takes priority over the extra on fan tags only; post
+boards still follow `sign_name` / `sign_name_extra`:
+
+```ini
+sign_name=project
+sign_nameplate={agent} · **{name}**\n{state}
+```
+
+The five placeholders are `{name}`, `{project}`, `{title}`, `{agent}`, `{state}`.
+Bold markers select primary ink; other text uses secondary ink, with waiting
+and error state emphasis preserved. `\n` is a literal two-character line break.
+Unknown placeholders, an unclosed bold span, more than two lines or more than
+160 bytes reject strict config/reload. Tolerant startup warns and falls back.
+Empty ` · ` segments and empty lines disappear; a title equal to the main name
+is treated as empty. Built-in inline keeps the main name when the extra is empty.
+At a width limit the last secondary segments yield first; bold names yield last.
+
+Claude's latest `ai-title` and Codex's session index provide titles at registration
+and turn completion. Grok uses `summary.json`, Kimi Code uses indexed `state.json`,
+and Pi uses `session_info` from the bridge's session file. Copilot reads a top-level
+`name` or `summary` from its private `workspace.yaml`; opencode forwards session
+metadata titles through its bridge (default `New session - ` titles are ignored).
+When no title exists, Claude, Codex, Grok, Kimi, Cursor and Copilot use the first
+user prompt's normalized first line as a temporary title. Blank prompts and slash
+commands are ignored; a real title replaces it permanently. `--sessions` labels
+these as `title~=` and real titles as `title=`. Cursor has no separate title reader.
+Titles
+are capped at 96 UTF-8 bytes, never logged, echoed or uploaded, and stored only
+in memory and the private runtime session file; `--sessions` may show them.
+All options hot-reload and are intentionally absent from the four-row switch card.

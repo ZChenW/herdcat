@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
                         connection, _ = server.accept()
                         with connection:
                             connection.settimeout(3)
-                            requests.append(connection.recv(64).decode())
+                            requests.append(connection.recv(1280).decode())
                             connection.sendall(b'0 ok')
                 except Exception as error:
                     errors.append(str(error))
@@ -74,9 +74,15 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
         invoke(json.dumps(event).encode(), expected, shell=True)
         for hook, state in [('SessionStart', 'start'), ('UserPromptSubmit', 'working')]:
             payload = dict(event, hook_event_name=hook, cwd='/tmp/项目 with spaces')
-            invoke(json.dumps(payload).encode(), [
+            if hook == 'UserPromptSubmit':
+                payload['prompt'] = '  synthetic   first\nsecond line'
+            requests = [
                 f'ev claude {state} e430d22bdbbe8583 {os.getpid()}',
-                'name e430d22bdbbe8583 项目 with spaces'])
+                'sid e430d22bdbbe8583 test',
+                'name e430d22bdbbe8583 项目 with spaces']
+            if hook == 'UserPromptSubmit':
+                requests.append('ask e430d22bdbbe8583 synthetic first')
+            invoke(json.dumps(payload).encode(), requests)
         event['tool_input'] = {'content': 'x' * (4 * 1024 * 1024)}
         invoke(json.dumps(event).encode(), expected)
         for payload in (b'', b'{', b'{}', b'{"hook_event_name":"Unknown"}',

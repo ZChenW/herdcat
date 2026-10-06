@@ -1,6 +1,7 @@
 #ifndef HERDCAT_SIGNS_H
 #define HERDCAT_SIGNS_H
 
+#include "config/nameplate.h"
 #include "config/sign_options.h"
 #include "core/agent_sessions.h"
 
@@ -49,7 +50,8 @@ typedef struct {
   double icon_center_x, icon_center_y;
 } sign_shape_t;
 // Name is bold, metadata is medium. Measure metadata, keep `gap`, and
-// ellipsize the name into what remains. reverse puts metadata on the left.
+// ellipsize the name into what remains. An optional extra uses the remaining
+// space after the name. reverse puts metadata on the left.
 // above is painted after the cat; post labels stay on the board.
 // line_top and line_h are the CSS line box. Drawing derives the baseline
 // from the primary face. Fan nameplates leave the line box at 0 and set
@@ -57,7 +59,7 @@ typedef struct {
 typedef struct {
   double x, line_top, line_h, w, clip_y, clip_h;
   double px, meta_px, gap;
-  uint32_t color, meta_color;
+  uint32_t color, meta_color, secondary_color;
   bool reverse, above;
   bool pixel_snap;
   // Fan nameplates set back and tag_scale. Post leaves both at 0.
@@ -69,6 +71,10 @@ typedef struct {
   bool caret, center;
   double anchor_y, slide;
   char value[128], meta[64];
+  char extra[128];
+  nameplate_t nameplate;
+  bool templated;
+  double max_width, surface_width;
   // Empty draws with the main face. A name here draws this one line in
   // that family and leaves the main face unchanged.
   char family[128];
@@ -156,6 +162,11 @@ typedef struct {
   sign_idle_t idle;
   bool english;
   int font_size;  // Zero retains the 13px model default.
+  sign_name_t name;
+  sign_name_extra_t name_extra;
+  int title_length;
+  char nameplate[161];
+  double surface_width;
   bool open, has_hover, has_pressed;
   uint64_t hover_key, pressed_key;
   int64_t now_ms;
@@ -167,7 +178,7 @@ typedef struct {
   bool typing, desk_snap;
   uint64_t typing_key;
   int64_t typing_until;
-  char desk_name[48];
+  char desk_name[128];
   // menu raises the switch card and retracts signs. menu_post and
   // menu_english select the right-hand segment. menu_tap is 1 or 2.
   // menu_font empty is the default face. menu_font_dir is +1 or -1 on the
@@ -187,7 +198,8 @@ void signs_frame(signs_t *model, const sign_input_t *input,
 void signs_reflect(sign_frame_t *frame, double center_y);
 // Resting height; nameplates scale about this box's center.
 static inline double sign_tag_height(const sign_text_t *text) {
-  return 4 + 5 + text->px * 1.2 + 6;
+  return 4 + 5 + text->px * 1.2 + 6 +
+         (text->nameplate.lines > 1 ? text->meta_px * 1.2 : 0);
 }
 void signs_focus_failed(signs_t *model, uint64_t key, int64_t now_ms);
 // Logical pixels the surface needs above the cat's top. Zero when off.

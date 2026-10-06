@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "agent_hook_internal.h"
+#include "core/agent_title.h"
 #include "core/control.h"
 #include "platform/agent_terminal.h"
 #include "utils/utf8.h"
@@ -16,8 +17,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// Decode JSON escapes only for cwd. Other captured fields keep their strict
-// rules.
+// Decode JSON escapes for paths and title text. Identity and event fields
+// retain their strict, unescaped rules.
 static bool decode_path(const char *raw, char *decoded, size_t capacity) {
   size_t used = 0;
   while (*raw) {
@@ -82,6 +83,18 @@ static bool decode_path(const char *raw, char *decoded, size_t capacity) {
     used += n;
   }
   decoded[used] = '\0';
+  return true;
+}
+bool agent_hook_title(const agent_hook_scanner_t *s,
+                      char out[AGENT_TITLE_MAX + 1]) {
+  out[0] = 0;
+  if (!(s->valid_fields & (1U << HOOK_FIELD_TITLE)) ||
+      !decode_path(s->title, out, AGENT_TITLE_MAX + 1) ||
+      !utf8_label_valid(out, AGENT_TITLE_MAX) ||
+      !strncmp(out, "New session - ", 14)) {
+    out[0] = 0;
+    return false;
+  }
   return true;
 }
 bool agent_hook_transcript(const agent_hook_scanner_t *s,
@@ -325,6 +338,39 @@ int agent_hook_run(const char *agent, const char *event_name) {
   return agent_hook_run_adapter(agent, event_name, agent_adapter_find(agent));
 }
 
+static bool title_path(const char *agent, const agent_hook_scanner_t *scanner,
+                       char path[AGENT_TRANSCRIPT_PATH_MAX + 1]) {
+  if (strcmp(agent, "grok"))
+    return agent_hook_transcript(scanner, path);
+  const char *home = getenv("HOME"), *base = getenv("GROK_HOME");
+  char cwd[256], encoded[768], root[AGENT_TRANSCRIPT_PATH_MAX + 1];
+  if (!home || !agent_session_id_valid(scanner->session_id) ||
+      !(scanner->valid_fields & (1U << HOOK_FIELD_CWD)) ||
+      !decode_path(scanner->cwd, cwd, sizeof(cwd)))
+    return false;
+  size_t used = 0;
+  const char hex[] = "0123456789ABCDEF";
+  for (const unsigned char *p = (const unsigned char *)cwd; *p; p++) {
+    if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+        (*p >= '0' && *p <= '9') || strchr("-_.~", *p)) {
+      encoded[used++] = (char)*p;
+    } else {
+      encoded[used++] = '%';
+      encoded[used++] = hex[*p >> 4];
+      encoded[used++] = hex[*p & 15];
+    }
+  }
+  encoded[used] = 0;
+  int n = base && *base ? snprintf(root, sizeof(root), "%s", base)
+                        : snprintf(root, sizeof(root), "%s/.grok", home);
+  if (n < 0 || (size_t)n >= sizeof(root))
+    return false;
+  n = snprintf(path, AGENT_TRANSCRIPT_PATH_MAX + 1,
+               "%s/sessions/%s/%s/summary.json", root, encoded,
+               scanner->session_id);
+  return n > 0 && n <= AGENT_TRANSCRIPT_PATH_MAX;
+}
+
 int agent_hook_run_adapter(const char *agent, const char *event_name,
                            const agent_adapter_t *adapter) {
   if (!agent_hook_valid_agent(agent)) {
@@ -398,6 +444,16 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
     return 0;
   }
   int sent = control_request(request);
+  // The raw id is only needed to look a title up, so it travels with the
+  // events that can change one, not with every tool call.
+  if (!sent && (metadata || event == AGENT_EVENT_DONE) &&
+      (scanner.valid_fields & (1U << HOOK_FIELD_SESSION)) &&
+      agent_session_id_valid(scanner.session_id)) {
+    char message[AGENT_SESSION_ID_MAX + 22];
+    snprintf(message, sizeof(message), "sid %016" PRIx64 " %.64s",
+             agent_hook_key(agent, &scanner), scanner.session_id);
+    control_request(message);
+  }
   if (!sent && pid > 1 && event != AGENT_EVENT_END) {
     agent_terminal_t terminal;
     char message[384];
@@ -406,12 +462,13 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
                                agent_hook_key(agent, &scanner), &terminal))
       control_request(message);
   }
-  if (!sent && metadata) {
+  if (!sent && (metadata || event == AGENT_EVENT_DONE)) {
     if (!strcmp(agent, adapter->name) &&
         (adapter->interrupt_source == AGENT_SIGNAL_TRANSCRIPT ||
-         adapter->error_source == AGENT_SIGNAL_TRANSCRIPT)) {
+         adapter->error_source == AGENT_SIGNAL_TRANSCRIPT ||
+         !strcmp(agent, "pi") || !strcmp(agent, "grok"))) {
       char path[AGENT_TRANSCRIPT_PATH_MAX + 1];
-      if (agent_hook_transcript(&scanner, path)) {
+      if (title_path(agent, &scanner, path)) {
         char message[AGENT_TRANSCRIPT_PATH_MAX + 23];
         snprintf(message, sizeof(message), "path %016" PRIx64 " %s",
                  agent_hook_key(agent, &scanner), path);
@@ -425,6 +482,28 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
       if (debug && !strcmp(debug, "1"))
         fprintf(stderr, "%s\n", request);
       control_request(request);
+    }
+  }
+  if (!sent) {
+    char title[AGENT_TITLE_MAX + 1];
+    if (event != AGENT_EVENT_END && agent_hook_title(&scanner, title)) {
+      char message[AGENT_TITLE_MAX + 22];
+      snprintf(message, sizeof(message), "ttl %016" PRIx64 " %s",
+               agent_hook_key(agent, &scanner), title);
+      if (debug && !strcmp(debug, "1"))
+        fprintf(stderr, "ttl %016" PRIx64 " <redacted>\n",
+                agent_hook_key(agent, &scanner));
+      control_request(message);
+    }
+    char prompt[AGENT_TITLE_MAX + 1];
+    if (agent_hook_prompt(&scanner, event_name, prompt)) {
+      char message[AGENT_TITLE_MAX + 22];
+      snprintf(message, sizeof(message), "ask %016" PRIx64 " %s",
+               agent_hook_key(agent, &scanner), prompt);
+      if (debug && !strcmp(debug, "1"))
+        fprintf(stderr, "ask %016" PRIx64 " <redacted>\n",
+                agent_hook_key(agent, &scanner));
+      control_request(message);
     }
   }
   return 0;

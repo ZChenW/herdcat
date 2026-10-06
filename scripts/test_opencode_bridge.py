@@ -32,13 +32,15 @@ with tempfile.TemporaryDirectory(prefix='bongo-opencode-') as directory:
             def receive():
                 connection, _ = server.accept()
                 with connection:
-                    request = connection.recv(64).decode()
+                    request = connection.recv(1280).decode()
                     connection.sendall(b'0 ok')
                     return request
-            send('session.created', info={'location': {'directory': '/tmp/bridge-test'}})
+            send('session.created', info={'location': {'directory': '/tmp/bridge-test'},
+                                          'title': 'New session - synthetic timestamp'})
             start = receive().split()
             assert start[:3] == ['ev', 'opencode', 'start'] and start[-1] == '0', start
             key = start[3]
+            assert receive() == f'sid {key} bridge-test'
             assert receive() == f'name {key} bridge-test'
             # No location on these events. Cached metadata and ordering survive.
             for event, action in [('session.execution.started', 'working'),
@@ -46,10 +48,17 @@ with tempfile.TemporaryDirectory(prefix='bongo-opencode-') as directory:
                                   ('permission.replied', 'working'),
                                   ('session.execution.interrupted', 'interrupt'),
                                   ('session.execution.succeeded', 'done')]:
-                send(event)
+                info = None
+                if event == 'session.execution.succeeded':
+                    info = {'location': {'directory': '/tmp/bridge-test'},
+                            'title': 'Synthetic generated title'}
+                send(event, info=info)
                 assert receive() == f'ev opencode {action} {key} 0'
-                if event == 'session.execution.started':
+                if event in ('session.execution.started', 'session.execution.succeeded'):
+                    assert receive() == f'sid {key} bridge-test'
                     assert receive() == f'name {key} bridge-test'
+                if event == 'session.execution.succeeded':
+                    assert receive() == f'ttl {key} Synthetic generated title'
             send('session.created', 'child', {'location': {'directory': '/tmp/bridge-test'},
                                              'parentID': 'parent'})
             send('session.execution.succeeded', 'child')
@@ -69,7 +78,9 @@ with tempfile.TemporaryDirectory(prefix='bongo-opencode-') as directory:
             result_proc.stdin.write(json.dumps({'agent_pid': os.getpid(),
                                                 'session_id': 'claimed'}).encode())
             result_proc.stdin.close()
-            assert receive().endswith(' 0')
+            claimed = receive().split()
+            assert claimed[-1] == '0'
+            assert receive() == f'sid {claimed[3]} claimed'
             assert result_proc.wait(3) == 0 and result_proc.stdout.read() == b''
             assert result_proc.stderr.read() == b''
             server.settimeout(0.1)

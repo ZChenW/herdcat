@@ -14,6 +14,8 @@ typedef enum {
   HOOK_FIELD_STATUS,
   HOOK_FIELD_PARENT,
   HOOK_FIELD_PID,
+  HOOK_FIELD_PROMPT,
+  HOOK_FIELD_TITLE,
   HOOK_FIELD_COUNT
 } agent_hook_field_t;
 

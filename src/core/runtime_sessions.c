@@ -3,6 +3,7 @@
 #include "config/sign_options.h"
 #include "core/agent_sessions.h"
 #include "core/agent_state.h"
+#include "core/agent_title.h"
 #include "graphics/animation.h"
 #include "platform/agent_discover.h"
 #include "platform/agent_terminal.h"
@@ -193,6 +194,9 @@ static int agent_apply(uint64_t key, const char *agent, agent_event_t event,
                            config.agent_done_timeout, NULL) < 0) {
     return 1;
   }
+  if (event == AGENT_EVENT_DONE || event == AGENT_EVENT_REST ||
+      event == AGENT_EVENT_START)
+    agent_sessions_refresh_title(key);
   if (event == AGENT_EVENT_WORKING)
     overlay_signs_note_working(key);
   int after_count = agent_sessions_pids(after, AGENT_SESSIONS_MAX);
@@ -323,6 +327,10 @@ int command(const char *request, char *response, size_t capacity) {
       for (int i = 0; i < count; i++)
         focus_terminal_resolve(pids[i]);
     }
+  } else if (!strncmp(request, "ask ", 4) || !strncmp(request, "ttl ", 4)) {
+    result = agent_sessions_title_command(request);
+  } else if (strncmp(request, "sid ", 4) == 0) {
+    result = agent_sessions_id_command(request);
   } else if (strncmp(request, "path ", 5) == 0) {
     result = transcript_watch_command(request, monotonic_ms());
   } else if (strncmp(request, "name ", 5) == 0) {

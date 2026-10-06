@@ -3,6 +3,7 @@
 
 #include "core/agent_adapters.h"
 #include "core/agent_sessions.h"
+#include "core/agent_title.h"
 #include "core/agent_transcript.h"
 #include "platform/agent_watch.h"
 
@@ -35,48 +36,6 @@ static transcript_t slots[AGENT_SESSIONS_MAX];
 static int notify_fd = -1, backlog_fd = -1;
 static bool enabled;
 static unsigned cursor;
-
-int transcript_watch_open(const char *path) {
-  const char *home = getenv("HOME");
-  if (!path || !home || home[0] != '/' || path[0] != '/')
-    return -1;
-  size_t n = strlen(path), hn = strlen(home);
-  while (hn > 1 && home[hn - 1] == '/')
-    hn--;
-  if (hn <= 1 || n > AGENT_TRANSCRIPT_PATH_MAX || n < hn + 7 ||
-      strncmp(path, home, hn) || path[hn] != '/' ||
-      strcmp(path + n - 6, ".jsonl"))
-    return -1;
-  char copy[AGENT_TRANSCRIPT_PATH_MAX + 1];
-  memcpy(copy, path, n + 1);
-  // Walk from / to reject symlinked ancestors as well as the final component.
-  int parent = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-  if (parent < 0)
-    return -1;
-  char *save = NULL, *part = strtok_r(copy + 1, "/", &save);
-  while (part) {
-    char *next = strtok_r(NULL, "/", &save);
-    if (!strcmp(part, "..")) {
-      close(parent);
-      return -1;
-    }
-    int flags = O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK;
-    if (next)
-      flags |= O_DIRECTORY;
-    int fd = openat(parent, part, flags);
-    close(parent);
-    if (fd < 0)
-      return -1;
-    parent = fd;
-    part = next;
-  }
-  struct stat st;
-  if (fstat(parent, &st) < 0 || !S_ISREG(st.st_mode) || st.st_uid != getuid()) {
-    close(parent);
-    return -1;
-  }
-  return parent;
-}
 
 static void disarm(transcript_t *slot) {
   if (!slot->active)
@@ -193,10 +152,14 @@ void transcript_watch_path(uint64_t key, const char *path, int64_t now_ms) {
   const agent_adapter_t *adapter = agent_adapter_find(view->agent);
   if (strcmp(adapter->name, view->agent))
     return;
-  if (adapter->interrupt_source != AGENT_SIGNAL_TRANSCRIPT &&
-      adapter->error_source != AGENT_SIGNAL_TRANSCRIPT)
+  bool transcript = adapter->interrupt_source == AGENT_SIGNAL_TRANSCRIPT ||
+                    adapter->error_source == AGENT_SIGNAL_TRANSCRIPT;
+  if (!transcript && strcmp(view->agent, "pi") && strcmp(view->agent, "grok"))
     return;
   agent_sessions_set_transcript(key, path);
+  agent_sessions_refresh_title(key);
+  if (!transcript)
+    return;
   transcript_t *slot = NULL;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
     if (slots[i].key == key)
@@ -227,6 +190,11 @@ static bool feed(transcript_t *slot, const char *data, size_t length,
           !slot->skipping &&
           (strcmp(slot->agent, "claude") || now - slot->submitted_ms >= 1000) &&
           agent_transcript_interrupted(slot->agent, slot->line, slot->used);
+      if (!slot->skipping && !strcmp(slot->agent, "claude")) {
+        char title[AGENT_TITLE_MAX + 1];
+        if (agent_title_line(slot->agent, NULL, slot->line, slot->used, title))
+          agent_sessions_set_title(slot->key, title);
+      }
       size_t used = slot->used;
       slot->used = 0;
       slot->skipping = false;

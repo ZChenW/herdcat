@@ -47,6 +47,12 @@ int focus_parse_wezterm(const char *json, size_t length, bool clients,
                         focus_wezterm_pane_t *out, size_t capacity);
 typedef bool (*focus_terminal_fn)(pid_t pid, agent_terminal_t *terminal,
                                   char *name, size_t capacity);
+typedef bool (*focus_title_fn)(pid_t pid, char *title, size_t capacity);
+void focus_set_title(focus_title_fn lookup);
+bool focus_terminal_window_title(pid_t pid, const agent_terminal_t *terminal,
+                                 const char *name, const char *title,
+                                 const focus_window_t *windows, size_t count,
+                                 uint64_t *id);
 typedef void (*focus_terminal_note_fn)(pid_t pid,
                                        const agent_terminal_t *terminal);
 void focus_set_terminal(focus_terminal_fn lookup, focus_terminal_note_fn note);

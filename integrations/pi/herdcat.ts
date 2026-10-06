@@ -62,7 +62,8 @@ export default function herdcat(pi) {
           return;
         // Forked/child sessions carry a parent in the session header.
         if (ctx.sessionManager.getHeader?.()?.parentSession) return;
-        const payload = { session_id, cwd: ctx.cwd, agent_pid: process.pid };
+        const payload = { session_id, cwd: ctx.cwd, agent_pid: process.pid,
+                          transcript_path: ctx.sessionManager.getSessionFile?.() };
         if (name === "agent_end") {
           // agent_end wraps messages; it has no top-level stopReason in Pi.
           const last = event.messages?.findLast(message => message.role === "assistant");

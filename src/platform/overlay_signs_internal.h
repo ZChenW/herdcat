@@ -12,6 +12,7 @@ typedef struct {
   sign_style_t style;
   sign_orientation_t orientation;
   int resting_y;
+  int surface_width;
   bool placed;
   sign_frame_t frame;
   overlay_signs_step_t last;

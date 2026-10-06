@@ -21,7 +21,7 @@
 #include <unistd.h>
 
 #define STORE_DELAY_MS 1000
-#define STORE_LINE_MAX 1280
+#define STORE_LINE_MAX 1536
 #define STORE_FILE_MAX (AGENT_SESSIONS_MAX * STORE_LINE_MAX)
 
 static uint64_t seen_generation;
@@ -137,13 +137,38 @@ static bool parse_pid(const char *text, pid_t *out) {
 }
 
 static bool parse_line(char *line, agent_session_record_t *out) {
-  if (strncmp(line, "1 ", 2))
+  bool version3 = !strncmp(line, "3 ", 2);
+  bool version2 = version3 || !strncmp(line, "2 ", 2);
+  if (!version2 && strncmp(line, "1 ", 2))
     return false;
   char *tab = strchr(line, '\t');
-  if (!tab || strchr(tab + 1, '\t') ||
-      strlen(tab + 1) > AGENT_TRANSCRIPT_PATH_MAX)
+  if (!tab)
     return false;
   *tab = '\0';
+  char *title = "", *id = "", *number = "0", *temporary = "0";
+  if (version2) {
+    title = strchr(tab + 1, '\t');
+    if (!title)
+      return false;
+    *title++ = 0;
+    id = strchr(title, '\t');
+    if (!id)
+      return false;
+    *id++ = 0;
+    number = strchr(id, '\t');
+    if (!number)
+      return false;
+    *number++ = 0;
+    if (version3) {
+      temporary = strchr(number, '\t');
+      if (!temporary)
+        return false;
+      *temporary++ = 0;
+    }
+  }
+  if (strchr(tab + 1, '\t') || strlen(tab + 1) > AGENT_TRANSCRIPT_PATH_MAX ||
+      strlen(title) > AGENT_TITLE_MAX || strlen(id) > AGENT_SESSION_ID_MAX)
+    return false;
   char *save = NULL;
   char *key = strtok_r(line + 2, " ", &save);
   char *agent = strtok_r(NULL, " ", &save);
@@ -163,6 +188,15 @@ static bool parse_line(char *line, agent_session_record_t *out) {
   memcpy(row.name, name, strlen(name) + 1);
   if (tab[1])
     memcpy(row.transcript, tab + 1, strlen(tab + 1) + 1);
+  // Validate and discard the retired name-number field in v2/v3 records.
+  int64_t reserved;
+  if (!parse_i64(number, &reserved) || reserved > UINT_MAX)
+    return false;
+  if (strcmp(temporary, "0") && strcmp(temporary, "1"))
+    return false;
+  row.title_temporary = temporary[0] == '1';
+  snprintf(row.title, sizeof(row.title), "%s", title);
+  snprintf(row.session_id, sizeof(row.session_id), "%s", id);
   row.unread = unread[0] == '1';
   *out = row;
   return true;
@@ -267,10 +301,13 @@ static int write_file(int dir) {
     const char *path = rows[i].transcript;
     if (strchr(path, '\n') || strchr(path, '\t'))
       path = "";
-    if (dprintf(fd, "1 %016" PRIx64 " %s %ld %s %d %" PRId64 " %s\t%s\n",
+    if (dprintf(fd,
+                "3 %016" PRIx64 " %s %ld %s %d %" PRId64
+                " %s\t%s\t%s\t%s\t0\t%d\n",
                 rows[i].key, rows[i].agent, (long)rows[i].pid,
                 agent_state_name(rows[i].state), rows[i].unread ? 1 : 0,
-                rows[i].updated_ms, rows[i].name, path) < 0)
+                rows[i].updated_ms, rows[i].name, path, rows[i].title,
+                rows[i].session_id, rows[i].title_temporary ? 1 : 0) < 0)
       result = -1;
   }
   if (!result && fsync(fd))

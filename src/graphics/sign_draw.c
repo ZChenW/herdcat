@@ -1,6 +1,7 @@
 #include "graphics/sign_draw.h"
 
 #include "graphics/text.h"
+#include "sign_draw_internal.h"
 
 #include <math.h>
 #include <nanosvg.h>
@@ -18,9 +19,6 @@
 #define SVG_BYTES     1024
 #define CACHE_IDLE_MS 60000
 
-typedef struct {
-  int x, y, r, b;
-} pix_t;
 typedef struct {
   uint64_t key, used;
   int w, h;
@@ -105,11 +103,11 @@ int sign_draw_cache_timeout(int64_t now_ms) {
   return left > 0 ? (int)left : 0;
 }
 
-static pix_t pix_of(double x, double y, double w, double h, double scale) {
+pix_t pix_of(double x, double y, double w, double h, double scale) {
   return (pix_t){(int)floor(x * scale), (int)floor(y * scale),
                  (int)ceil((x + w) * scale), (int)ceil((y + h) * scale)};
 }
-static pix_t intersect(pix_t a, pix_t b) {
+pix_t intersect(pix_t a, pix_t b) {
   if (a.x < b.x)
     a.x = b.x;
   if (a.y < b.y)
@@ -358,8 +356,8 @@ static int build_svg(char *svg, int bw, int bh, const sign_shape_t *shape,
     return -1;
   return 0;
 }
-static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
-                       double scale, pix_t bounds, bool store) {
+void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
+                double scale, pix_t bounds, bool store) {
   double x = shape->x * scale, y = shape->y * scale;
   if (shape->pixel_snap) {
     x = round(x);
@@ -481,133 +479,6 @@ static void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
   blend(dst, dw, dh, pixels, bw, bh, left, top, limit);
   if (!slot && !cacheable)
     free(pixels);
-}
-static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
-                     double scale, pix_t bounds, bool store) {
-  double s = text->tag_scale > 0.05 ? text->tag_scale : 1;
-  float name_px = (float)(text->px * s);
-  int name_w = text_measure(text->value, name_px, true);
-  int meta_w = text_measure(text->meta, (float)(text->meta_px * s), false);
-  double gap = text->gap * s;
-  double content = name_w + (meta_w > 0 ? gap + meta_w : 0);
-  double border = 2 * s, pad_x = 10 * s, pad_t = 5 * s, pad_b = 6 * s;
-  // Unitless line-height 1.2. The plate is anchored on the resting bottom
-  // and scales about that plate's center, matching the pop transition.
-  double line_h = text->px * 1.2 * s;
-  double box_h = border * 2 + pad_t + line_h + pad_b;
-  double box_w = border * 2 + pad_x * 2 + content;
-  double box_h1 = sign_tag_height(text);
-  double center_y = text->anchor_y - box_h1 / 2;
-  double box_top = center_y - box_h / 2;
-  double line_top = box_top + border + pad_t;
-  double baseline = text_baseline(line_top, line_h, name_px, true);
-  double left = text->x - box_w / 2;
-  if (text->pixel_snap) {
-    left = round(left * scale) / scale;
-    box_top = round(box_top * scale) / scale;
-    line_top = box_top + border + pad_t;
-    baseline = text_baseline(line_top, line_h, name_px, true);
-  }
-  sign_shape_t plate = {.kind = SIGN_RECT,
-                        .pixel_snap = text->pixel_snap,
-                        .x = left,
-                        .y = box_top,
-                        .w = box_w,
-                        .h = box_h,
-                        .radius = 10 * s,
-                        .stroke = border,
-                        .fill = text->back,
-                        .outline = text->color};
-  draw_shape(dst, dw, dh, &plate, scale, bounds, store);
-  double name_x = left + border + pad_x;
-  double meta_x = name_x + name_w + gap;
-  pix_t clip = intersect(bounds, pix_of(left, box_top, box_w, box_h, scale));
-  if (clip.r <= clip.x || clip.b <= clip.y)
-    return;
-  text_clip_t box = {clip.x, clip.y, clip.r - clip.x, clip.b - clip.y};
-  int base = (int)lround(baseline * scale);
-  if (text->value[0])
-    text_draw_clip(dst, dw, dh, (int)lround(name_x * scale), base, text->value,
-                   (float)(text->px * s), true, text->color, 0, box);
-  if (text->meta[0])
-    text_draw_clip(dst, dw, dh, (int)lround(meta_x * scale), base, text->meta,
-                   (float)(text->meta_px * s), false, text->meta_color, 0, box);
-}
-static void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
-                      double scale, pix_t bounds, bool store) {
-  if (text->back >> 24) {
-    draw_tag(dst, dw, dh, text, scale, bounds, store);
-    return;
-  }
-  float name_px = (float)text->px;
-  const char *family = text->family[0] ? text->family : NULL;
-  double baseline =
-      text_baseline_family(family, text->line_top, text->line_h, name_px, true);
-  int base = (int)lround(baseline * scale);
-  if (text->center) {
-    int measured = text->value[0]
-                       ? text_measure_family(family, text->value, name_px, true)
-                       : 0;
-    bool shrink = text->w > 0 && measured > text->w;
-    double name_x = text->x + text->slide;
-    if (!shrink)
-      name_x += (text->w - measured) / 2.0;
-    pix_t clip = intersect(
-        bounds, pix_of(text->x, text->clip_y, text->w, text->clip_h, scale));
-    if (clip.r <= clip.x || clip.b <= clip.y)
-      return;
-    text_clip_t box = {clip.x, clip.y, clip.r - clip.x, clip.b - clip.y};
-    int limit = shrink ? (int)lround(text->w * scale) : 0;
-    if (text->value[0])
-      text_draw_clip_family(dst, dw, dh, (int)lround(name_x * scale), base,
-                            family, text->value, name_px, true, text->color,
-                            limit, box);
-    return;
-  }
-  int meta_w = text_measure(text->meta, (float)text->meta_px, false);
-  double budget = text->w - text->gap - meta_w;
-  if (budget < 0)
-    budget = 0;
-  // A board left of the pole is a mirror image: the name stays beside the
-  // icon at the pole end, the note at the far end.
-  double name_x = text->x;
-  if (text->reverse) {
-    double name_w =
-        text->value[0] ? text_measure(text->value, name_px, true) : 0;
-    name_x = text->x + text->w - (name_w < budget ? name_w : budget);
-  }
-  double meta_x = text->reverse ? text->x : text->x + text->w - meta_w;
-  pix_t clip = intersect(
-      bounds, pix_of(text->x, text->clip_y, text->w, text->clip_h, scale));
-  if (clip.r <= clip.x || clip.b <= clip.y)
-    return;
-  text_clip_t box = {clip.x, clip.y, clip.r - clip.x, clip.b - clip.y};
-  if (text->value[0] && budget > 0.5)
-    text_draw_clip(dst, dw, dh, (int)lround(name_x * scale), base, text->value,
-                   name_px, true, text->color, (int)lround(budget * scale),
-                   box);
-  text_metrics_t metrics;
-  if (text->caret && (text->meta_color >> 24) && text->px > 0 &&
-      text_metrics(name_px, true, &metrics)) {
-    int measured = text_measure(text->value, name_px, true);
-    double used = measured;
-    if (used > budget)
-      used = budget;
-    double caret_w = text->px * (2.0 / 12.0);
-    sign_shape_t bar = {.kind = SIGN_RECT,
-                        .x = name_x + used + text->gap,
-                        // Centred on the line's ink, not hung from its top.
-                        .y = baseline - (metrics.ascent - metrics.descent) / 2 -
-                             text->px / 2,
-                        .w = caret_w,
-                        .h = text->px,
-                        .radius = caret_w / 2,
-                        .fill = text->meta_color};
-    draw_shape(dst, dw, dh, &bar, scale, bounds, false);
-  }
-  if (text->meta[0])
-    text_draw_clip(dst, dw, dh, (int)lround(meta_x * scale), base, text->meta,
-                   (float)text->meta_px, false, text->meta_color, 0, box);
 }
 void sign_draw(uint8_t *dst, int dw, int dh, int scale_120,
                const sign_frame_t *frame, sign_draw_layer_t layer) {

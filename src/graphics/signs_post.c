@@ -1,5 +1,6 @@
 #include "config/sign_options.h"
 #include "core/agent_adapters.h"
+#include "graphics/sign_names.h"
 #include "graphics/sign_palette.h"
 #include "graphics/signs.h"
 #include "signs_internal.h"
@@ -109,9 +110,20 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
                           .meta_px = 11.5 * scale * ratio,
                           .gap = 7 * scale,
                           .color = with_alpha(palette->ink, opacity),
+                          .secondary_color =
+                              with_alpha(palette->secondary, opacity),
                           .meta_color = with_alpha(meta, opacity),
                           .reverse = direction < 0};
-    snprintf(text->value, sizeof(text->value), "%s", slot->session.name);
+    bool title_main;
+    sign_session_name(in, &slot->session, text->value, &title_main);
+    if (in->name_extra != SIGN_EXTRA_OFF) {
+      if (title_main)
+        snprintf(text->extra, sizeof(text->extra), "%s", slot->session.name);
+      else
+        sign_title_truncate(slot->session.title, in->title_length, text->extra);
+      if (!strcmp(text->value, text->extra))
+        text->extra[0] = 0;
+    }
     char fallback[9];
     const char *who = agent_adapter_display(slot->session.agent, fallback);
     if (slot->session.state == AGENT_STATE_WORKING) {

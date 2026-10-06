@@ -200,6 +200,47 @@ clears unread and starts working. Timeout applies the timer to every completion.
 Switching to timeout also starts timers for existing unread completions.
 This policy also applies with sign_style=off.
 .TP
+.B sign_name=project|title
+Default project always uses the directory; title uses the session title and
+falls back to the directory when none exists. Same-directory sessions retain
+the same main name, without numbering.
+.TP
+.B sign_name_extra=off|inline|end|above|below
+Default inline shows the title after the bold directory name. Fan nameplates
+show the other name before agent/status (inline), after status (end), or on a
+secondary row (above/below). Absent or equal names are omitted; insufficient
+clearance removes the second row. Post boards show the extra after the main
+name for all enabled positions, with the main name nearest the icon on either
+side of the pole. The extra uses metadata size and secondary ink, truncates
+with an ellipsis into the remaining width, and is omitted below 24 logical
+pixels. Off hides the extra on both styles; the desk uses only the main name.
+.TP
+.B sign_title_length=0..64
+Default 16 Unicode codepoints, followed by an ellipsis when truncated.
+Zero disables this limit; post boards still apply their width limit.
+.TP
+.B sign_nameplate
+Advanced fan-only template, overriding sign_name_extra on fan tags. Post boards
+continue to follow sign_name and sign_name_extra. Up to 160 UTF-8 bytes
+and two lines, with literal \en for a line break. Supported placeholders:
+{name}, {project}, {title}, {agent}, {state}. **...** selects bold primary ink;
+other text uses secondary ink, and waiting/error states retain emphasis.
+Empty placeholder segments separated by ` · ' and empty lines are removed.
+A title equal to the main name is empty. Trailing secondary content is truncated
+before bold names at the width limit. Invalid templates give a byte position
+and reject strict checks/reload; tolerant startup warns and uses the built-in.
+All name options hot-reload and do not appear in the switch card.
+Example: sign_name=project, sign_name_extra=below, sign_title_length=24.
+Advanced example: sign_nameplate={agent} · **{name}**\en{state}.
+Copilot reads name or summary from workspace.yaml; opencode forwards session
+metadata titles, ignoring default New session titles. Claude, Codex, Grok, Kimi,
+Cursor and Copilot use the first user prompt's normalized first line when there
+is no title. Empty prompts and slash commands are ignored. A real title replaces
+this temporary title; --sessions distinguishes title~= from title=.
+Titles and prompt excerpts never enter logs. Bounded metadata travels only over
+the local authenticated control channel and stays in memory and the mode-0600
+runtime session file. Hook debug output redacts it; --sessions can show it.
+.TP
 .B sign_typing_desk=0|1
 Default 1. Typing in the focused agent terminal retracts its sign and puts a
 name board under the paws. It leaves after 2.5 seconds without input, on focus

@@ -302,18 +302,20 @@ int focus_current_query(uint64_t focused, const focus_window_t *windows,
         matches[i] = best_rank > 0 && best->report.split == t->pane;
       } else {
         uint64_t window = 0, outer = 0;
-        belongs[i] = focus_terminal_window(s->pid, t, s->name, windows,
-                                           windows_count, &window) &&
-                     window == focused;
+        belongs[i] =
+            focus_terminal_window_title(s->pid, t, s->name, s->title, windows,
+                                        windows_count, &window) &&
+            window == focused;
         reported[i] =
             reported_split(panes, pane_count, t->outer_kitty_pid, &outer);
       }
     } else {
       uint64_t window = 0, split = 0;
-      belongs[i] = s->pid > 1 &&
-                   focus_terminal_window(s->pid, t, s->name, windows,
-                                         windows_count, &window) &&
-                   window == focused;
+      belongs[i] =
+          s->pid > 1 &&
+          focus_terminal_window_title(s->pid, t, s->name, s->title, windows,
+                                      windows_count, &window) &&
+          window == focused;
       if (t->kind == TERMINAL_WEZTERM) {
         reported[i] = true;
         matches[i] = t->current_known && t->current_pane == t->pane;
@@ -427,13 +429,13 @@ void focus_current_wezterm_resolve(pid_t pid, const agent_terminal_t *terminal,
       continue;
     }
     uint64_t window = 0;
-    bool belongs =
-        group_known
-            ? t.native_window_known && t.native_window == group
-            : target ||
-                  (focus_terminal_window(sessions[i].pid, &t, sessions[i].name,
-                                         windows, windows_count, &window) &&
-                   window == terminal->window);
+    bool belongs = group_known
+                       ? t.native_window_known && t.native_window == group
+                       : target || (focus_terminal_window_title(
+                                        sessions[i].pid, &t, sessions[i].name,
+                                        sessions[i].title, windows,
+                                        windows_count, &window) &&
+                                    window == terminal->window);
     if (belongs) {
       t.window = terminal->window;
       t.current_known = terminal->current_known;

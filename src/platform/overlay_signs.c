@@ -3,6 +3,7 @@
 
 #include "config/sign_options.h"
 #include "core/agent_sessions.h"
+#include "graphics/sign_names.h"
 #include "graphics/sign_palette.h"
 #include "graphics/text.h"
 #include "overlay_signs_internal.h"
@@ -126,6 +127,10 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
       .animations = config->sign_animations,
       .idle = config->sign_idle,
       .font_size = config->sign_font_size,
+      .name = config->sign_name,
+      .name_extra = config->sign_name_extra,
+      .title_length = config->sign_title_length,
+      .surface_width = lanes[index].surface_width,
       .english = config_sign_english(config),
       .open = expanded[index],
       .has_hover = lanes[index].has_hover,
@@ -150,7 +155,12 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
       .typing_key = desk_key,
       .typing_until = desk_on ? desk_key_ms + 2500 : 0,
   };
+  snprintf(input.nameplate, sizeof(input.nameplate), "%s",
+           config->sign_nameplate);
   snprintf(input.desk_name, sizeof(input.desk_name), "%s", desk_name);
+  for (int i = 0; i < count; i++)
+    if (all[i].key == desk_key)
+      sign_session_name(&input, &all[i], input.desk_name, NULL);
   if (browse) {
     // Show every session, and one name tag in the fan, so the face being
     // tried is seen on real signs.
@@ -503,7 +513,11 @@ static void note_split_click(pid_t pid, uint64_t key) {
   agent_terminal_t terminal = {.kind = TERMINAL_NONE};
   char name[48] = {0};
   agent_sessions_terminal(pid, &terminal, name, sizeof(name));
-  if (!focus_terminal_window(pid, &terminal, name, windows, count, &id) || !id)
+  char title[AGENT_TITLE_MAX + 1];
+  agent_sessions_title(pid, title, sizeof(title));
+  if (!focus_terminal_window_title(pid, &terminal, name, title, windows, count,
+                                   &id) ||
+      !id)
     return;
   focus_current_click(id, key);
 }

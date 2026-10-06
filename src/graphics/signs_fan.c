@@ -176,8 +176,6 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
     double rise = (1 - appear) * 6 * cat_scale;
     double box_bottom = pin_y - 24 * cat_scale + rise;
     sign_text_t *text = &frame->texts[frame->text_count++];
-    char fallback[9];
-    const char *who = agent_adapter_display(slot->session.agent, fallback);
     *text = (sign_text_t){
         .x = pin_x,
         .pixel_snap = nudging,
@@ -188,36 +186,12 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
         .color = with_alpha(palette->ink, opacity * appear),
         .meta_color =
             with_alpha(meta_color(slot->session.state, in), opacity * appear),
+        .secondary_color = with_alpha(palette->secondary, opacity * appear),
         .above = true,
         .tag_scale = .96 + .04 * appear,
         .font_ratio = font_ratio(in),
         .back = with_alpha(fill, opacity * appear)};
-    snprintf(text->value, sizeof(text->value), "%s", slot->session.name);
-    if (slot->session.state == AGENT_STATE_WORKING) {
-      int64_t elapsed = in->now_ms - slot->session.state_since_ms;
-      if (elapsed < 0)
-        elapsed = 0;
-      int64_t minutes = elapsed / 60000;
-      if (minutes > 99999)
-        minutes = 99999;
-      snprintf(text->meta, sizeof(text->meta), "%s · %s %lld %s", who,
-               WORDS[in->english ? 1 : 0].working, (long long)minutes,
-               WORDS[in->english ? 1 : 0].minute);
-      wake_at(frame, in->now_ms + 60000 - elapsed % 60000);
-    } else {
-      const char *label = WORDS[in->english ? 1 : 0].idle;
-      if (waiting)
-        label = WORDS[in->english ? 1 : 0].waiting;
-      else if (finished(slot->session.state))
-        label = done_label(in, true, &slot->session);
-      snprintf(text->meta, sizeof(text->meta), "%s · %s", who, label);
-    }
-    if (slot->session.terminal.kind == TERMINAL_TMUX &&
-        slot->session.terminal.detached) {
-      size_t used = strlen(text->meta);
-      snprintf(text->meta + used, sizeof(text->meta) - used, " · %s",
-               in->english ? "Detached" : "已断开");
-    }
+    sign_nameplate(text, in, &slot->session, frame);
     include_bounds(frame, pin_x - 220 * cat_scale, pin_y - 70 * cat_scale,
                    440 * cat_scale, 80 * cat_scale);
   }

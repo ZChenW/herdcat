@@ -2,6 +2,7 @@
 #define HERDCAT_AGENT_SESSIONS_INTERNAL_H
 
 #include "core/agent_sessions.h"
+#include "core/agent_title.h"
 #include "utils/utf8.h"
 
 #include <inttypes.h>
@@ -12,6 +13,9 @@ typedef struct {
   bool watched;
   uint64_t key, order;
   char name[48];
+  char title[AGENT_TITLE_MAX + 1];
+  bool title_temporary;
+  char session_id[AGENT_SESSION_ID_MAX + 1];
   int64_t created_ms, state_since_ms;
   char agent[AGENT_NAME_MAX + 1];
   agent_state_t state;

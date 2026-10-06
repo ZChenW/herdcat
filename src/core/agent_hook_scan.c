@@ -69,10 +69,12 @@ static void finish_string(agent_hook_scanner_t *s) {
   s->text[s->text_length] = '\0';
   if (!s->key && s->depth == 1 && s->field == HOOK_FIELD_PARENT)
     s->child_session = s->text_length > 0 || s->overflow;
+  bool prompt = !s->key && s->field == HOOK_FIELD_PROMPT && s->depth == 1;
   bool valid =
-      !s->overflow &&
+      (prompt || !s->overflow) &&
       (!s->escaped || (!s->key && (s->field == HOOK_FIELD_CWD ||
-                                   s->field == HOOK_FIELD_TRANSCRIPT)));
+                                   s->field == HOOK_FIELD_TRANSCRIPT ||
+                                   s->field == HOOK_FIELD_TITLE || prompt)));
   if (s->key) {
     if (s->depth == 1) {
       s->field = HOOK_FIELD_NONE;
@@ -98,6 +100,14 @@ static void finish_string(agent_hook_scanner_t *s) {
     char *target = NULL;
     size_t capacity = 0;
     switch (s->field) {
+    case HOOK_FIELD_TITLE:
+      target = s->title;
+      capacity = sizeof(s->title);
+      break;
+    case HOOK_FIELD_PROMPT:
+      if (!s->prompt_invalid && !s->prompt_high && s->prompt_length)
+        s->valid_fields |= 1U << HOOK_FIELD_PROMPT;
+      break;
     case HOOK_FIELD_EVENT:
       target = s->event;
       capacity = sizeof(s->event);
@@ -139,6 +149,8 @@ static void finish_string(agent_hook_scanner_t *s) {
 }
 
 static void string_byte(agent_hook_scanner_t *s, unsigned char c) {
+  if (!s->key && s->depth == 1 && s->field == HOOK_FIELD_PROMPT)
+    agent_hook_prompt_byte(s, c);
   if (s->utf8_left) {
     if (c < s->utf8_min || c > s->utf8_max) {
       s->failed = true;
@@ -268,6 +280,11 @@ static void begin_string(agent_hook_scanner_t *s, bool key) {
   s->text_length = 0;
   s->escaped = s->escape_next = s->overflow = false;
   s->unicode_left = s->utf8_left = 0;
+  if (!key && s->depth == 1 && s->field == HOOK_FIELD_PROMPT) {
+    s->prompt[0] = 0;
+    s->prompt_length = s->prompt_cp = s->prompt_high = 0;
+    s->prompt_space = s->prompt_done = s->prompt_invalid = false;
+  }
 }
 
 static void begin_value(agent_hook_scanner_t *s, unsigned char c) {

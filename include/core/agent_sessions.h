@@ -2,6 +2,7 @@
 #define AGENT_SESSIONS_H
 
 #include "core/agent_state.h"
+#include "core/agent_title.h"
 #include "core/agent_transcript.h"
 #include "platform/agent_terminal.h"
 
@@ -31,6 +32,9 @@ typedef struct {
   uint64_t key, order;
   char agent[AGENT_NAME_MAX + 1];
   char name[48];
+  char title[AGENT_TITLE_MAX + 1];
+  bool title_temporary;
+  char session_id[AGENT_SESSION_ID_MAX + 1];
   agent_state_t state;
   pid_t pid;
   int64_t created_ms, state_since_ms, updated_ms;
@@ -42,6 +46,13 @@ typedef struct {
   agent_terminal_t terminal;
 } agent_session_view_t;
 
+int agent_sessions_set_prompt(uint64_t key, const char *prompt);
+int agent_sessions_title_command(const char *request);
+int agent_sessions_set_title(uint64_t key, const char *title);
+int agent_sessions_set_id(uint64_t key, const char *id);
+int agent_sessions_id_command(const char *request);
+void agent_sessions_refresh_title(uint64_t key);
+bool agent_sessions_title(pid_t pid, char *out, size_t capacity);
 int agent_sessions_set_name(uint64_t key, const char *name);
 // A second id from a process that already has a row takes the row over once
 // it carries a name, a session record path or a start event.
@@ -113,6 +124,9 @@ typedef struct {
   uint64_t key;
   char agent[AGENT_NAME_MAX + 1];
   char name[48];
+  char title[AGENT_TITLE_MAX + 1];
+  bool title_temporary;
+  char session_id[AGENT_SESSION_ID_MAX + 1];
   char transcript[AGENT_TRANSCRIPT_PATH_MAX + 1];
   agent_state_t state;
   pid_t pid;

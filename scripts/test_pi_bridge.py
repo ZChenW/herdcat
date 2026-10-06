@@ -7,11 +7,15 @@ import socket
 import subprocess
 import tempfile
 
+from runtime_test_helpers import run_on_pty, runtime_env
+
+run_on_pty()
+
 binary = Path('build/herdcat').resolve()
 with tempfile.TemporaryDirectory(prefix='bongo-pi-') as directory:
     root = Path(directory)
     (root / 'herdcat').symlink_to(binary)
-    env = dict(os.environ, XDG_RUNTIME_DIR=directory,
+    env = runtime_env(XDG_RUNTIME_DIR=directory,
                PATH=directory + os.pathsep + os.environ['PATH'])
     env.pop('HERDCAT_HOOK_DEBUG', None)
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as server:
@@ -30,13 +34,14 @@ with tempfile.TemporaryDirectory(prefix='bongo-pi-') as directory:
             def receive():
                 connection, _ = server.accept()
                 with connection:
-                    request = connection.recv(64).decode()
+                    request = connection.recv(1280).decode()
                     connection.sendall(b'0 ok')
                     return request
             send('session_start')
             start = receive().split()
             assert start[:3] == ['ev', 'pi', 'start'] and int(start[-1]) == pid, start
             key = start[3]
+            assert receive() == f'sid {key} bridge-test'
             assert receive() == f'name {key} bridge-test'
             # A burst remains ordered; assistant error text never enters the wire.
             send('before_agent_start', {'prompt': 'DO_NOT_TRANSMIT'})
@@ -44,11 +49,14 @@ with tempfile.TemporaryDirectory(prefix='bongo-pi-') as directory:
             send('agent_end', {'messages': [{'role': 'assistant', 'stopReason': 'error',
                                            'errorMessage': 'DO_NOT_TRANSMIT'}]})
             assert receive() == f'ev pi working {key} {pid}'
+            assert receive() == f'sid {key} bridge-test'
             assert receive() == f'name {key} bridge-test'
             assert receive() == f'ev pi working {key} {pid}'
-            assert receive() == f'ev pi interrupt {key} {pid}'
+            assert receive() == f'ev pi fail {key} {pid}'
             send('agent_end', {'messages': [{'role': 'assistant', 'stopReason': 'stop'}]})
             assert receive() == f'ev pi done {key} {pid}'
+            assert receive() == f'sid {key} bridge-test'
+            assert receive() == f'name {key} bridge-test'
             send('agent_start', child=True)
             send('session_shutdown')
             assert receive() == f'ev pi end {key} {pid}'

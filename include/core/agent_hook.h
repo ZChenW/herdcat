@@ -13,6 +13,11 @@ typedef struct {
   char cwd[256];
   char transcript[AGENT_TRANSCRIPT_PATH_MAX * 6 + 1];
   char status[64];
+  char title[AGENT_TITLE_MAX * 6 + 1];
+  char prompt[AGENT_TITLE_MAX + 1];
+  size_t prompt_length;
+  uint32_t prompt_cp, prompt_high;
+  bool prompt_space, prompt_done, prompt_invalid;
   bool child_session;
   pid_t pid;
   const agent_adapter_t *adapter;
@@ -47,6 +52,10 @@ bool agent_hook_valid_agent(const char *agent);
 uint64_t agent_hook_key(const char *agent, const agent_hook_scanner_t *scanner);
 bool agent_hook_transcript(const agent_hook_scanner_t *scanner,
                            char path[AGENT_TRANSCRIPT_PATH_MAX + 1]);
+bool agent_hook_title(const agent_hook_scanner_t *scanner,
+                      char out[AGENT_TITLE_MAX + 1]);
+bool agent_hook_prompt(const agent_hook_scanner_t *scanner,
+                       const char *event_name, char out[AGENT_TITLE_MAX + 1]);
 bool agent_hook_name(const agent_hook_scanner_t *scanner, char name[41]);
 // Repository root's final component, or the directory's own. No git command.
 bool agent_hook_place_name(const char *dir, char name[41]);

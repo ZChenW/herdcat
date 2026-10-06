@@ -76,6 +76,8 @@ void add_icon(sign_frame_t *frame, agent_state_t state, double cx, double cy,
               double scale, double opacity, const sign_input_t *in);
 sign_slot_t *claim_slot(signs_t *model, const agent_session_view_t *session,
                         double rest_bottom);
+void sign_nameplate(sign_text_t *text, const sign_input_t *in,
+                    const agent_session_view_t *session, sign_frame_t *frame);
 void layout_board(sign_slot_t *slot, const sign_input_t *in,
                   sign_frame_t *frame, double pole_x, double cat_bottom,
                   double scale, double desk_clear);

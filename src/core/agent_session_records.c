@@ -20,10 +20,13 @@ int agent_sessions_format(char *buffer, size_t capacity, int64_t now_ms) {
     if (s->pid > 0) {
       snprintf(pid, sizeof(pid), "%jd", (intmax_t)s->pid);
     }
-    int n = snprintf(buffer + used, capacity - used,
-                     "%s %08" PRIx32 " %s %" PRId64 "s pid=%s %s%s\n", s->agent,
-                     (uint32_t)(s->key >> 32), agent_state_name(s->state), age,
-                     pid, s->name, s->unread ? " unread" : "");
+    int n = snprintf(
+        buffer + used, capacity - used,
+        "%s %08" PRIx32 " %s %" PRId64 "s pid=%s %s%s%s%s\n", s->agent,
+        (uint32_t)(s->key >> 32), agent_state_name(s->state), age, pid, s->name,
+        s->unread ? " unread" : "",
+        s->title[0] ? (s->title_temporary ? " title~=" : " title=") : "",
+        s->title);
     if (n < 0) {
       break;
     }
@@ -117,6 +120,9 @@ int agent_sessions_export(agent_session_record_t *out, size_t capacity) {
                                   .unread = s->unread};
     memcpy(row.agent, s->agent, sizeof(row.agent));
     memcpy(row.name, s->name, sizeof(row.name));
+    memcpy(row.title, s->title, sizeof(row.title));
+    row.title_temporary = s->title_temporary;
+    memcpy(row.session_id, s->session_id, sizeof(row.session_id));
     memcpy(row.transcript, s->transcript, sizeof(row.transcript));
     out[i] = row;
   }
@@ -153,6 +159,12 @@ int agent_sessions_restore(const agent_session_record_t *record, int64_t now_ms,
   else
     snprintf(s->name, sizeof(s->name), "%s %04" PRIx16, record->agent,
              (uint16_t)(record->key >> 48));
+  if (utf8_label_valid(record->title, AGENT_TITLE_MAX)) {
+    snprintf(s->title, sizeof(s->title), "%s", record->title);
+    s->title_temporary = record->title_temporary;
+  }
+  if (agent_session_id_valid(record->session_id))
+    snprintf(s->session_id, sizeof(s->session_id), "%s", record->session_id);
   if (transcript_ok(record->transcript))
     memcpy(s->transcript, record->transcript, strlen(record->transcript) + 1);
   if (finished(s->state) && !s->unread && done_timeout_s > 0)
@@ -188,6 +200,9 @@ int agent_sessions_snapshot(agent_session_view_t *out, size_t capacity) {
       v.terminal.kind = TERMINAL_NONE;
     memcpy(v.agent, s->agent, sizeof(v.agent));
     memcpy(v.name, s->name, sizeof(v.name));
+    memcpy(v.title, s->title, sizeof(v.title));
+    v.title_temporary = s->title_temporary;
+    memcpy(v.session_id, s->session_id, sizeof(v.session_id));
     size_t j = count++;
     while (j && sorted[j - 1].order > v.order) {
       sorted[j] = sorted[j - 1];

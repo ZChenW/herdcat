@@ -151,3 +151,42 @@ sign_theme=light        # light | auto | dark (auto follows XDG portal)
 sign_language=auto       # auto (LC_MESSAGES, then LANG) | en | zh
 sign_done=sticky         # sticky (unread stays up) | timeout
 sign_typing_desk=1        # 0 disables the focused-session typing desk
+
+# ─── What a sign is called ─────────────────────────────────────────────────
+# A session has two names: its project (the directory) and its title (what
+# the agent calls the conversation, once it has one). Uncomment a line to
+# change it; saving the file applies it at once.
+
+# Which of the two is the main, bold name.
+#   project  always the project
+#   title    the title when there is one, otherwise the project
+sign_name=project
+# sign_name=title
+
+# Where the other one goes on the fan's nameplate (hover a sign to see it).
+# Default: project followed by title. An absent/equal title is omitted.
+# Post boards show the extra after the main name for all choices except off;
+# the extra is truncated to fit, or omitted below 24 logical pixels.
+# The typing desk shows only the main name.
+#   off      not shown                    herdcat  Claude · Working
+#   inline   right after the main name    herdcat  Fix login · Claude · Working
+#   end      after the state              herdcat  Claude · Working · Fix login
+#   above    on a line of its own above
+#   below    on a line of its own below
+sign_name_extra=inline
+# sign_name_extra=below
+
+# Longest title shown, in characters. 0 shows all of it.
+sign_title_length=16
+
+# For full control, write the nameplate yourself. This overrides
+# sign_name_extra on fan nameplates only. Pieces you can use:
+#   {name}     the main name chosen by sign_name
+#   {project}  the directory name        {title}  the session title
+#   {agent}    Claude, Codex, ...        {state}  Working 3 min, Needs approval, ...
+#   **...**    bold                      \n      start a second line (one at most)
+# A piece that is empty disappears together with its " · " separator.
+# A template with a mistake is ignored; `herdcat --check-config` says where.
+# sign_nameplate=**{name}**  {agent} · {state}
+# sign_nameplate=**{name}**  {agent} · {state}\n{title}
+# sign_nameplate={agent} · **{title}**\n{project} · {state}

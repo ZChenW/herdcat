@@ -64,6 +64,10 @@ export default {
       "permission.replied", "session.execution.succeeded",
       "session.execution.interrupted", "session.execution.failed", "session.deleted",
     ]);
+    const refresh = new Set([
+      "session.created", "session.inbox.enqueued", "session.execution.started",
+      "session.execution.succeeded",
+    ]);
     try {
       const subscription = ctx.event.subscribe();
       const consume = async () => {
@@ -75,20 +79,24 @@ export default {
             const session_id = event.data?.sessionID;
             if (typeof session_id !== "string" || !session_id || session_id.length > 127)
               continue;
-            if (!sessions.has(session_id)) {
-              // Resolve canonical directory and parent metadata once; never poll. On a
-              // failed lookup do not risk showing a child as a separate sign.
+            if (!sessions.has(session_id) || refresh.has(event.type)) {
+              // Refresh metadata on registration, submission and completion only.
+              // Never poll or read the conversation to obtain a title.
               if (event.type === "session.deleted") continue;
               const info = await ctx.session.get({ sessionID: session_id });
               const cwd = info?.location?.directory;
-              if (sessions.size >= 128) sessions.delete(sessions.keys().next().value);
-              sessions.set(session_id, info?.parentID || cwd !== directory ? null : cwd);
+              if (!sessions.has(session_id) && sessions.size >= 128)
+                sessions.delete(sessions.keys().next().value);
+              const title = typeof info?.title === "string" &&
+                Buffer.byteLength(info.title, "utf8") <= 96 ? info.title : undefined;
+              sessions.set(session_id, info?.parentID || cwd !== directory ? null :
+                { cwd, title });
             }
-            const cwd = sessions.get(session_id);
+            const metadata = sessions.get(session_id);
             if (event.type === "session.deleted") sessions.delete(session_id);
-            if (!cwd || queue.length >= 128) continue;
+            if (!metadata || queue.length >= 128) continue;
             // process.pid belongs to the background service, not the terminal.
-            queue.push({ event: event.type, payload: { session_id, cwd } });
+            queue.push({ event: event.type, payload: { session_id, ...metadata } });
             pump();
           } catch { /* Format changes and inaccessible sessions are ignored. */ }
         }

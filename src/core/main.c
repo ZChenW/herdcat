@@ -340,6 +340,7 @@ static int run_application(bool watch, herdcat_error_t result) {
   compositor_configure(config.compositor_experimental != 0);
   focus_set_kitty(kitty_for_session);
   focus_set_terminal(agent_sessions_terminal, terminal_resolved);
+  focus_set_title(agent_sessions_title);
   focus_set_current(terminal_current);
   session_store_load(monotonic_ms(), config.agent_done_timeout);
   resolve_restored_terminals();

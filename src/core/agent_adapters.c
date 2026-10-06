@@ -10,6 +10,7 @@
 // clang-format on
 
 static const agent_hook_alias_t CLAUDE_FIELDS[] = {
+    {"prompt",            HOOK_FIELD_PROMPT,       0, false},
     {"transcript_path",   HOOK_FIELD_TRANSCRIPT,   0, false},
     {"hook_event_name",   HOOK_FIELD_EVENT,        0, false},
     {"session_id",        HOOK_FIELD_SESSION,      0, false},
@@ -58,6 +59,7 @@ static const agent_hook_rule_t CODEX_RULES[] = {
          AGENT_EVENT_WAITING),
 };
 static const agent_hook_alias_t GROK_FIELDS[] = {
+    {"prompt",            HOOK_FIELD_PROMPT,       0, false},
     {"subagentType",      HOOK_FIELD_PARENT,       0, false},
     {"hook_event_name",   HOOK_FIELD_EVENT,        0, false},
     {"hookEventName",     HOOK_FIELD_EVENT,        1, false},
@@ -132,6 +134,7 @@ static const agent_hook_rule_t KIMI_RULES[] = {
          AGENT_EVENT_WAITING),
 };
 static const agent_hook_alias_t CURSOR_FIELDS[] = {
+    {"prompt",          HOOK_FIELD_PROMPT,  0, false},
     {"hook_event_name", HOOK_FIELD_EVENT,   0, false},
     {"conversation_id", HOOK_FIELD_SESSION, 0, false},
     {"session_id",      HOOK_FIELD_SESSION, 1, false},
@@ -152,6 +155,7 @@ static const agent_hook_rule_t CURSOR_RULES[] = {
     // afterShellExecution/postToolUseFailure can follow stop(aborted).
 };
 static const agent_hook_alias_t COPILOT_FIELDS[] = {
+    {"prompt",            HOOK_FIELD_PROMPT,       0, false},
     {"hook_event_name",   HOOK_FIELD_EVENT,        0, false},
     {"hookName",          HOOK_FIELD_EVENT,        1, false},
     {"sessionId",         HOOK_FIELD_SESSION,      0, false},
@@ -178,12 +182,13 @@ static const agent_hook_rule_t COPILOT_RULES[] = {
     // permissionRequest also fires for auto-allowed tools. It is not waiting.
 };
 static const agent_hook_alias_t PI_FIELDS[] = {
-    {"hook_event_name", HOOK_FIELD_EVENT,   0, false},
-    {"session_id",      HOOK_FIELD_SESSION, 0, false},
-    {"cwd",             HOOK_FIELD_CWD,     0, false},
-    {"stopReason",      HOOK_FIELD_STATUS,  0, false},
-    {"agent_pid",       HOOK_FIELD_PID,     0, false},
-    {"parent_session",  HOOK_FIELD_PARENT,  0, false},
+    {"transcript_path", HOOK_FIELD_TRANSCRIPT, 0, false},
+    {"hook_event_name", HOOK_FIELD_EVENT,      0, false},
+    {"session_id",      HOOK_FIELD_SESSION,    0, false},
+    {"cwd",             HOOK_FIELD_CWD,        0, false},
+    {"stopReason",      HOOK_FIELD_STATUS,     0, false},
+    {"agent_pid",       HOOK_FIELD_PID,        0, false},
+    {"parent_session",  HOOK_FIELD_PARENT,     0, false},
 };
 static const agent_hook_rule_t PI_RULES[] = {
     META("session_start", AGENT_EVENT_START),
@@ -196,6 +201,13 @@ static const agent_hook_rule_t PI_RULES[] = {
     WHEN("agent_end", HOOK_FIELD_STATUS, "aborted", AGENT_EVENT_INTERRUPT),
     WHEN("agent_end", HOOK_FIELD_STATUS, "length", AGENT_EVENT_FAIL),
     RULE("session_shutdown", AGENT_EVENT_END),
+};
+static const agent_hook_alias_t OPENCODE_FIELDS[] = {
+    {"title",           HOOK_FIELD_TITLE,   0, false},
+    {"hook_event_name", HOOK_FIELD_EVENT,   0, false},
+    {"session_id",      HOOK_FIELD_SESSION, 0, false},
+    {"cwd",             HOOK_FIELD_CWD,     0, false},
+    {"parent_session",  HOOK_FIELD_PARENT,  0, false},
 };
 static const agent_hook_rule_t OPENCODE_RULES[] = {
     META("session.created", AGENT_EVENT_START),
@@ -215,8 +227,8 @@ static const agent_adapter_t ADAPTERS[] = {
      .interrupt_source = AGENT_SIGNAL_HOOK,
      .error_source = AGENT_SIGNAL_HOOK,
      .display_name = "opencode",
-     .aliases = PI_FIELDS,
-     .alias_count = COUNT(PI_FIELDS),
+     .aliases = OPENCODE_FIELDS,
+     .alias_count = COUNT(OPENCODE_FIELDS),
      .rules = OPENCODE_RULES,
      .rule_count = COUNT(OPENCODE_RULES),
      .no_pid = true},

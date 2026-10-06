@@ -1,9 +1,14 @@
+#include "config/sign_name_geometry.h"
 #include "overlay_signs_internal.h"
 #include "platform/drag.h"
 #include "platform/overlay_signs.h"
 
 #include <limits.h>
 
+void overlay_signs_width(size_t index, int surface_width) {
+  if (index < MAX_OUTPUTS)
+    lanes[index].surface_width = surface_width;
+}
 static int desk_hang(int cat_height) {
   if (cat_height <= 0)
     return 0;
@@ -15,7 +20,8 @@ int overlay_signs_height(const config_t *config) {
     return 0;
   if (config->sign_style == SIGN_STYLE_OFF)
     return config->overlay_height;
-  int extra = sign_clearance(config->sign_style, config->cat_height);
+  int extra = sign_clearance(config->sign_style, config->cat_height) +
+              sign_name_clearance(config);
   int spare = config->overlay_height > config->cat_height
                   ? config->overlay_height - config->cat_height
                   : 0;

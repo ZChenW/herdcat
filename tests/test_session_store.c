@@ -152,6 +152,9 @@ int main(void) {
   apply(3, "kimi", AGENT_EVENT_START, dead);
   apply(4, "opencode", AGENT_EVENT_START, 0);
   TEST_ASSERT(agent_sessions_set_name(4, "svc") == 0);
+  TEST_ASSERT(agent_sessions_set_id(4, "persisted-id") == 0);
+  TEST_ASSERT(agent_sessions_set_title(4, "持久化标题") == 0);
+  TEST_ASSERT(agent_sessions_set_prompt(1, "temporary prompt") == 0);
   apply(5, "grok", AGENT_EVENT_START, daemon);
   TEST_ASSERT(agent_sessions_set_name(5, "daemon") == 0);
   TEST_ASSERT(agent_sessions_count() == 5);
@@ -198,13 +201,16 @@ int main(void) {
   TEST_ASSERT(claude && claude->state == AGENT_STATE_IDLE &&
               claude->pid == live && !claude->unread &&
               !strcmp(claude->name, "proj") &&
-              !strcmp(claude->transcript, jsonl));
+              !strcmp(claude->transcript, jsonl) && claude->title_temporary &&
+              !strcmp(claude->title, "temporary prompt"));
   TEST_ASSERT(codex && codex->state == AGENT_STATE_DONE && codex->unread &&
               codex->pid == live);
   TEST_ASSERT(!kimi);
   TEST_ASSERT(!find_key(rows, count, 5));
   TEST_ASSERT(open && open->pid == 0 && open->state == AGENT_STATE_IDLE &&
-              !strcmp(open->name, "svc2"));
+              !strcmp(open->name, "svc2") &&
+              !strcmp(open->title, "持久化标题") && !open->title_temporary &&
+              !strcmp(open->session_id, "persisted-id"));
   TEST_ASSERT(agent_sessions_next_deadline(600) == 601000);
   TEST_ASSERT(transcript_watch_count() == 0);
   apply(1, "claude", AGENT_EVENT_WORKING, live);
@@ -218,12 +224,21 @@ int main(void) {
   fprintf(file, "not a session\n");
   fprintf(file, "1 %016x claude %ld idle 0 1000 first\t\n", 0x11, (long)live);
   fprintf(file, "1 %016x claude %ld idle 0 2000 second\t\n", 0x22, (long)live);
+  fprintf(
+      file,
+      "2 %016x opencode 0 idle 0 2000 legacy\t\tLegacy title\tlegacy-id\t1\n",
+      0x33);
+  fprintf(file,
+          "3 %016x opencode 0 idle 0 2000 invalid\t\tInvalid\tbad-id\t1\t2\n",
+          0x44);
   fclose(file);
   session_store_load(3000, 5);
-  TEST_ASSERT(agent_sessions_count() == 1);
+  TEST_ASSERT(agent_sessions_count() == 2);
   count = agent_sessions_export(rows, AGENT_SESSIONS_MAX);
-  TEST_ASSERT(count == 1 && rows[0].key == 0x22 &&
+  TEST_ASSERT(count == 2 && rows[0].key == 0x22 &&
               !strcmp(rows[0].name, "second") && rows[0].pid == live);
+  TEST_ASSERT(rows[1].key == 0x33 && !rows[1].title_temporary &&
+              !strcmp(rows[1].title, "Legacy title"));
 
   agent_sessions_reset();
   TEST_ASSERT(setenv("XDG_RUNTIME_DIR", "relative", 1) == 0);

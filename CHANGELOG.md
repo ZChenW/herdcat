@@ -23,6 +23,11 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Session names** - Default to the directory followed by the session title
+  (`sign_name=project`, `sign_name_extra=inline`). Post boards also show the
+  extra when it fits. Missing titles retain the earlier appearance; duplicate
+  names no longer trigger automatic title selection or numbering.
+
 - The overlay surface is only as wide as the cat and its signs instead of the
   whole output: about 1.5 MB of buffers instead of 6 MB on a 2560 pixel output.
 

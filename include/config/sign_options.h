@@ -27,6 +27,18 @@ typedef enum {
   SIGN_THEME_AUTO
 } sign_theme_t;
 typedef enum {
+  SIGN_NAME_AUTO,
+  SIGN_NAME_PROJECT,
+  SIGN_NAME_TITLE
+} sign_name_t;
+typedef enum {
+  SIGN_EXTRA_OFF,
+  SIGN_EXTRA_INLINE,
+  SIGN_EXTRA_END,
+  SIGN_EXTRA_ABOVE,
+  SIGN_EXTRA_BELOW
+} sign_name_extra_t;
+typedef enum {
   SIGN_DONE_STICKY,
   SIGN_DONE_TIMEOUT
 } sign_done_t;

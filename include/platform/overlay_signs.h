@@ -48,6 +48,7 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
                                         int cat_x, int cat_w, int surface_h,
                                         bool invisible, int64_t now_ms);
 overlay_signs_step_t overlay_signs_last(size_t index);
+void overlay_signs_width(size_t index, int surface_width);
 const sign_frame_t *overlay_signs_frame(size_t index);
 
 int overlay_signs_regions(size_t index, const config_t *config, int cat_x,
