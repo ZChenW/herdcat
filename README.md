@@ -1,7 +1,7 @@
 # herdcat
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/ZChenW/herdcat/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/ZChenW/herdcat/releases)
 
 A desktop cat for Wayland that herds your coding agents: it types along with you and holds up a sign for every agent session.
 
@@ -15,6 +15,7 @@ A desktop cat for Wayland that herds your coding agents: it types along with you
 - 🔔 Finished sessions stay up until you have looked at them
 - ⌨️ The sign of the terminal you type in comes down under the paws
 - 🎴 Two styles, fan and signpost; right-click to switch style, language, font and theme
+- 🔒 No `input` group needed: a small setgid helper reads the keyboard and passes on only paw movements
 - 🌗 Light and dark themes, or follow the desktop
 - 🧩 An agent started by another agent joins its sign: `Claude + Codex`
 - ✋ Drag the cat anywhere, the position is remembered
@@ -39,15 +40,10 @@ cd herdcat && make && sudo make install
 
 A Nix flake is included (`nix run github:ZChenW/herdcat`, modules in [`nix/`](nix/NIXOS.md)). CI builds it on every push, but the author does not run NixOS; sign options that have no module option go through `extraConfig`.
 
-The default root installation and Arch package install the small libc-only
-`herdcat-input` helper as `root:input`, mode `2755`, under `PREFIX/lib/herdcat`.
-Once installed, you do not need to join the input group. The main program runs
-without that group. The NixOS module creates a setgid `security.wrappers` helper;
-plain `nix run`, profile installs and Home Manager alone need device ACLs or the
-legacy group setup below.
-
-Other processes do not receive key contents through the helper, but can infer
-typing timing and left/right paw activity. See [the security model](docs/security.md).
+No group membership is needed. The keyboard is read by a small helper,
+`herdcat-input`, installed with the `input` group (setgid); it only tells the
+cat which paw to move, never which key was pressed. See
+[the security model](docs/security.md).
 
 <details>
 <summary>Not using the setgid helper</summary>
@@ -167,6 +163,7 @@ A nameplate template can use `{name}`, `{project}`, `{title}`, `{agent}` and `{s
 - [Signs, switch card, font panel and dragging](docs/signs.md)
 - [Setting up each agent](docs/agents.md)
 - [All options and command-line flags](docs/configuration.md), also in `man herdcat`
+- [How it is built](docs/architecture.md) and [the security model](docs/security.md)
 
 ## Troubleshooting
 

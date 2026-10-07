@@ -4,17 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Post rows now pair the fan's state plate with a separate paper name pill,
-  with a 6px gap, mirrored names and neutral metadata. Collapsing hides the
-  pill; hover, waiting nudge, shake and pressed dimming move both parts together.
-  Their combined input target includes the resting position. Existing row
-  pitch, five-row clearance and ten-row surface size are preserved.
+## [0.3.0] - 2026-10-07
 
-- Idle and read done parents with active subagents now display and rank as
-  working, with “Waiting on subagent N min” / “等待子代理 N 分钟” measured
-  from the oldest still-active child's start. Actual session state and alerts
-  are unchanged. Fan plates show an upright active-child badge, capped at `9+`,
-  switching to the left corner beside unread completion; post boards use `+N`.
+### Added
+
+- **No input group** - The keyboard is read by `herdcat-input`, a small
+  libc-only helper installed setgid `input`. Users no longer join the `input`
+  group, which let every process they run read the keyboard. The helper clears
+  its environment, opens only verified `/dev/input/event*` devices, drops the
+  group again, filters its system calls and emits nothing but paw movements.
+  The previous in-process helper remains as a fallback. See `docs/security.md`.
+- **Waiting on subagents** - A session that is idle while agents it started
+  are still working is shown as working, with "Waiting on subagent N min", and
+  stays up. A small count badge on the fan plate says how many child agents
+  are active.
+- **systemd user service** - `systemctl --user enable --now herdcat`.
+- **Shell completions** for bash, zsh and fish.
+
+### Changed
+
+- **Signpost rows** are two parts: the same state plate the fan uses, next to
+  the pole, and a neutral name pill beside it. Collapsed rows show only the
+  plate.
+- The setup helper module is installed under `share/herdcat`, not `bin`.
 
 ## [0.2.0] - 2026-10-06
 
