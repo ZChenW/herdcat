@@ -65,10 +65,23 @@ with tempfile.TemporaryDirectory(prefix='herdcat-pointer-hover-runtime-') as tem
                 return rows[-1] if rows else (0, 0, 0, 0)
             wait_until(lambda: plate()[2] > 0, 5)
             x, y, w, h = plate()
+            # Collapsed Claude now exposes only the 34x27 fan state face;
+            # its half-pixel placement rounds the input height out to 28.
+            assert (w, h) == (34, 28), plate()
+            rest_x, rest_y = x, y
             x, y = x + w // 2, y + h // 2
             server.stdin.write(f'hover TEST-1 {x} {y}\n')
             server.stdin.flush()
+            wait_until(lambda: plate()[2] >= 150, 5)
+            # Expanded targets include the 6px gap and the resting edge.
+            expanded = plate()
+            assert expanded[0] <= rest_x < expanded[0] + expanded[2], expanded
+            assert expanded[1] <= rest_y + h // 2 < expanded[1] + expanded[3]
+            x = rest_x + 5 + 34 + 3
+            server.stdin.write(f'motion TEST-1 {x} {y}\n')
+            server.stdin.flush()
             time.sleep(.4)
+            assert plate()[2] >= 150, plate()
             before = server_log.read_text().count('commit TEST-1 ')
             for i in range(1000):
                 server.stdin.write(f'motion TEST-1 {x + i % 2} {y}\n')
@@ -76,7 +89,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-pointer-hover-runtime-') as tem
                 time.sleep(.001)
             server.stdin.write('motion-stats\n')
             server.stdin.flush()
-            wait_until(lambda: 'motion-count 1000' in server_log.read_text(), 5)
+            wait_until(lambda: 'motion-count 1001' in server_log.read_text(), 5)
             time.sleep(.1)
             assert server_log.read_text().count('commit TEST-1 ') == before
             assert private not in app_log.read_text()

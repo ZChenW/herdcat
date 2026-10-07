@@ -84,8 +84,9 @@ static void test_lifecycle(void) {
   for (int i = 0; i < frame.hit_count; i++) {
     const sign_hit_t *hit = &frame.hits[i];
     int index = (int)hit->key - 1;
-    TEST_ASSERT(hit->y == 280 - 100 - (4 - index) * 30 - 26);
-    TEST_ASSERT(hit->x == (index % 2 ? 250 - 5 - 34 : 250 + 5));
+    TEST_ASSERT(hit->y == (int)floor(280 - 100 - (4 - index) * 30 -
+                                     (index % 2 ? 28 : 26.5)));
+    TEST_ASSERT(hit->x == (index % 2 ? 250 - 5 - 30 : 250 + 5));
   }
   check_bounds(&frame);
   in.open = true;
@@ -166,9 +167,9 @@ static void test_rows_and_direction(void) {
       bottom = &frame.hits[i];
   }
   TEST_ASSERT(top && bottom);
-  TEST_ASSERT(top->y == 280 - 130 - 26 && bottom->y == 280 - 100 - 26);
+  TEST_ASSERT(top->y == 280 - 130 - 27 && bottom->y == 280 - 100 - 28);
   TEST_ASSERT(top->x == 250 + 5 && bottom->x == 250 + 5);
-  TEST_ASSERT(top->h == 26 && top->pid == 1001);
+  TEST_ASSERT(top->h == 28 && top->pid == 1001);
   const sign_shape_t *pole = pole_of(&frame);
   near(pole->h, 166);
   near(pole->w, 6);
@@ -177,10 +178,10 @@ static void test_rows_and_direction(void) {
   near(pole->x + pole->w / 2, 250);
   TEST_ASSERT((pole->fill & 0xffffff) == 0xf8fafc);
   TEST_ASSERT((pole->outline & 0xffffff) == 0x111827);
-  const sign_shape_t *claude = board_near(&frame, top->x, top->y);
+  const sign_shape_t *claude = board_near(&frame, top->x, top->y + .5);
   const sign_shape_t *codex = board_near(&frame, bottom->x, bottom->y);
-  near(claude->radius, 8);
-  near(codex->radius, 13);
+  near(claude->radius, 9);
+  near(codex->radius, 15);
   TEST_ASSERT((claude->fill & 0xffffff) == 0xd9ebff);
   TEST_ASSERT((codex->fill & 0xffffff) == 0xc7f1d6);
   TEST_ASSERT(claude->rotation == 0 && codex->rotation == 0);
@@ -201,7 +202,8 @@ static void test_easing_hover_and_press(void) {
   in.now_ms = 2190;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(frame.hit_count == 1);
-  near(board_near(&frame, frame.hits[0].x, frame.hits[0].y)->w, 149.005);
+  near(frame.shapes[2].w, 34);
+  TEST_ASSERT(frame.hits[0].w > 140 && frame.hits[0].w <= POST_BOARD_MIN + 10);
   in.now_ms = 2500;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(!frame.animating && frame.hits[0].w == POST_BOARD_MIN);
@@ -267,9 +269,9 @@ static void test_icons_text_and_loops(void) {
   near(frame.texts[0].px, 13);
   near(frame.texts[0].meta_px, 11.5);
   near(frame.texts[0].gap, 7);
-  near(frame.texts[0].line_top, frame.hits[0].y + 6.5);
+  near(frame.texts[0].line_top, frame.hits[0].y + 7.5);
   near(frame.texts[0].line_h, 13);
-  near(frame.texts[0].x, frame.hits[0].x + 33);
+  near(frame.texts[0].x, frame.hits[0].x + 48);
   TEST_ASSERT(!frame.texts[0].reverse && !frame.texts[0].above);
   TEST_ASSERT((frame.texts[0].meta_color & 0xffffff) == 0x4a5261);
   TEST_ASSERT(frame.animating && frame.next_frame_ms == 180000);
@@ -281,7 +283,7 @@ static void test_icons_text_and_loops(void) {
     const sign_shape_t *shape = &frame.shapes[i];
     if (shape->w == 4 && shape->h == 4) {
       dots++;
-      TEST_ASSERT(shape->clipped && shape->radius == 2);
+      TEST_ASSERT(!shape->clipped && shape->radius == 2);
     }
   }
   TEST_ASSERT(dots == 3);
@@ -290,7 +292,7 @@ static void test_icons_text_and_loops(void) {
   one.state_since_ms = 150000;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(!strcmp(frame.texts[0].meta, "Claude · 等你批准"));
-  TEST_ASSERT((frame.texts[0].meta_color & 0xffffff) == 0x71430b);
+  TEST_ASSERT((frame.texts[0].meta_color & 0xffffff) == 0x4a5261);
   int bars = 0, checks = 0;
   for (int i = 0; i < frame.shape_count; i++) {
     if (frame.shapes[i].w == 3.5 && frame.shapes[i].h == 9)
@@ -317,7 +319,7 @@ static void test_icons_text_and_loops(void) {
     const sign_shape_t *shape = &frame.shapes[i];
     if (fabs(shape->w - 9) < 0.02 && fabs(shape->h - 9) < 0.02)
       badge = shape;
-    if (fabs(shape->h - 26) < 0.02 && shape->w > 100)
+    if (fabs(shape->h - 27) < 0.02 && shape->w == 34)
       board = shape;
   }
   TEST_ASSERT(badge && board && badge->stroke == 2);
@@ -351,7 +353,7 @@ static void test_icons_text_and_loops(void) {
   one.unread = true;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(!strcmp(frame.texts[0].meta, "Claude · 出错"));
-  TEST_ASSERT((frame.texts[0].meta_color & 0xffffff) == 0x8a2415);
+  TEST_ASSERT((frame.texts[0].meta_color & 0xffffff) == 0x4a5261);
   const sign_shape_t *cross = NULL;
   badge = NULL;
   checks = 0;
@@ -432,7 +434,7 @@ static void test_failure_scale_and_clearance(void) {
     if (frame.shapes[i].stroke == 2)
       shaken = &frame.shapes[i];
   TEST_ASSERT(shaken);
-  near(shaken->x, rested + offset);
+  near(shaken->x, rested + 34 + POST_NAME_GAP + offset);
   in.now_ms = 4400;
   signs_frame(&model, &in, &frame);
   TEST_ASSERT(frame.hits[0].x == (int)rested);
@@ -451,7 +453,7 @@ static void test_failure_scale_and_clearance(void) {
   TEST_ASSERT(frame.hit_count == 1);
   TEST_ASSERT(frame.hits[0].x == 300 + 10 &&
               frame.hits[0].w == 2 * POST_BOARD_MIN);
-  TEST_ASSERT(frame.hits[0].h == 52);
+  TEST_ASSERT(frame.hits[0].h == 54);
   near(frame.texts[0].gap, 14);
   near(pole_of(&frame)->h, 272);
   TEST_ASSERT(frame.has_pad);

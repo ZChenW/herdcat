@@ -83,7 +83,8 @@ static void model_theme(void) {
       TEST_ASSERT(frame.text_count == 1);
       TEST_ASSERT(frame.texts[0].color == dark->ink);
       TEST_ASSERT(frame.texts[0].meta_color ==
-                  (state == AGENT_STATE_WAITING || state == AGENT_STATE_ERROR
+                  (style == SIGN_STYLE_FAN && (state == AGENT_STATE_WAITING ||
+                                               state == AGENT_STATE_ERROR)
                        ? dark->icons[state]
                        : dark->secondary));
       bool fill = false, icon = false;

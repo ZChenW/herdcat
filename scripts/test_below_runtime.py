@@ -131,6 +131,14 @@ def run(style, theme, top, sign_max):
                 send('out TEST-1')
                 record = settled()
                 assert record[10] + record[12] > record[6] + 40, record
+                if style == 'post':
+                    regions = [tuple(map(int, line.split()[2:]))
+                               for line in log.read_text().splitlines()
+                               if line.startswith('sign-input TEST-1 ')]
+                    # Waiting always expands: total row width includes the
+                    # state face, gap and paper pill at the 40/110 cat scale.
+                    assert regions and 54 <= regions[-1][2] <= 125, regions[-1:]
+                    assert 10 <= regions[-1][3] <= 11, regions[-1:]
                 # A below switch card has the font row in the reflected half.
                 x, y = record[5] + 36, record[6] + 20
                 send(f'tap TEST-1 {x} {y} 273')

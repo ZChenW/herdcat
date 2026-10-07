@@ -15,6 +15,8 @@
 #define SIGN_MAX_VISIBLE 10
 #define POST_BOARD_MIN   150
 #define POST_BOARD_MAX   340
+#define POST_NAME_GAP    6
+#define POST_NAME_HEIGHT 26
 
 typedef enum {
   SIGN_ABOVE,
@@ -138,8 +140,8 @@ typedef struct {
   bool used, present, back_row;
   agent_session_view_t session;
   int direction;
-  // width: post board width, or fan length. bottom: post row, or fan angle.
-  // hover: post shift, or fan plate scale. label: fan nameplate 0..1.
+  // width: post name pill width, or fan length. bottom: post row/fan angle.
+  // hover: post shift, or fan plate scale. label: nameplate opacity 0..1.
   sign_scalar_t width, bottom, opacity, hover, label, states[AGENT_STATE_COUNT];
   sign_scalar_t row_size;  // Fan row scale, animated along with the rod.
   int64_t failure_ms;

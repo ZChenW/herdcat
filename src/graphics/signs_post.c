@@ -68,8 +68,11 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
   if (visible || slot->opacity.target > 0)
     board_label(slot, in, &label);
   double ratio = font_ratio(in);
+  sign_plate_geometry_t geometry = state_plate_geometry(slot->session.agent);
+  double plate_w = geometry.w;
   double name_px = 13 * scale * ratio, meta_px = 11.5 * scale * ratio;
-  double content = 41 + 7 +
+  double fixed = plate_w + POST_NAME_GAP + 16;
+  double content = fixed + 7 +
                    text_measure(label.value, (float)name_px, true) / scale +
                    text_measure(label.meta, (float)meta_px, false) / scale;
   if (label.extra[0])
@@ -84,11 +87,19 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
         0, (slot->direction > 0 ? in->surface_width - pole_x : pole_x) / scale -
                17);
   board_target = fmin(board_target, available);
-  double width =
-      fmax(0, aim(&slot->width,
-                  visible ? (expanded ? board_target : fmin(34, available)) : 0,
-                  WIDTH_MS, &BEZIER_WIDTH, in, frame));
-  width = fmin(width, available);
+  // Only the neutral name pill retracts. The state plate keeps its fan size;
+  // on an exceptionally narrow canvas it scales to the remaining space.
+  double plate_scale = fmin(1, available / plate_w);
+  plate_w *= plate_scale;
+  double name_limit = fmax(0, available - plate_w - POST_NAME_GAP);
+  double name_target = fmax(0, board_target - plate_w - POST_NAME_GAP);
+  double name_w =
+      fmax(0, aim(&slot->width, visible && expanded ? name_target : 0, WIDTH_MS,
+                  &BEZIER_WIDTH, in, frame));
+  name_w = fmin(name_w, name_limit);
+  double appear = clamp_unit(aim(&slot->label, visible && expanded ? 1 : 0,
+                                 FADE_MS, &BEZIER_EASE, in, frame));
+  double width = plate_w + (name_w > .1 ? POST_NAME_GAP + name_w : 0);
   bool pressed = in->has_pressed && in->pressed_key == slot->session.key;
   double opacity_target = visible ? (pressed ? .85 : 1) : 0;
   double opacity = clamp_unit(
@@ -139,51 +150,52 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
              (direction < 0 ? width * scale : 0);
   if (in->surface_width > 0)
     x = fmax(0, fmin(x, in->surface_width - width * scale));
-  double y = cat_bottom -
-             (sample(&slot->bottom, in->now_ms) + desk_clear + 26) * scale;
-  bool other = strcmp(slot->session.agent, "claude") &&
-               strcmp(slot->session.agent, "codex");
-  double radius = other ? 9 : !strcmp(slot->session.agent, "codex") ? 13 : 8;
+  double cy = cat_bottom -
+              (sample(&slot->bottom, in->now_ms) + desk_clear + 13) * scale;
+  double plate_h = geometry.h * plate_scale * scale;
+  double y = cy - plate_h / 2;
   int board_at = frame->shape_count;
-  add_shape(frame, other ? SIGN_CUT : SIGN_RECT, x, y, width * scale,
-            26 * scale, radius * scale, 2 * scale, with_alpha(fill, opacity),
-            with_alpha(palette->ink, opacity));
-  int first_icon = frame->shape_count;
-  double icon_x = direction > 0 ? x + 17 * scale : x + (width - 17) * scale;
-  for (int state = 0; state < AGENT_STATE_COUNT; state++)
-    if (states[state] > .001)
-      add_icon(frame, (agent_state_t)state, icon_x, y + 13 * scale, scale,
-               opacity * states[state], in);
-  for (int i = first_icon; i < frame->shape_count; i++) {
-    frame->shapes[i].clipped = true;
-    frame->shapes[i].clip_x = x + 2 * scale;
-    frame->shapes[i].clip_y = y + 2 * scale;
-    frame->shapes[i].clip_w = fmax(0, (width - 4) * scale);
-    frame->shapes[i].clip_h = 22 * scale;
-  }
-  if (slot->session.unread && finished(agent_sign_state(&slot->session))) {
-    add_unread(frame, agent_sign_state(&slot->session), x, y, width * scale,
-               scale, opacity, in);
-  }
+  double plate_x = direction > 0 ? x : x + (width - plate_w) * scale;
+  sign_shape_t face = {.kind = geometry.kind,
+                       .x = plate_x,
+                       .y = y,
+                       .w = plate_w * scale,
+                       .h = plate_h,
+                       .radius = geometry.radius * plate_scale * scale,
+                       .stroke = 2 * plate_scale * scale,
+                       .fill = with_alpha(fill, opacity),
+                       .outline = with_alpha(palette->ink, opacity)};
+  emit_state_plate(frame, &slot->session, in, &face,
+                   plate_x + plate_w * scale / 2, cy, plate_scale * scale,
+                   opacity, states);
+  double name_x =
+      direction > 0 ? plate_x + (plate_w + POST_NAME_GAP) * scale : x;
+  double name_y = cy - POST_NAME_HEIGHT * scale / 2;
+  double name_opacity = opacity * appear;
+  if (name_w > .1)
+    add_shape(frame, SIGN_RECT, name_x, name_y, name_w * scale,
+              POST_NAME_HEIGHT * scale, POST_NAME_HEIGHT * scale / 2, 2 * scale,
+              with_alpha(palette->paper, name_opacity),
+              with_alpha(palette->ink, name_opacity));
   snap_from(frame, board_at, nudging);
-  if (width > 41 && frame->text_count < SIGN_MAX_TEXTS) {
+  if (name_w > 16 && name_opacity > 0 && frame->text_count < SIGN_MAX_TEXTS) {
     sign_text_t *text = &frame->texts[frame->text_count++];
-    uint32_t meta = meta_color(agent_sign_state(&slot->session), in);
     double line_h = 13 * scale * ratio;
-    *text = (sign_text_t){.x = x + (direction > 0 ? 33 : 8) * scale,
-                          .line_top = y + 2 * scale + (22 * scale - line_h) / 2,
-                          .line_h = line_h,
-                          .w = (width - 41) * scale,
-                          .clip_y = y + 2 * scale,
-                          .clip_h = 22 * scale,
-                          .px = line_h,
-                          .meta_px = 11.5 * scale * ratio,
-                          .gap = 7 * scale,
-                          .color = with_alpha(palette->ink, opacity),
-                          .secondary_color =
-                              with_alpha(palette->secondary, opacity),
-                          .meta_color = with_alpha(meta, opacity),
-                          .reverse = direction < 0};
+    *text = (sign_text_t){
+        .x = name_x + 8 * scale,
+        .pixel_snap = nudging,
+        .line_top = name_y + 2 * scale + (22 * scale - line_h) / 2,
+        .line_h = line_h,
+        .w = (name_w - 16) * scale,
+        .clip_y = name_y + 2 * scale,
+        .clip_h = 22 * scale,
+        .px = line_h,
+        .meta_px = 11.5 * scale * ratio,
+        .gap = 7 * scale,
+        .color = with_alpha(palette->ink, name_opacity),
+        .secondary_color = with_alpha(palette->secondary, name_opacity),
+        .meta_color = with_alpha(palette->secondary, name_opacity),
+        .reverse = direction < 0};
     if (agent_sign_state(&slot->session) == AGENT_STATE_WORKING) {
       int64_t elapsed = in->now_ms - agent_sign_since(&slot->session);
       if (elapsed < 0)
@@ -203,12 +215,13 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
     if (in->surface_width > 0)
       rest = fmax(0, fmin(rest, in->surface_width - width * scale));
     double left = fmin(x, rest), right = fmax(x, rest) + width * scale;
-    frame->hits[frame->hit_count++] =
-        (sign_hit_t){.x = (int)floor(left),
-                     .y = (int)floor(y),
-                     .w = (int)ceil(right) - (int)floor(left),
-                     .h = (int)ceil(y + 26 * scale) - (int)floor(y),
-                     .key = slot->session.key,
-                     .pid = slot->session.pid};
+    frame->hits[frame->hit_count++] = (sign_hit_t){
+        .x = (int)floor(left),
+        .y = (int)floor(fmin(y, name_y)),
+        .w = (int)ceil(right) - (int)floor(left),
+        .h = (int)ceil(fmax(y + plate_h, name_y + POST_NAME_HEIGHT * scale)) -
+             (int)floor(fmin(y, name_y)),
+        .key = slot->session.key,
+        .pid = slot->session.pid};
   }
 }

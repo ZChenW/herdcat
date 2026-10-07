@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Post rows now pair the fan's state plate with a separate paper name pill,
+  with a 6px gap, mirrored names and neutral metadata. Collapsing hides the
+  pill; hover, waiting nudge, shake and pressed dimming move both parts together.
+  Their combined input target includes the resting position. Existing row
+  pitch, five-row clearance and ten-row surface size are preserved.
+
 - Idle and read done parents with active subagents now display and rank as
   working, with “Waiting on subagent N min” / “等待子代理 N 分钟” measured
   from the oldest still-active child's start. Actual session state and alerts

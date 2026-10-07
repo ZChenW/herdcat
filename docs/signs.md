@@ -5,8 +5,14 @@ session title by default. Missing titles are omitted. Claude uses a
 rounded rectangle and Codex a circle. Click a plate to jump to its terminal on
 niri, including across workspaces; dragging a plate moves the whole cat.
 Missing window targets shake briefly. The cat keeps its typing and sleep frames.
-Expanded post boards size to their content between 150 and 340 design pixels,
-shrink further near output edges, and remain 34 pixels wide when collapsed.
+Each post row pairs a state plate beside the pole with a neutral paper name
+pill, separated by 6 design pixels. The state plate shares the fan's shape,
+state colour, stroke and icon: Claude is 34×27 with rounded corners, Codex a
+30-pixel circle, and other agents a 34×27 octagon. The 26-pixel capsule is
+vertically centred on the state plate; its metadata uses secondary text colour.
+Expanded rows size to their content between 150 and 340 design pixels in total
+and shrink further near output edges. Collapsed rows retain only the state
+plate; the pill narrows to zero and fades. Waiting and error remain expanded.
 The supplement is shortened or omitted before the main name is shortened.
 
 A kitty split is focused too when that session's process has both
@@ -75,7 +81,18 @@ press, focus-failure shakes and waiting nudges. A hovered back plate enlarges
 normally and its nameplate appears above both rows. Only plates are targets;
 front plates own any overlap. The same ordering applies below the cat.
 
-Post signs simply continue their alternating sides to ten rows. Menu opening
+Post signs continue their alternating sides to ten rows at the same 30-pixel
+pitch. The main name stays nearest the state plate on either side; supplement,
+metadata and truncation follow the existing layout. Unread dots sit on the
+state plate's upper outer corner, matching the fan. Hover, waiting nudge,
+failure shake and pressed dimming affect the whole row. One hit rectangle
+spans both parts and their gap, including their resting position during motion.
+The same arrangement reflects below the cat. Clearance remains 180 design
+pixels up to five rows and `180 + 33 * (sign_max - 5)` above five; the surface
+width stays 820 at cat height 110. See the
+[production-rendered split examples](design/post-split/README.md).
+
+Menu opening
 retracts both fan rows. The typing desk, switch card and font panel keep their
 existing layout. Surface height and above/below thresholds reserve room for
 the configured `sign_max`, even when fewer sessions are present; values up to

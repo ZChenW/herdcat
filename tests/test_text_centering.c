@@ -146,7 +146,7 @@ static void boards(void) {
   in.idle = SIGN_IDLE_ALWAYS;
   memset(&model, 0, sizeof(model));
   signs_frame(&model, &in, &frame);
-  TEST_ASSERT(frame.hits[0].w == 34);
+  TEST_ASSERT(frame.hits[0].w == 30);
   text_cleanup();
 }
 static void caret_and_menu(void) {

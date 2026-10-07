@@ -40,6 +40,17 @@ typedef struct {
 } sign_bezier_t;
 
 typedef struct {
+  sign_shape_kind_t kind;
+  double w, h, radius;
+} sign_plate_geometry_t;
+
+sign_plate_geometry_t state_plate_geometry(const char *agent);
+void emit_state_plate(sign_frame_t *frame, const agent_session_view_t *session,
+                      const sign_input_t *in, const sign_shape_t *plate,
+                      double cx, double cy, double scale, double opacity,
+                      const double states[AGENT_STATE_COUNT]);
+
+typedef struct {
   const char *working, *waiting, *idle, *minute;
   const char *done, *done_short, *unread, *unread_short;
   const char *error, *error_short;

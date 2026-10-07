@@ -72,12 +72,29 @@ static sign_frame_t scene(const config_t *config, sign_style_t style,
   return frame;
 }
 
-static uint64_t pixels(const sign_frame_t *frame, int scale) {
+static uint8_t *render_pixels(const sign_frame_t *frame, int scale) {
   size_t size = 960 * 1200 * 4;
   uint8_t *data = calloc(size, 1);
   TEST_ASSERT(data);
   sign_draw(data, 960, 1200, scale, frame, SIGN_DRAW_UNDER);
   sign_draw(data, 960, 1200, scale, frame, SIGN_DRAW_OVER);
+  return data;
+}
+
+static bool same_pixels(const sign_frame_t *a, const sign_frame_t *b,
+                        int scale) {
+  uint8_t *first = render_pixels(a, scale), *second = render_pixels(b, scale);
+  bool equal = !memcmp(first, second, 960 * 1200 * 4);
+  free(first);
+  free(second);
+  return equal;
+}
+
+static uint64_t pixels(const sign_frame_t *frame, int scale) {
+  // Golden hashes always run before text_init; font-dependent checks compare
+  // complete buffers instead, so installed fonts cannot enter the goldens.
+  size_t size = 960 * 1200 * 4;
+  uint8_t *data = render_pixels(frame, scale);
   uint64_t hash = UINT64_C(14695981039346656037);
   for (size_t i = 0; i < size; i++)
     hash = (hash ^ data[i]) * UINT64_C(1099511628211);
@@ -86,21 +103,21 @@ static uint64_t pixels(const sign_frame_t *frame, int scale) {
 }
 
 static void no_title_pixels(void) {
-  // Text centering optical baselines/content-sized boards; includes text ink.
-  // Previous hashes and changes: docs/performance/text-centering-hashes.json.
+  // Frozen without loading a font. Post goldens reflect the split plates;
+  // fan values were captured before this change, also without a font.
   static const uint64_t expected[] = {
-      UINT64_C(0x8460f64bb01b937f), UINT64_C(0x345aeea8f52a1d1c),
-      UINT64_C(0xad7b8bfd6b469c62), UINT64_C(0xb5b8282c7659bb93),
-      UINT64_C(0xd397a1d7fe1378d3), UINT64_C(0xd23b961893df5fbe),
-      UINT64_C(0x8ccd7304673c5ea7), UINT64_C(0x79157ba078d3e2f7),
-      UINT64_C(0xd0ca5cc7a3012074), UINT64_C(0xa2c8045436fd311b),
-      UINT64_C(0xdff4c229a45277b6), UINT64_C(0x02b4d4b9780f7ba0),
-      UINT64_C(0x266089e3c385bf42), UINT64_C(0x477569bf73297229),
-      UINT64_C(0xf3295de5774bc2db), UINT64_C(0x14e45cb3a97e790b),
-      UINT64_C(0xcf87ba7fa0c0cd5c), UINT64_C(0xf983a8da66f779ae),
-      UINT64_C(0xf3a550ab64e8da98), UINT64_C(0x46e4373019ada885),
-      UINT64_C(0x5ec22877da64d189), UINT64_C(0x98895f4c6d21b662),
-      UINT64_C(0x3b8c3719331fd1ff), UINT64_C(0x23206ae97548fa62),
+      UINT64_C(0x5a1488b4179ffdca), UINT64_C(0x87c4840b9d747811),
+      UINT64_C(0xc1808339ea46f68a), UINT64_C(0xafd9e9288ccad586),
+      UINT64_C(0x8fd1791ac13c4ed4), UINT64_C(0x8b6106835562f5aa),
+      UINT64_C(0x4a12bef2db49292c), UINT64_C(0x82579afe5cc66d42),
+      UINT64_C(0x5f73ee02bf4a051d), UINT64_C(0x40151b3ab024a540),
+      UINT64_C(0xcf05bb9fd1dff9a1), UINT64_C(0x013d85ebe5f1a82d),
+      UINT64_C(0x541c7c22afff812c), UINT64_C(0xa7b3fbfb48827f09),
+      UINT64_C(0x411937d454b11cf3), UINT64_C(0x95fd5fb0c5efb64e),
+      UINT64_C(0xd83eca0eec87286b), UINT64_C(0x07160c897cf500b8),
+      UINT64_C(0xa80faec0bd015e49), UINT64_C(0x79d9a71328d4afe7),
+      UINT64_C(0xa85a3428a3987152), UINT64_C(0x1d9d11f13cbc26ec),
+      UINT64_C(0x46d914a766bb8de5), UINT64_C(0x23f7af77bc3c97d6),
   };
   size_t at = 0;
   config_t config = defaults();
@@ -169,8 +186,8 @@ static void default_names(void) {
               scene(&config, SIGN_STYLE_POST, (sign_theme_t)theme,
                     (sign_orientation_t)orientation, false);
           TEST_ASSERT(!off.texts[0].extra[0] && !off.texts[1].extra[0]);
-          TEST_ASSERT(pixels(&off, 120) == pixels(&untitled, 120));
-          TEST_ASSERT(pixels(&a, 120) != pixels(&off, 120));
+          TEST_ASSERT(same_pixels(&off, &untitled, 120));
+          TEST_ASSERT(!same_pixels(&a, &off, 120));
           config.sign_name_extra = SIGN_EXTRA_INLINE;
         }
         config.sign_name = SIGN_NAME_AUTO;
@@ -253,9 +270,9 @@ static void board_width(void) {
     post_text_layout(&text, &layout);
     TEST_ASSERT(!layout.extra[0] && !layout.extra_width);
     frame.texts[0] = text;
-    uint64_t hidden = pixels(&frame, 120);
+    sign_frame_t hidden = frame;
     frame.texts[0].extra[0] = 0;
-    TEST_ASSERT(pixels(&frame, 120) == hidden);
+    TEST_ASSERT(same_pixels(&frame, &hidden, 120));
     text.w += 1;
     memset(text.extra, 'x', sizeof(text.extra) - 1);
     text.extra[sizeof(text.extra) - 1] = 0;
@@ -306,8 +323,8 @@ static void desk_and_equal_names(void) {
 }
 
 int main(void) {
-  TEST_ASSERT(text_init("DejaVu Sans") == 0);
   no_title_pixels();
+  TEST_ASSERT(text_init("DejaVu Sans") == 0);
   default_names();
   board_width();
   desk_and_equal_names();

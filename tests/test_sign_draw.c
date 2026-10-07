@@ -104,10 +104,12 @@ static void test_colors_and_cache(void) {
   const sign_shape_t *board = board_of(&frame);
   expect(a, W, (int)lround(board->x + 1), (int)lround(board->y + board->h / 2),
          0xff111827);
-  expect(a, W, (int)lround(board->x + board->w - 5), (int)lround(board->y + 4),
-         0xffc7f1d6);
+  expect(a, W, (int)lround(board->x + board->w / 2), (int)lround(board->y + 3),
+         0xfff8fafc);
   bool check = false;
-  int cx = (int)lround(board->x + 17), cy = (int)lround(board->y + 13);
+  const sign_shape_t *face = &frame.shapes[2];
+  int cx = (int)lround(face->x + face->w / 2);
+  int cy = (int)lround(face->y + face->h / 2);
   for (int y = cy - 7; y <= cy + 7; y++) {
     for (int x = cx - 8; x <= cx + 8; x++) {
       uint8_t *p = pixel(a, W, x, y);
@@ -173,7 +175,7 @@ static void test_transition_and_scale(void) {
   assert_inside(scaled, bw, bh, &frame, 2);
   const sign_shape_t *board = board_of(&frame);
   expect(scaled, bw, (int)lround((board->x + board->w - 5) * 2),
-         (int)lround((board->y + board->h / 2) * 2), 0xffc7f1d6);
+         (int)lround((board->y + board->h / 2) * 2), 0xfff8fafc);
   free(scaled);
   sign_draw_cleanup();
 }
@@ -229,7 +231,6 @@ static void test_agent_shapes(const char *snapshot) {
         // Native raster capture of the actual model's compact plates at 1x.
         shape.x = 24 + i * 85;
         shape.y = style == SIGN_STYLE_FAN ? 26 : 96;
-        shape.w = style == SIGN_STYLE_POST ? 34 : shape.w;
         shape.orbit = false;
         shape.rotation = 0;
         sign_frame_t sample = {

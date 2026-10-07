@@ -154,7 +154,8 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
     frame->transitioning = true;
   }
   bool codex = !strcmp(slot->session.agent, "codex");
-  bool other = !codex && strcmp(slot->session.agent, "claude");
+  sign_plate_geometry_t geometry = state_plate_geometry(slot->session.agent);
+  bool other = geometry.kind == SIGN_CUT;
   int stick_at = frame->shape_count;
   double stick_h = (len - 14) * cat_scale;
   if (stick_h > 0.4)
@@ -168,18 +169,18 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
   double center_sy = len - (codex ? 13 : 13.5);
   double top = pivot_y - (center_sy + half_h) * cat_scale;
   double left = pivot_x - half_w * cat_scale;
-  add_shape(frame, other ? SIGN_CUT : SIGN_RECT, left, top,
-            half_w * 2 * cat_scale, half_h * 2 * cat_scale,
-            (codex ? 15 : 9) * plate * cat_scale, 2 * plate * cat_scale,
-            with_alpha(fill, opacity), with_alpha(palette->ink, opacity));
-  if (slot->session.unread && finished(agent_sign_state(&slot->session)))
-    add_unread(frame, agent_sign_state(&slot->session), left, top,
-               half_w * 2 * cat_scale, plate * cat_scale, opacity, in);
   double icon_y = pivot_y - center_sy * cat_scale;
-  for (int state = 0; state < AGENT_STATE_COUNT; state++)
-    if (states[state] > .001)
-      add_icon(frame, (agent_state_t)state, pivot_x, icon_y, cat_scale * plate,
-               opacity * states[state], in);
+  sign_shape_t face = {.kind = geometry.kind,
+                       .x = left,
+                       .y = top,
+                       .w = half_w * 2 * cat_scale,
+                       .h = half_h * 2 * cat_scale,
+                       .radius = geometry.radius * plate * cat_scale,
+                       .stroke = 2 * plate * cat_scale,
+                       .fill = with_alpha(fill, opacity),
+                       .outline = with_alpha(palette->ink, opacity)};
+  emit_state_plate(frame, &slot->session, in, &face, pivot_x, icon_y,
+                   cat_scale * plate, opacity, states);
   orbit_from(frame, stick_at, angle, pivot_x, pivot_y);
   if (slot->session.child_count) {
     // Transform the anchor, then paint the whole badge upright in this group.

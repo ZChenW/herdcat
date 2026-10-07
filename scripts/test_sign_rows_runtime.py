@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-sign-rows-runtime-') as directo
         result = {}
         for line in server_log.read_text().splitlines():
             fields = line.split()
-            if fields and fields[0] in ('snapshot', 'input-count'):
+            if fields and fields[0] in ('snapshot', 'input-count', 'sign-input'):
                 result[(fields[0], fields[1])] = tuple(map(int, fields[2:]))
         return result
 
@@ -86,6 +86,22 @@ with tempfile.TemporaryDirectory(prefix='herdcat-sign-rows-runtime-') as directo
                         # Cat + visible plates, and optionally the hover pad.
                         count = state[('input-count', monitor)][0]
                         assert maximum + 1 <= count <= maximum + 2, state
+                    if style == 'post':
+                        # All working Claude rows are collapsed initially.
+                        for monitor in ('TEST-1', 'TEST-2'):
+                            assert state[('sign-input', monitor)][2:] == (34, 28), state
+                        # Hovering the cat expands both parts as one input row.
+                        record = state[('snapshot', 'TEST-1')]
+                        server.stdin.write(f'hover TEST-1 {record[5] + 99} {record[6] + 55}\n')
+                        server.stdin.flush()
+                        wait_until(lambda: records()[('sign-input', 'TEST-1')][2] >= 150, 6,
+                                   diagnostics=diagnostics)
+                        expanded = settled()[('sign-input', 'TEST-1')]
+                        assert 150 <= expanded[2] <= 346 and expanded[3] == 28, expanded
+                        server.stdin.write('out TEST-1\n')
+                        server.stdin.flush()
+                        wait_until(lambda: records()[('sign-input', 'TEST-1')][2] == 34, 6,
+                                   diagnostics=diagnostics)
                     # State updates causing a row swap keep all ten sessions.
                     wire('ev claude waiting 0000000000000001 0')
                     state = settled()

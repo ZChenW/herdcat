@@ -105,12 +105,12 @@ int main(void) {
   // orientations, at integer and fractional output scales. Shapes only: no font
   // is loaded yet, because glyph rasterisation differs between FreeType builds.
   static const uint64_t expected[] = {
-      UINT64_C(0xbb7926a4bb079d85), UINT64_C(0xa2b331068e5c2f49),
-      UINT64_C(0x94e129211f98bf3d), UINT64_C(0xb1e1dab1c95751f5),
-      UINT64_C(0x97b0b5021b248bea), UINT64_C(0xda91888f59da6c85),
-      UINT64_C(0xd2ee6977affd6a65), UINT64_C(0x948be5fa25712aa3),
-      UINT64_C(0x63ef9fe53a239f98), UINT64_C(0xc2dbf5e41a502f85),
-      UINT64_C(0x6bd4622c65556e09), UINT64_C(0xaf238f6b288e5284),
+      UINT64_C(0xc6a8605aec6a05a5), UINT64_C(0xc966264d4b4e3563),
+      UINT64_C(0x34ba8e401909ee1e), UINT64_C(0xa4beee1123b01185),
+      UINT64_C(0x48bab7971b7ee508), UINT64_C(0xa80873a3fcd0499a),
+      UINT64_C(0xb151ddce1251e995), UINT64_C(0xe0c347373dc4d08b),
+      UINT64_C(0x31771629187de247), UINT64_C(0xcbfdb000f5051385),
+      UINT64_C(0xe2225009a1ceef8d), UINT64_C(0x8b93b7292b937d73),
       UINT64_C(0x91ae1adb69381d99), UINT64_C(0x190723d9421b253f),
       UINT64_C(0x97911cd85d77eaa9), UINT64_C(0x32430a620f2336d1),
       UINT64_C(0x0476713473b4037b), UINT64_C(0xe43a58610841f211),
