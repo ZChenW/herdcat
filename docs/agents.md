@@ -169,18 +169,22 @@ control a local overlay through this socket. See the
 [Codex hooks reference](https://learn.chatgpt.com/docs/hooks) for your installed
 version's event and trust behavior.
 
-## Grok (experimental)
+## Grok
 
-Grok 1.0.46 was observed twice. The October 3 capture saw startup, submission
+Grok 1.0.46 was observed on October 3, 4 and 7. The October 3 capture saw
+startup, submission
 and failure payloads, but no successful model turn. On October 4 a separate
 Grok child, model grok-4.5 at low effort, was observed by Grok itself; this
 interactive session was not the process under test. A no-tool turn went idle,
 working, done, then left when the process exited. A tool turn under
 always-approve followed that path and never showed waiting. An invocation-only
 `--permission-mode default` prompt did show waiting; interrupting it moved the
-sign to idle, and the process exit then removed the session. Interrupting a
-running command removed the sign while that process was still alive, with no
-sampled idle state, so that interrupt path remains unverified.
+sign to idle, and the process exit then removed the session. The reviewer's
+October 7 tmux capture verified Ctrl+C during `sleep 77`: a hook arrived and
+the sign became idle within 0.5 seconds, retaining the live process and session.
+Ctrl+C 0.5 seconds after submission emitted no later hook and returned the
+prompt to the input box; quiet detection now handles that path. Esc does not
+cancel a Grok turn. See [the observations](agent-hook-observations.md#early-cancellation-and-terminal-output-2026-10-07).
 Merge [grok.json](../integrations/hooks/grok.json) into a new file in
 `~/.grok/hooks/` (or `$GROK_HOME/hooks/`), preserving existing hooks. Grok may
 also load Claude/Cursor compatibility hooks; check `/hooks` for duplicates.
@@ -202,8 +206,8 @@ configuration; `herdcat setup` does so only after confirmation or `--yes`.
 Both snake_case and camelCase field aliases are recognized; snake_case keys
 win if both are supplied. Stdout is exactly `{}` plus newline, including invalid
 JSON, unknown events, timeout or an absent overlay. Do not redirect stdout.
-Errors temporarily clear active work; the proposed separate error state is not
-implemented. A late interrupt cannot erase an unread completed sign.
+StopFailure maps active work to error. A late interrupt cannot erase an unread
+completed sign.
 
 ## Kimi Code
 
@@ -379,7 +383,8 @@ the observed v2 API; this bridge implements the locally verified v2 interface.
 ## Interrupted and failed turns
 
 `agent_interrupt_detect=1` (default, global and reloadable) watches Claude Code
-and Codex recording files only while their sessions are working or waiting.
+and Codex recording files while their sessions are working or waiting. A Claude
+session made idle by quiet detection may retain that watch for recovery below.
 SessionStart/UserPromptSubmit hooks supply the top-level `transcript_path`;
 there is no directory scan. Paths are limited to 1024 decoded bytes, must be
 absolute `.jsonl` files under the current user's home, and must be regular files
@@ -395,15 +400,34 @@ within one second of submission are ignored. Codex `event_msg` records with
 Stop hooks retain ownership of normal completion and unread signs. Duplicate
 interruptions cannot clear done or recreate an ended session.
 
-Pressing Esc before Claude Code starts to answer leaves no hook event and no
-marker in the recording. The only trace is the terminal title, which goes from
-a spinner glyph back to `✳`. On niri, a working Claude session whose window
-title has shown `✳` for two seconds with no hook event in between returns to
-idle. This is skipped when the title could belong to another session: several
-sessions in one window need the kitty watcher's split report to tell them
-apart. It does nothing if the terminal title is disabled or rewritten (tmux,
-`CLAUDE_CODE_DISABLE_TERMINAL_TITLE`); the stale timeout still applies then.
-A wrong guess is corrected by the session's next hook event.
+Claude Esc and Grok Ctrl+C shortly after submission can leave no later hook or
+interruption record. Claude Code 2.1.292 kept `✳` in its title even while
+working, so the renderer no longer infers interruption from that title.
+With `agent_interrupt_detect=1`, Claude and Grok sessions whose own state is
+working and whose registered process stdout points to `/dev/pts/<number>` are
+also checked for quiet output. Only the `wchar` counter in `/proc/<pid>/io` is
+interpreted; terminal contents are never read. Two adjacent one-second windows
+with fewer than 256 bytes each return working to idle, preserving the process
+and session. The first second after an event is protected. Waiting, unread
+done/error and the display state derived from active children are unaffected.
+
+Within ten seconds of a hook or recognized user/assistant record, sampling is
+once per second. Afterwards, each five-second cycle samples a baseline and a
+counter one second later. An initially quiet window adds one adjacent sample
+to confirm the second window. No eligible working session means no quiet
+detection timer. Non-terminal stdout, unreadable process I/O and other agents
+skip detection; a read failure retries only after another hook. Disabling the
+option removes the timer and recovery watches immediately.
+
+Early cancellation normally takes 2–3 seconds to put the sign away. After
+sampling slows, cancellation can take up to about seven seconds, and bursts
+can delay it further. A truly working process with two quiet windows can be
+misclassified. Its next working hook corrects the guess; a newly appended
+recognized Claude user/assistant record can also correct it. Only sessions
+made idle by quiet detection retain their existing event-driven recording
+watch for that recovery; ordinary idle sessions do not. No record or hook
+means the guess cannot be corrected automatically. Headless runs and unmeasured
+agents retain their existing hooks, transcript detection and stale timeout.
 
 Agents report that they are waiting for an answer but not that it was given;
 the next event only comes when the approved tool finishes or the model speaks
@@ -415,7 +439,8 @@ seconds the sign goes back to waiting.
 Only newly appended complete lines of at most 4096 bytes are inspected in
 memory. No transcript content or error message is logged, saved or sent anywhere,
 including with debug enabled. Reads are event driven, at most 256 KiB per wake,
-and add no polling timeout. No active monitored session means no recording watch.
+and add no transcript polling timeout. Watches remain only for working/waiting
+sessions or an idle Claude session recovering from a quiet guess.
 
 These are private recording formats observed in Claude Code 2.1.288/2.1.289 and
 Codex CLI 0.160.0. Missing/unreadable paths, truncation/rotation, overlong lines,

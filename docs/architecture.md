@@ -446,8 +446,9 @@ its existing length guard rejects packets of 1280 bytes or more.
 one nonblocking inotify and a continuation eventfd. Both event fds join
 agent_watch's existing epoll alongside focus_watch, with main dispatching tokens;
 the six basic fds and seven-slot external budget stay unchanged. Submissions
-reset offsets to EOF. Only working/waiting sessions retain watches, and ending,
-evicting, disabling or completing sessions releases them. Re-enabling starts at
+reset offsets to EOF. Working/waiting sessions and quiet-classified idle Claude
+sessions retain watches; ending, evicting, disabling or completing sessions
+releases them. Re-enabling starts at
 EOF. No timer, worker thread or periodic wake is added. Each wake reads at most
 256 KiB total, with round-robin continuations through eventfd only while unread
 bytes remain. The last disarm closes both notification fds.
@@ -468,6 +469,27 @@ Neither paths nor transcript contents/error messages are printed by the monitor;
 contents are never persisted or transmitted. These private formats may change:
 unsupported input silently falls back to existing stale deadlines. No new
 runtime dependency is required.
+
+`core/agent_quiet.c` uses the existing renderer tick/deadline mechanism for
+Claude and Grok's measured continuous terminal output. `platform/agent_output.c`
+checks `/proc/<pid>/fd/1` for a numeric `/dev/pts/` target and interprets only
+`wchar` from a bounded `/proc/<pid>/io` read. No terminal content is opened.
+Only a session's own working state qualifies; parent display aggregation,
+waiting and unread completion are independent. Failed reads disable sampling
+until a new hook. Unsupported agents, PID-less/headless sessions and disabling
+interruption detection have no quiet deadline.
+
+Samples run once per second for ten seconds after a hook/recognized recording
+event, then as five-second baseline/window pairs. An initially quiet window
+adds an adjacent one-second confirmation: two increments below 256 bytes use
+the existing idempotent interrupt operation. Dispatch delays beyond 250 ms
+discard that window. No periodic wake exists without an eligible working
+session. A quiet guess may keep the existing Claude recording watch for
+event-only recovery; a recognized user/assistant record resumes working and
+restarts recent sampling. Other idle sessions release their watches as before.
+The renderer no longer invokes terminal-title rest detection: Claude 2.1.292
+keeps the same title while working. Legacy focus parsing helpers remain
+available but do not schedule runtime deadlines or change session state.
 
 
 ## Terminal locations

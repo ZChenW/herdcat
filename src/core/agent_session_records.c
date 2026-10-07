@@ -338,6 +338,13 @@ void agent_sessions_interrupt(uint64_t key, int64_t now_ms) {
                          applied_done_timeout, NULL);
 }
 
+void agent_sessions_working(uint64_t key, int64_t now_ms) {
+  agent_session_t *s = find_session(key);
+  if (s)
+    agent_sessions_apply(key, s->agent, AGENT_EVENT_WORKING, 0, now_ms,
+                         applied_done_timeout, NULL);
+}
+
 void agent_sessions_fail(uint64_t key, int64_t now_ms) {
   agent_session_t *s = find_session(key);
   if (s)

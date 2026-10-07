@@ -466,6 +466,8 @@ test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent
 	python3 scripts/test_runtime.py
 	python3 scripts/test_hook_client.py
 	python3 scripts/test_transcript_runtime.py
+	python3 scripts/test_agent_quiet_runtime.py
+	python3 scripts/test_agent_quiet_runtime.py --agent grok
 	python3 scripts/test_focus_client.py
 	python3 scripts/test_focus_runtime.py
 	python3 scripts/test_sign_options.py

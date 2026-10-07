@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A delayed Wayland release must not postpone the terminal-rest deadline."""
+"""A delayed Wayland release must not postpone quiet-output sampling."""
 import os
 from pathlib import Path
 import signal
@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-focus-runtime-') as temporary:
             # the runtime timeout and hide a deadline postponed by releases.
             time.sleep(2.35)
             assert 'agent=idle' in wire(directory, 'status')
-            print('terminal rest: 2000 ms grace survived 1000 ms releases with animation off')
+            print('quiet output: two 1000 ms windows survived 1000 ms releases with animation off')
     finally:
         if helper is not None and Path(f'/proc/{helper}').exists():
             os.kill(helper, signal.SIGCONT)

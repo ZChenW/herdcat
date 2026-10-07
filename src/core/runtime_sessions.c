@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "config/config.h"
 #include "config/sign_options.h"
+#include "core/agent_quiet.h"
 #include "core/agent_sessions.h"
 #include "core/agent_state.h"
 #include "core/agent_title.h"
@@ -38,6 +39,7 @@ void agent_refresh(void) {
   int count = agent_sessions_pids(pids, AGENT_SESSIONS_MAX);
   agent_watch_retain(pids, (size_t)count);
   transcript_watch_sync(config.agent_interrupt_detect, monotonic_ms());
+  agent_quiet_sync(config.agent_interrupt_detect, monotonic_ms());
   agent_state_t state = agent_sessions_resolve();
   if (state != animation_get_agent_state()) {
     animation_set_agent_state(state);
@@ -525,25 +527,6 @@ void note_window_focus(void) {
   for (int i = 0; i < focused; i++) {
     agent_sessions_note_focused(keys[i], now, config.agent_done_timeout);
   }
-}
-// Claude Code says nothing when Esc is pressed before it starts to answer.
-// Its terminal title going back to the at-rest mark is the only trace.
-int64_t rest_deadline;
-void note_window_rest(void) {
-  rest_deadline = 0;
-  if (!config.agent_interrupt_detect)
-    return;
-  agent_session_view_t views[AGENT_SESSIONS_MAX];
-  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
-  uint64_t keys[AGENT_SESSIONS_MAX];
-  int64_t now = monotonic_ms();
-  int next_ms = -1;
-  int rested = focus_watch_rested_now(views, (size_t)count, now, keys,
-                                      AGENT_SESSIONS_MAX, &next_ms);
-  if (next_ms >= 0)
-    rest_deadline = now + next_ms;
-  for (int i = 0; i < rested; i++)
-    agent_sessions_interrupt(keys[i], now);
 }
 void resolve_restored_terminals(void) {
   agent_session_view_t restored[AGENT_SESSIONS_MAX];

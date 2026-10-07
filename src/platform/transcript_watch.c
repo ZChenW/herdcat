@@ -2,11 +2,13 @@
 #include "platform/transcript_watch.h"
 
 #include "core/agent_adapters.h"
+#include "core/agent_quiet.h"
 #include "core/agent_sessions.h"
 #include "core/agent_title.h"
 #include "core/agent_transcript.h"
 #include "platform/agent_watch.h"
 #include "platform/command_job.h"
+#include "utils/json.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -167,7 +169,9 @@ void transcript_watch_sync(bool on, int64_t now_ms) {
       disarm(slot);
       memset(slot, 0, sizeof(*slot));
     } else if (!on || (view->state != AGENT_STATE_WORKING &&
-                       view->state != AGENT_STATE_WAITING)) {
+                       view->state != AGENT_STATE_WAITING &&
+                       !agent_quiet_stopped(view->key, view->order,
+                                            view->updated_ms))) {
       disarm(slot);
       slot->failed = false;
     } else
@@ -230,6 +234,19 @@ static bool feed(transcript_t *slot, const char *data, size_t length,
         char title[AGENT_TITLE_MAX + 1];
         if (agent_title_line(slot->agent, NULL, slot->line, slot->used, title))
           agent_sessions_set_title(slot->key, title);
+        // A new user/assistant record is activity, not a completion signal.
+        // Retain event-only recovery after quiet guesses; no idle timer.
+        json_span_t doc, type, message, role;
+        if (!agent_transcript_interrupted(slot->agent, slot->line,
+                                          slot->used) &&
+            json_document(slot->line, slot->used, &doc) &&
+            json_field(doc, "type", &type) &&
+            (json_equal(type, "user") || json_equal(type, "assistant")) &&
+            json_field(doc, "message", &message) &&
+            json_field(message, "role", &role) &&
+            ((json_equal(type, "user") && json_equal(role, "user")) ||
+             (json_equal(type, "assistant") && json_equal(role, "assistant"))))
+          agent_quiet_record(slot->key, now);
       }
       size_t used = slot->used;
       slot->used = 0;

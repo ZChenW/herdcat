@@ -7,7 +7,6 @@
 extern volatile sig_atomic_t running;
 extern config_t config;
 extern char *config_path;
-extern int64_t rest_deadline;
 int64_t monotonic_ms(void);
 int reload(void);
 void agent_refresh(void);
@@ -20,6 +19,5 @@ void terminal_current(pid_t pid, uint64_t window, const char *socket,
 int command(const char *request, char *response, size_t capacity);
 void note_key(void);
 void note_window_focus(void);
-void note_window_rest(void);
 void resolve_restored_terminals(void);
 #endif

@@ -2,6 +2,7 @@
 #include "config/config.h"
 #include "config/sign_options.h"
 #include "core/agent_hook.h"
+#include "core/agent_quiet.h"
 #include "core/agent_sessions.h"
 #include "core/agent_state.h"
 #include "core/control.h"
@@ -113,6 +114,7 @@ static herdcat_error_t force_monitor(config_t *settings) {
 }
 static void sign_policy(void) {
   transcript_watch_sync(config.agent_interrupt_detect, monotonic_ms());
+  agent_quiet_sync(config.agent_interrupt_detect, monotonic_ms());
   agent_sessions_configure_done(config.sign_done == SIGN_DONE_STICKY,
                                 monotonic_ms(), config.agent_done_timeout);
 }
@@ -191,7 +193,6 @@ static void tick(void) {
   theme_watch_poll();
   focus_watch_poll();
   note_window_focus();
-  note_window_rest();
   agent_sessions_expire(monotonic_ms(), config.agent_stale_timeout);
   agent_refresh();
   control_process(command);
@@ -210,10 +211,10 @@ static void tick(void) {
   }
 }
 static int runtime_timeout(void) {
-  int rest_wait = -1;
-  if (rest_deadline) {
-    int64_t left = rest_deadline - monotonic_ms();
-    rest_wait = left <= 0 ? 0 : left > INT_MAX ? INT_MAX : (int)left;
+  int quiet_wait = -1;
+  if (agent_quiet_deadline()) {
+    int64_t left = agent_quiet_deadline() - monotonic_ms();
+    quiet_wait = left <= 0 ? 0 : left > INT_MAX ? INT_MAX : (int)left;
   }
   int candidates[] = {config_watcher_timeout(&watcher),
                       control_timeout(),
@@ -224,7 +225,7 @@ static int runtime_timeout(void) {
                       focus_watch_timeout(),
                       theme_watch_timeout(),
                       transcript_prompt_timeout(monotonic_ms()),
-                      rest_wait,
+                      quiet_wait,
                       sign_draw_cache_timeout(monotonic_ms()),
                       session_store_timeout(monotonic_ms())};
   if (!input_child_is_alive()) {
@@ -393,6 +394,7 @@ cleanup:
   transcript_watch_cleanup();
   agent_watch_cleanup();
   agent_sessions_reset();
+  agent_quiet_reset();
   control_cleanup();
   if (signal_fd >= 0) {
     int fd = signal_fd;

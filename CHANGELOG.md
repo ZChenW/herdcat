@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Claude and Grok signs return to idle after an early cancellation that emits
+  no stop hook, using two quiet terminal-output windows. Detection runs only
+  for eligible working processes; waiting and unread completions are preserved.
+  Grok's running-command Ctrl+C path is now documented as verified.
+
 - Truncation ellipses use three compact baseline periods in the selected
   font and weight, including CJK faces, with a circular-dot fallback when
   periods are missing. Sign, typing-desk and font-panel width budgets match

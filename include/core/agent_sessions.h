@@ -95,6 +95,8 @@ int agent_sessions_apply_owned(uint64_t key, const char *agent,
 int agent_event_parse(const char *name, agent_event_t *out);
 void agent_sessions_reset(void);
 void agent_sessions_interrupt(uint64_t key, int64_t now_ms);
+// Resume an existing session after event-driven evidence corrects a guess.
+void agent_sessions_working(uint64_t key, int64_t now_ms);
 void agent_sessions_fail(uint64_t key, int64_t now_ms);
 // Agents report a question but not its answer. A key press in the waiting
 // session's terminal shows it as working; if no event follows within

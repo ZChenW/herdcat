@@ -54,6 +54,8 @@ typedef struct {
   bool no_pid;
   // The terminal title starts with "✳" whenever the agent is not working.
   bool rest_title;
+  // Measured interactive agents keep writing throughout their own work.
+  bool continuous_output;
   // Exact /proc comm. NULL when that process cannot be identified.
   const char *process_name;
   // Inherited owner PID exported by this agent to its children.
