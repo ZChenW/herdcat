@@ -84,7 +84,6 @@ $(BUILDDIR)/input-helper-paths: input-helper-path-check | $(OBJDIR)
 	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
 
 $(OBJDIR)/platform/input.o: $(BUILDDIR)/input-helper-paths
-$(BUILDDIR)/test_input $(BUILDDIR)/test_input_helper_selection $(BUILDDIR)/input_helper_fixture $(BUILDDIR)/input_fallback_fixture: $(BUILDDIR)/input-helper-paths
 
 # Separate hardened libc-only executable, even in debug builds. Sanitizer
 # runtimes and the renderer libraries must never enter the privileged helper.
@@ -264,7 +263,6 @@ compiledb: clean
 # TEST TARGETS
 # =============================================================================
 
-TESTDIR = tests
 TEST_CFLAGS = $(BASE_CFLAGS) -g3 -O0 -DDEBUG -DTEST_BUILD
 TEST_LDFLAGS = $(TEXT_LIBS) -lm -lpthread
 # Set here rather than passed down: re-quoting flags on a command line
@@ -274,121 +272,111 @@ TEST_CFLAGS += -fsanitize=address,undefined
 TEST_LDFLAGS += -fsanitize=address,undefined
 endif
 
-COMPOSITOR_TEST_DEPS = src/platform/compositor.c src/platform/compositor_niri.c src/platform/compositor_niri_json.c src/platform/compositor_niri_windows.c src/platform/compositor_hyprland.c src/platform/compositor_sway.c src/platform/compositor_stream.c src/utils/json.c
+# Keep test objects separate from both product build types.
+TEST_OBJDIR = $(BUILDDIR)/test/obj
+TEST_LIB = $(BUILDDIR)/test/libherdcat.a
+TEST_SOURCES = $(filter-out src/core/main.c,$(SOURCES))
+TEST_OBJECTS = $(TEST_SOURCES:src/%.c=$(TEST_OBJDIR)/%.o)
+TEST_ARCHIVE_OBJECTS = $(TEST_OBJECTS)
+TEST_FLAGS = $(BUILDDIR)/test/flags
 
-OVERLAY_SIGNS_TEST_DEPS = src/graphics/text.c src/config/nameplate.c src/graphics/sign_names.c src/graphics/sign_nameplate.c src/platform/overlay_signs.c src/platform/overlay_menu.c src/platform/overlay_signs_geometry.c
-SIGNS_TEST_DEPS = src/graphics/text.c src/config/nameplate.c src/graphics/sign_names.c src/graphics/sign_nameplate.c src/graphics/sign_palette.c src/graphics/signs.c src/graphics/signs_fan.c src/graphics/signs_post.c src/graphics/signs_state_plate.c src/graphics/signs_menu.c src/graphics/signs_transform.c
+# The compositor server is a fixture, not a standalone unit test.
+TEST_SOURCES_C = $(filter-out tests/test_compositor.c \
+  tests/test_compositor_pointer.c,$(wildcard tests/test_*.c))
+# Preserve the existing order; newly added tests run after this list.
+TEST_ORDER = test_input_helper_selection test_input_helper test_post_split test_subagent_badge \
+  test_session_recovery test_sign_rows test_desk_offset test_agent_children \
+  test_text_centering test_sign_names_render test_title_hooks test_title_focus \
+  test_agent_title test_sign_names test_nameplate test_name_config \
+  test_signs_desk_clear test_signs_detached test_overlay_below test_overlay_vertical \
+  test_signs_below test_theme_auto test_compositor_backends test_theme_watch \
+  test_overlay_pixels test_overlay_geometry test_font_panel_memory test_terminal_focus \
+  test_sign_palette test_theme_pixels test_sign_cache test_buffer_damage \
+  test_transcript test_agent_adapters test_overlay_signs test_font_panel \
+  test_sign_draw test_signs test_text test_focus \
+  test_focus_watch test_drag test_prefs test_agent_hook \
+  test_agent_watch test_agent_sessions test_agent_state test_nanosvg \
+  test_input test_animation test_hyprland test_runtime \
+  test_config test_paw_frame test_scale test_fullscreen_state \
+  test_session_store test_agent_discover test_agent_terminal
+TEST_DISCOVERED = $(TEST_SOURCES_C:tests/%.c=$(BUILDDIR)/%)
+TEST_BINARIES = $(filter $(TEST_DISCOVERED),$(addprefix $(BUILDDIR)/,$(TEST_ORDER))) \
+  $(filter-out $(addprefix $(BUILDDIR)/,$(TEST_ORDER)),$(TEST_DISCOVERED))
 
-# Source files needed by test_config
-CONFIG_MODULE_SOURCES = src/config/nameplate.c src/config/config.c src/config/config_parse.c src/config/config_validate.c
-CONFIG_TEST_DEPS = $(CONFIG_MODULE_SOURCES) src/utils/error.c
+.PHONY: test-flags-check
+$(TEST_FLAGS): test-flags-check | $(BUILDDIR)/test
+	$(file >$@.tmp,$(TEST_CFLAGS) $(TEST_LDFLAGS))
+	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
 
-$(BUILDDIR)/test_config: $(TESTDIR)/test_config.c $(CONFIG_TEST_DEPS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+$(BUILDDIR)/test:
+	mkdir -p $@
 
-$(BUILDDIR)/test_paw_frame: $(TESTDIR)/test_paw_frame.c | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+$(TEST_OBJDIR)/%.o: src/%.c $(TEST_FLAGS)
+	@mkdir -p $(@D)
+	$(CC) $(TEST_CFLAGS) -MMD -MP -c $< -o $@
 
-$(BUILDDIR)/test_scale: $(TESTDIR)/test_scale.c | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+# Fakes replace whole translation units. All other objects remain shared.
+TEST_REDRAW_LIB = $(BUILDDIR)/test/libherdcat-redraw.a
+TEST_ANIMATION_LIB = $(BUILDDIR)/test/libherdcat-animation.a
+TEST_PANEL_LIB = $(BUILDDIR)/test/libherdcat-panel.a
+$(TEST_REDRAW_LIB): TEST_ARCHIVE_OBJECTS = $(filter-out \
+  $(TEST_OBJDIR)/platform/overlay_requests.o,$(TEST_OBJECTS))
+$(TEST_ANIMATION_LIB): TEST_ARCHIVE_OBJECTS = $(filter-out \
+  $(TEST_OBJDIR)/platform/overlay_requests.o \
+  $(TEST_OBJDIR)/platform/input.o,$(TEST_OBJECTS))
+$(TEST_PANEL_LIB): TEST_ARCHIVE_OBJECTS = $(filter-out \
+  $(TEST_OBJDIR)/platform/font_panel.o,$(TEST_OBJECTS))
 
-$(BUILDDIR)/test_fullscreen_state: $(TESTDIR)/test_fullscreen_state.c | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+.SECONDEXPANSION:
+$(TEST_LIB) $(TEST_REDRAW_LIB) $(TEST_ANIMATION_LIB) $(TEST_PANEL_LIB): \
+  $$(TEST_ARCHIVE_OBJECTS)
+	@rm -f $@
+	$(AR) rcs $@ $^
 
-$(BUILDDIR)/test_runtime: $(TESTDIR)/test_runtime.c src/core/control.c src/config/config_watcher.c $(CONFIG_TEST_DEPS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+$(BUILDDIR)/test_%: tests/test_%.c $(TEST_LIB)
+	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_LIB) \
+	  -o $@ $(TEST_LDFLAGS) $(TEST_WRAPS)
 
-$(BUILDDIR)/test_terminal_focus: tests/test_terminal_focus.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_windows.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+# Dedicated link rules for tests with their own platform fakes.
+$(BUILDDIR)/test_hyprland: tests/test_hyprland.c $(TEST_REDRAW_LIB)
+	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_REDRAW_LIB) \
+	  -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_focus: tests/test_focus.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_windows.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+$(addprefix $(BUILDDIR)/,test_animation test_overlay_pixels test_buffer_damage): \
+$(BUILDDIR)/%: tests/%.c $(TEST_ANIMATION_LIB)
+	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_ANIMATION_LIB) \
+	  -o $@ $(TEST_LDFLAGS) -lwayland-client
 
-$(BUILDDIR)/test_focus_watch: tests/test_focus_watch.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_windows.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+$(addprefix $(BUILDDIR)/,test_overlay_signs test_overlay_below test_session_recovery): \
+$(BUILDDIR)/%: tests/%.c $(TEST_PANEL_LIB)
+	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_PANEL_LIB) \
+	  -o $@ $(TEST_LDFLAGS) $(TEST_WRAPS)
 
-$(BUILDDIR)/test_text: tests/test_text.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+# Wrappers need only their linker options; compilation still uses the library.
+$(BUILDDIR)/test_input_helper_selection: TEST_WRAPS = -Wl,--wrap=access,--wrap=socketpair,--wrap=posix_spawn,--wrap=close,--wrap=kill,--wrap=waitpid
+$(BUILDDIR)/test_input: TEST_WRAPS = -Wl,--wrap=ioctl,--wrap=stat
+$(BUILDDIR)/test_theme_pixels: TEST_WRAPS = -Wl,--wrap=text_measure
+$(BUILDDIR)/test_theme_watch: TEST_WRAPS = -Wl,--wrap=posix_spawnp
+$(BUILDDIR)/test_compositor_backends: TEST_WRAPS = -Wl,--wrap=socket,--wrap=connect
+$(BUILDDIR)/test_agent_children: TEST_WRAPS = -Wl,--wrap=openat
+$(BUILDDIR)/test_title_hooks: TEST_WRAPS = -Wl,--wrap=control_request
+$(BUILDDIR)/test_text_centering: TEST_WRAPS = -Wl,--wrap=FT_Get_Sfnt_Table,--wrap=FT_Get_Char_Index
+$(BUILDDIR)/test_session_recovery: TEST_WRAPS = -Wl,--wrap=signs_frame
 
-$(BUILDDIR)/test_signs: tests/test_signs.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+# These tests embed a source implementation with their own defines/flags.
+$(BUILDDIR)/test_input_helper: tests/test_input_helper.c $(TEST_LIB)
+	$(CC) -std=c2x -Iinclude -Itests -g -O0 -Wall -Wextra \
+	  -MMD -MP -MF $@.d $< $(TEST_LIB) -o $@ \
+	  -Wl,--wrap=open,--wrap=openat,--wrap=fstat,--wrap=setresgid,--wrap=getresgid
 
-$(BUILDDIR)/test_sign_draw: tests/test_sign_draw.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
+$(BUILDDIR)/test_nanosvg: tests/test_nanosvg.c $(TEST_LIB)
+	$(CC) -std=c2x -Ilib -Itests $(filter -fsanitize=%,$(TEST_CFLAGS)) \
+	  -MMD -MP -MF $@.d $< $(TEST_LIB) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_sign_cache: tests/test_sign_cache.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_buffer_damage: tests/test_buffer_damage.c src/platform/shm_buffer.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c src/graphics/animation.c src/graphics/embedded_assets.c src/core/agent_state.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS) -lwayland-client
-
-$(BUILDDIR)/test_font_panel: tests/test_font_panel.c src/graphics/font_panel.c src/graphics/sign_palette.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_font_panel_memory: tests/test_font_panel_memory.c src/graphics/font_panel.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_overlay_signs: tests/test_overlay_signs.c $(CONFIG_MODULE_SOURCES) $(OVERLAY_SIGNS_TEST_DEPS) $(SIGNS_TEST_DEPS) src/graphics/text.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_windows.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_theme_pixels: tests/test_theme_pixels.c src/graphics/font_panel.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS) -Wl,--wrap=text_measure
-
-$(BUILDDIR)/test_sign_palette: tests/test_sign_palette.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-THEME_TEST_DEPS = src/platform/theme_watch.c src/platform/command_job.c src/platform/agent_watch.c src/graphics/sign_palette.c src/utils/json.c
-
-$(BUILDDIR)/test_theme_watch: tests/test_theme_watch.c $(THEME_TEST_DEPS) $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=posix_spawnp
-
-$(BUILDDIR)/test_compositor_backends: tests/test_compositor_backends.c $(COMPOSITOR_TEST_DEPS) src/platform/focus_watch.c src/platform/focus_current.c src/platform/focus.c src/platform/focus_windows.c src/platform/command_job.c src/platform/focus_json.c src/platform/agent_watch.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=socket,--wrap=connect
-
-$(BUILDDIR)/test_theme_auto: tests/test_theme_auto.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-AGENT_CHILDREN_SESSION_DEPS = src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/core/agent_state.c src/platform/transcript_path.c src/utils/json.c
-
-$(BUILDDIR)/test_agent_children: tests/test_agent_children.c $(AGENT_CHILDREN_SESSION_DEPS) $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/platform/agent_watch.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS) -Wl,--wrap=openat
-
-TEST_BINARIES = $(BUILDDIR)/test_input_helper_selection $(BUILDDIR)/test_input_helper $(BUILDDIR)/test_post_split $(BUILDDIR)/test_subagent_badge $(BUILDDIR)/test_session_recovery $(BUILDDIR)/test_sign_rows $(BUILDDIR)/test_desk_offset $(BUILDDIR)/test_agent_children $(BUILDDIR)/test_text_centering $(BUILDDIR)/test_sign_names_render $(BUILDDIR)/test_title_hooks $(BUILDDIR)/test_title_focus $(BUILDDIR)/test_agent_title $(BUILDDIR)/test_sign_names $(BUILDDIR)/test_nameplate $(BUILDDIR)/test_name_config $(BUILDDIR)/test_signs_desk_clear $(BUILDDIR)/test_signs_detached $(BUILDDIR)/test_overlay_below $(BUILDDIR)/test_overlay_vertical $(BUILDDIR)/test_signs_below $(BUILDDIR)/test_theme_auto $(BUILDDIR)/test_compositor_backends $(BUILDDIR)/test_theme_watch $(BUILDDIR)/test_overlay_pixels $(BUILDDIR)/test_overlay_geometry $(BUILDDIR)/test_font_panel_memory $(BUILDDIR)/test_terminal_focus $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
-
-$(BUILDDIR)/test_overlay_pixels: tests/test_overlay_pixels.c src/platform/overlay_geometry.c src/graphics/font_panel.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c src/graphics/animation.c src/graphics/embedded_assets.c src/core/agent_state.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_overlay_geometry: tests/test_overlay_geometry.c src/platform/overlay_geometry.c src/platform/drag.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_drag: tests/test_drag.c src/platform/drag.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_prefs: tests/test_prefs.c src/platform/prefs.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_agent_hook: tests/test_agent_hook.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/platform/agent_terminal.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_agent_watch: tests/test_agent_watch.c src/platform/agent_watch.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_agent_sessions: tests/test_agent_sessions.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_session_store: tests/test_session_store.c src/platform/session_store.c src/platform/agent_terminal.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/core/agent_transcript.c src/platform/transcript_watch.c src/platform/command_job.c src/platform/agent_watch.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/agent_adapters.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_agent_discover: tests/test_agent_discover.c src/platform/agent_discover.c src/platform/agent_terminal.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/core/agent_adapters.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_agent_terminal: tests/test_agent_terminal.c src/platform/agent_terminal.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_agent_state: tests/test_agent_state.c src/core/agent_state.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(TEST_BINARIES): $(PROJECT_HEADERS) tests/test_helpers.h
+-include $(TEST_OBJECTS:.o=.d) $(TEST_BINARIES:=.d)
+-include $(addprefix $(BUILDDIR)/,agent_children_fixture.d \
+  input_helper_fixture.d input_fallback_fixture.d)
+-include $(BUILDDIR)/test/input_fallback.d
 
 # The completion test asks the program itself for its options.
 test: $(TEST_BINARIES) $(TARGET) $(BUILDDIR)/herdcat-input
@@ -447,12 +435,6 @@ compositor-test-build:
 	wayland-scanner server-header protocols/wlr-foreign-toplevel-management-unstable-v1.xml $(BUILDDIR)/compositor/fullscreen-server.h
 	$(CC) -std=c2x -g -Wall -Wextra -I$(BUILDDIR)/compositor tests/test_compositor.c tests/test_compositor_pointer.c protocols/zwlr-layer-shell-v1-protocol.c protocols/xdg-shell-protocol.c protocols/viewporter-protocol.c protocols/fractional-scale-v1-protocol.c protocols/wlr-foreign-toplevel-management-v1-protocol.c -o $(BUILDDIR)/compositor/server -lwayland-server
 
-$(BUILDDIR)/test_animation: tests/test_animation.c src/core/agent_state.c src/graphics/animation.c src/graphics/embedded_assets.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_hyprland: tests/test_hyprland.c src/platform/hyprland.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
 .PHONY: test-runtime
 test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent_children_fixture
 	python3 scripts/test_subagent_badge_runtime.py
@@ -474,87 +456,25 @@ test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent
 	python3 scripts/test_font_panel_runtime.py
 	python3 scripts/test_below_runtime.py
 
-$(BUILDDIR)/test_input_helper_selection: tests/test_input_helper_selection.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=access,--wrap=socketpair,--wrap=posix_spawn,--wrap=close,--wrap=kill,--wrap=waitpid
-
-$(BUILDDIR)/test_input_helper: tests/test_input_helper.c src/input/input_helper.c include/platform/input_protocol.h tests/test_helpers.h | $(OBJDIR)
-	$(CC) -std=c2x -Iinclude -Itests -g -O0 -Wall -Wextra $< -o $@ -Wl,--wrap=open,--wrap=openat,--wrap=fstat,--wrap=setresgid,--wrap=getresgid
-
-$(BUILDDIR)/test_input: tests/test_input.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=ioctl,--wrap=stat
-
-$(BUILDDIR)/test_nanosvg: tests/test_nanosvg.c lib/nanosvg.h lib/nanosvgrast.h tests/test_helpers.h | $(OBJDIR)
-	$(CC) -std=c2x -Ilib -Itests $(filter -fsanitize=%,$(TEST_CFLAGS)) $< -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_agent_adapters: tests/test_agent_adapters.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/platform/agent_terminal.c src/core/agent_adapters.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_transcript: tests/test_transcript.c src/core/agent_transcript.c src/platform/transcript_watch.c src/platform/command_job.c src/platform/agent_watch.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/platform/agent_terminal.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_overlay_vertical: tests/test_overlay_vertical.c src/platform/overlay_vertical.c src/platform/overlay_geometry.c src/platform/drag.c src/graphics/font_panel.c src/graphics/text.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_signs_below: tests/test_signs_below.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_overlay_below: tests/test_overlay_below.c $(CONFIG_MODULE_SOURCES) $(OVERLAY_SIGNS_TEST_DEPS) $(SIGNS_TEST_DEPS) src/graphics/text.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_windows.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_signs_detached: tests/test_signs_detached.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_signs_desk_clear: tests/test_signs_desk_clear.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_agent_title: tests/test_agent_title.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/core/agent_state.c src/platform/transcript_path.c src/utils/json.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_sign_names: tests/test_sign_names.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_nameplate: tests/test_nameplate.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_name_config: tests/test_name_config.c $(CONFIG_TEST_DEPS) $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_title_focus: tests/test_title_focus.c src/platform/focus_windows.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/agent_adapters.c src/platform/agent_terminal.c src/core/control.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_title_hooks: tests/test_title_hooks.c src/platform/session_store.c src/platform/agent_terminal.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/core/agent_transcript.c src/platform/transcript_watch.c src/platform/command_job.c src/platform/agent_watch.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/agent_adapters.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=control_request
-
-$(BUILDDIR)/test_sign_names_render: tests/test_sign_names_render.c $(CONFIG_TEST_DEPS) $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_text_centering: tests/test_text_centering.c src/graphics/post_text_layout.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=FT_Get_Sfnt_Table,--wrap=FT_Get_Char_Index
-
-$(BUILDDIR)/agent_children_fixture: tests/agent_children_fixture.c $(AGENT_CHILDREN_SESSION_DEPS) $(SIGNS_TEST_DEPS) src/platform/agent_watch.c src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
-
-$(BUILDDIR)/test_desk_offset: tests/test_desk_offset.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_sign_rows: tests/test_sign_rows.c tests/sign_rows_hashes.h $(SIGNS_TEST_DEPS) src/platform/overlay_vertical.c src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_session_recovery: tests/test_session_recovery.c $(CONFIG_MODULE_SOURCES) $(OVERLAY_SIGNS_TEST_DEPS) $(SIGNS_TEST_DEPS) src/graphics/text.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_windows.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/control.c src/utils/error.c src/platform/session_store.c src/platform/transcript_watch.c src/core/agent_transcript.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS) -Wl,--wrap=signs_frame
-
-$(BUILDDIR)/test_subagent_badge: tests/test_subagent_badge.c tests/subagent_pixel_hashes.h $(AGENT_CHILDREN_SESSION_DEPS) $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
-
-$(BUILDDIR)/test_post_split: tests/test_post_split.c $(SIGNS_TEST_DEPS) src/platform/overlay_geometry.c src/platform/drag.c src/utils/error.c src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+$(BUILDDIR)/agent_children_fixture: tests/agent_children_fixture.c $(TEST_LIB)
+	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_LIB) \
+	  -o $@ $(TEST_LDFLAGS)
 
 # Explicitly outside-sandbox acceptance; never part of make test.
 .PHONY: input-helper-runtime-build
 input-helper-runtime-build: $(BUILDDIR)/input_helper_fixture $(BUILDDIR)/input_fallback_fixture
 
-$(BUILDDIR)/input_helper_fixture: tests/input_helper_fixture.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+$(BUILDDIR)/input_helper_fixture: tests/input_helper_fixture.c $(TEST_LIB)
+	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_LIB) \
+	  -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/input_fallback_fixture: tests/input_helper_fixture.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) -UHERDCAT_INPUT_HELPER_PATH -UHERDCAT_INPUT_WRAPPER_PATH -DHERDCAT_INPUT_HELPER_PATH='"/nonexistent/herdcat-input"' $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+# Rebuild only the selector with a deliberately unavailable helper path.
+$(BUILDDIR)/test/input_fallback.o: src/platform/input.c $(TEST_FLAGS)
+	$(CC) $(TEST_CFLAGS) -UHERDCAT_INPUT_HELPER_PATH \
+	  -UHERDCAT_INPUT_WRAPPER_PATH \
+	  -DHERDCAT_INPUT_HELPER_PATH='"/nonexistent/herdcat-input"' \
+	  -MMD -MP -c $< -o $@
+
+$(BUILDDIR)/input_fallback_fixture: tests/input_helper_fixture.c \
+  $(BUILDDIR)/test/input_fallback.o $(TEST_LIB)
+	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $^ -o $@ $(TEST_LDFLAGS)

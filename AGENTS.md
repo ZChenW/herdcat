@@ -42,10 +42,12 @@ helpers.
 ## Testing Guidelines
 
 Tests are standalone C programs using the repository's `TEST_ASSERT` macros.
-Name new files `tests/test_<module>.c`, add their binary and dependencies to the
-Makefile, and return nonzero on failure. Add focused tests for parsing,
-validation, memory, and other deterministic logic. No coverage threshold is
-defined. Before submitting, run `make format-check`, `make release`,
+Name new files `tests/test_<module>.c`; `make test` discovers them automatically
+and links them against the test library. Return nonzero on failure. Tests with
+linker wrappers, fakes, or special compilation flags need a dedicated Makefile
+rule. Add focused tests for parsing, validation, memory, and other deterministic
+logic. No coverage threshold is defined. Before submitting, run
+`make format-check`, `make release`,
 `make clean && make debug`, and `make test`, matching CI.
 
 ## Commit & Pull Request Guidelines
