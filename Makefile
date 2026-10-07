@@ -351,7 +351,8 @@ $(BUILDDIR)/test_agent_state: tests/test_agent_state.c src/core/agent_state.c $(
 
 $(TEST_BINARIES): $(PROJECT_HEADERS) tests/test_helpers.h
 
-test: $(TEST_BINARIES)
+# The completion test asks the program itself for its options.
+test: $(TEST_BINARIES) $(TARGET)
 	@echo "Running tests..."
 	@failures=0; \
 	for t in $(TEST_BINARIES); do \

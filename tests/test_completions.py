@@ -9,11 +9,8 @@ import unittest
 ROOT = Path(__file__).resolve().parent.parent
 
 
-# Any build will do: CI only has the debug one when the tests run.
-BINARY = next((ROOT / 'build' / kind / 'herdcat'
-               for kind in ('release', 'debug', '')
-               if (ROOT / 'build' / kind / 'herdcat').is_file()),
-              ROOT / 'build/release/herdcat')
+# make test builds this one, also after test-sanitize has cleaned.
+BINARY = ROOT / 'build/herdcat'
 
 class CompletionTests(unittest.TestCase):
     @classmethod
