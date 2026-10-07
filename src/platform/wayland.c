@@ -251,6 +251,7 @@ static void request_size(overlay_t *overlay, int capacity) {
     surface_tier_ready(&overlay->tiers);
     overlay_signs_capacity((size_t)(overlay - overlays),
                            overlay->tiers.capacity);
+    clamp_position(overlay);
     return;
   }
   overlay->await_configure = true;
@@ -542,6 +543,11 @@ herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
       if (overlay->tiers.pending) {
         surface_tier_ready(&overlay->tiers);
         overlay_signs_capacity(i, overlay->tiers.capacity);
+        // Flip at the promoted capacity before admitting any new sign frame.
+        int old_cat_x = overlay->cat_x, old_cat_y = overlay->cat_y;
+        clamp_position(overlay);
+        overlay_pointer_rebase(overlay, overlay->cat_x - old_cat_x,
+                               overlay->cat_y - old_cat_y);
       }
       int cat_h = scale_size_120(overlay->config.cat_height, overlay->scale);
       int64_t cat_w = scale_size_120(cat_width(overlay), overlay->scale);

@@ -115,9 +115,15 @@ panel cancel the countdown. The countdown joins the shared poll deadline,
 with no recurring idle wake or added descriptor. A new output starts with its
 own lane readiness gate; one output's configure cannot admit another's signs.
 
-Saved cat positions and orientation thresholds are evaluated against the
-configured maximum, independently of the current tier. A smaller surface
-translates its cat and desk coordinates by the inverse origin change. Vertical
+Saved cat positions, edge clamping and the reference physical-pixel phase are
+evaluated against the configured maximum. Orientation alone uses the committed
+capacity: zero and up to five use `min(5, sign_max)`, larger tiers use `sign_max`.
+The capacity is explicit, never inferred from compositor-constrained dimensions.
+After configure and replacement-buffer allocation, capacity promotion rechecks
+placement and rebases pointer geometry before building the first new sign frame.
+Delayed shrink uses this same handoff and the existing flip transition.
+A smaller surface translates its cat and desk coordinates by the inverse origin
+change. Vertical
 translations retain the full surface's physical-pixel phase at fractional
 scales; horizontal origins continue to use the existing grid alignment.
 Pointer hit geometry is rebased with the surface, while implicit drag-grab
@@ -160,7 +166,10 @@ physical pixel grid for fractional scales. Nonzero overlay opacity retains
 the output-wide background bar.
 
 `platform/overlay_vertical.c` selects above/below signs from the cat's output
-height, with a 24px return hysteresis. `platform/overlay_position.c` maps the
+height and current tier clearance, with a 24px return hysteresis. Both the
+upper-edge threshold and lower-edge fit condition use this clearance, including
+any extra name row. Drag motion takes the same placement path; grabs keep the
+current tier from shrinking. `platform/overlay_position.c` maps the
 saved displacement to the surface margins and per-surface cat coordinates.
 Transparent sign overlays clamp the cat rather than the whole surface, and
 keep the surface inside the output by changing its origin at either edge.
@@ -339,6 +348,12 @@ shapes. On glibc, this also returns freed heap pages to the kernel. The core
 session tick cancels that deadline when waiting resumes.
 `graphics/text.c` uses FreeType grayscale glyphs,
 a 512-entry glyph LRU, bounded faces and Fontconfig per-codepoint fallback.
+Truncation markers share one physical geometry for measurement and drawing:
+three baseline periods at full advance, with the first ink bearing clamped to
+0.16–0.28 of the scaled font size, and at least the space between dots. Transparent period
+bitmap edges are excluded from the ink width; missing periods use circular
+dots with the same leading gap. Fractional widths round into the existing
+logical budget, and markers that do not fit are omitted whole.
 Scale changes clear glyph/bitmap caches; a font reload clears both. There is no
 HarfBuzz shaping (no RTL, ligatures or combining-character layout).
 

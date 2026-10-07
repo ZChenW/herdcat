@@ -94,10 +94,18 @@ width stays 820 at cat height 110. See the
 
 Menu opening
 retracts both fan rows. The typing desk, switch card and font panel keep their
-existing layout. Surface height and above/below thresholds reserve room for
-the configured `sign_max`, even when fewer sessions are present; values up to
-five retain the previous height. See the [sign rows report](performance/sign-rows-report.md)
-and [rendered examples](design/two-rows/README.md).
+existing layout. Surface height follows the current allocation tier. Above/below
+thresholds use that tier's capacity: zero and up to five reserve
+`min(5, sign_max)` boards; the larger tier reserves `sign_max`. A 110px cat with
+one-line names therefore flips below at 180px from the output top in the small
+tier, and at 273px (fan) or 345px (post) in the ten-board tier. Returning above
+requires another 24 logical pixels. Growth rechecks direction after configure
+and buffer allocation, before the sixth board enters. Shrink waits the existing
+ten seconds and applies the same return hysteresis. Dragging uses this same
+threshold and blocks shrinking. Saved positions and edge clamping continue to
+use the configured maximum. See the
+[sign rows report](performance/sign-rows-report.md) and
+[rendered examples](design/two-rows/README.md).
 
 ## Terminal support
 
@@ -283,12 +291,15 @@ No sign-related periodic wakes remain when there are no sessions, hover or
 keys. Reduced/off disable loops, including the desk caret blink; visible working
 duration labels still update once a minute.
 
-Truncation markers use three compact periods from the selected font and weight,
+Truncation markers use three spaced periods from the selected font and weight,
 anchored to the text baseline. A font without periods uses three circular dots.
 These dots share their measurement and drawing geometry across nameplates,
-post pills, the typing desk, the switch card and the font panel. They follow the
-cut text without a space; the higher ` · ` separator keeps its original spaces.
-See the [before/after examples](design/ellipsis/README.md).
+post pills, the typing desk, the switch card and the font panel. Before the
+first dot, the gap is at least the space between the dots, kept within 0.16–0.28 times the font size on the physical pixel grid. Dot steps
+use the period's full advance. ASCII spaces before the marker are removed;
+the higher ` · ` separator keeps its original spaces. The marker is omitted
+as a group if its measured width does not fit.
+See the [spacing comparisons](design/ellipsis-gap/README.md).
 
 ## Dragging
 

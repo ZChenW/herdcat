@@ -107,6 +107,76 @@ static void timing(void) {
   TEST_ASSERT(b.capacity == 5);
   TEST_ASSERT(surface_tier_update(&b, 10, false, false, 102) == 10);
 }
+static void tier_thresholds(void) {
+  TEST_ASSERT(
+      surface_tier_vertical(NULL, 0, 1080, 120, false, SIGN_ABOVE, 120, 0)
+          .cat_y_in_output == 0);
+  const int counts[] = {0, 1, 5, 6, 10};
+  for (int style = SIGN_STYLE_POST; style <= SIGN_STYLE_FAN; style++) {
+    config.sign_style = (sign_style_t)style;
+    for (int maximum = 5; maximum <= 10; maximum += 5) {
+      config.sign_max = maximum;
+      for (size_t n = 0; n < sizeof(counts) / sizeof(*counts); n++) {
+        int capacity = surface_tier_capacity(&config, counts[n], false);
+        int threshold = capacity <= 5             ? 180
+                        : style == SIGN_STYLE_FAN ? 273
+                                                  : 345;
+        surface_size_t size = surface_tier_size(&config, capacity, 1920, 120);
+        config.overlay_position = POSITION_TOP;
+        overlay_vertical_t down =
+            surface_tier_vertical(&config, threshold - 1, 1080, size.height,
+                                  true, SIGN_ABOVE, 120, capacity);
+        TEST_ASSERT(down.orientation == SIGN_BELOW);
+        overlay_vertical_t up =
+            surface_tier_vertical(&config, threshold, 1080, size.height, true,
+                                  SIGN_ABOVE, 120, capacity);
+        TEST_ASSERT(up.orientation == SIGN_ABOVE);
+        down = surface_tier_vertical(&config, threshold + 23, 1080, size.height,
+                                     true, SIGN_BELOW, 120, capacity);
+        TEST_ASSERT(down.orientation == SIGN_BELOW);
+        up = surface_tier_vertical(&config, threshold + 24, 1080, size.height,
+                                   true, SIGN_BELOW, 120, capacity);
+        TEST_ASSERT(up.orientation == SIGN_ABOVE);
+        // The lower-edge condition uses the very same clearance.
+        up = surface_tier_vertical(&config, threshold - 1,
+                                   110 + 2 * threshold - 2, size.height, true,
+                                   SIGN_BELOW, 120, capacity);
+        TEST_ASSERT(up.orientation == SIGN_ABOVE);
+      }
+    }
+  }
+}
+static void tier_flip(void) {
+  config.sign_style = SIGN_STYLE_FAN;
+  config.sign_max = 10;
+  config.overlay_position = POSITION_TOP;
+  surface_tiers_t tiers = {.capacity = 5};
+  surface_size_t small = surface_tier_size(&config, 5, 1920, 120);
+  surface_size_t large = surface_tier_size(&config, 10, 1920, 120);
+  overlay_vertical_t p = surface_tier_vertical(&config, 220, 1080, small.height,
+                                               true, SIGN_ABOVE, 120, 5);
+  TEST_ASSERT(p.orientation == SIGN_ABOVE && p.position_y == 220);
+  TEST_ASSERT(surface_tier_update(&tiers, 10, false, false, 100) == 10);
+  TEST_ASSERT(tiers.capacity == 5);  // no sixth entry until buffers are ready
+  surface_tier_ready(&tiers);
+  p = surface_tier_vertical(&config, 220, 1080, large.height, true,
+                            p.orientation, 120, tiers.capacity);
+  TEST_ASSERT(p.orientation == SIGN_BELOW && p.position_y == 220);
+  // During a grab, shrink is blocked and the orientation threshold is stable.
+  TEST_ASSERT(surface_tier_update(&tiers, 5, true, false, 200) == -1);
+  TEST_ASSERT(tiers.capacity == 10 && !tiers.shrink_at);
+  TEST_ASSERT(surface_tier_update(&tiers, 5, false, false, 300) == -1);
+  TEST_ASSERT(surface_tier_update(&tiers, 5, false, false, 10299) == -1);
+  TEST_ASSERT(surface_tier_update(&tiers, 5, false, false, 10300) == 5);
+  surface_tier_ready(&tiers);
+  p = surface_tier_vertical(&config, 220, 1080, small.height, true,
+                            p.orientation, 120, tiers.capacity);
+  TEST_ASSERT(p.orientation == SIGN_ABOVE && p.position_y == 220);
+  // Shrinking below the return boundary still stays below.
+  p = surface_tier_vertical(&config, 203, 1080, small.height, true, SIGN_BELOW,
+                            120, 5);
+  TEST_ASSERT(p.orientation == SIGN_BELOW);
+}
 static void placement(void) {
   config.sign_max = 10;
   const uint32_t scales[] = {120, 240, 150};
@@ -122,15 +192,22 @@ static void placement(void) {
           int position = top ? target : base - target;
           overlay_vertical_t old =
               surface_tier_vertical(&config, position, 1080, full.height, false,
-                                    SIGN_ABOVE, scales[s]);
+                                    SIGN_ABOVE, scales[s], 10);
           for (int tier = 0; tier <= 10; tier += 5) {
             surface_size_t small =
                 surface_tier_size(&config, tier, 2560, scales[s]);
             overlay_vertical_t next =
                 surface_tier_vertical(&config, position, 1080, small.height,
-                                      false, SIGN_ABOVE, scales[s]);
+                                      false, SIGN_ABOVE, scales[s], tier);
             TEST_ASSERT(old.cat_y_in_output == next.cat_y_in_output);
-            TEST_ASSERT(old.orientation == next.orientation);
+            TEST_ASSERT(next.position_y == position);
+            int threshold = tier <= 5                 ? 180
+                            : style == SIGN_STYLE_FAN ? 273
+                                                      : 345;
+            TEST_ASSERT(next.orientation ==
+                        (target >= threshold || target + 110 + threshold > 1080
+                             ? SIGN_ABOVE
+                             : SIGN_BELOW));
             int origin1 =
                 top ? old.margin_y : 1080 - full.height - old.margin_y;
             int origin2 =
@@ -157,6 +234,8 @@ int main(void) {
   runtime_sizes();
   selection();
   timing();
+  tier_thresholds();
+  tier_flip();
   placement();
   puts("Surface tier selection, delay/cancel/blockers and pixel placement "
        "passed.");

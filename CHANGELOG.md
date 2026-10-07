@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- The truncation ellipsis no longer touches the letter before it: it stands
+  as far from the text as its dots stand from each other, and the dots keep
+  the font's own spacing.
+- Signs flip below using the current surface tier's capacity, so five or fewer
+  boards no longer reserve ten-board clearance. Growth flips before new boards
+  enter; delayed shrink retains the 24px return hysteresis. Saved positions
+  retain their previous meaning.
+
 - Claude and Grok signs return to idle after an early cancellation that emits
   no stop hook, using two quiet terminal-output windows. Detection runs only
   for eligible working processes; waiting and unread completions are preserved.

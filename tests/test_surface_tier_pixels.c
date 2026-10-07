@@ -33,8 +33,9 @@ static uint64_t scene(config_t config, uint32_t scale, int count, bool below,
     surface_size_t size = surface_tier_size(&config, capacity, output_w, scale);
     width = size.width;
     height = size.height;
-    vertical = surface_tier_vertical(&config, position, output_h, height, false,
-                                     SIGN_ABOVE, scale);
+    vertical = surface_tier_vertical(
+        &config, position, output_h, height, false, SIGN_ABOVE, scale,
+        surface_tier_capacity(&config, count, false));
   }
 #else
   (void)tiered;
@@ -179,9 +180,10 @@ static void motion_bounds(void) {
           for (int below = 0; below < 2; below++) {
             int old_h = overlay_signs_height(&config);
             int base = 1080 - old_h + overlay_signs_resting_y(&config, old_h);
-            overlay_vertical_t vertical =
-                surface_tier_vertical(&config, base - (below ? 50 : 450), 1080,
-                                      size.height, false, SIGN_ABOVE, scale);
+            overlay_vertical_t vertical = surface_tier_vertical(
+                &config, base - (below ? 50 : 450), 1080, size.height, false,
+                SIGN_ABOVE, scale,
+                surface_tier_capacity(&config, count, false));
             TEST_ASSERT(vertical.orientation ==
                         (below ? SIGN_BELOW : SIGN_ABOVE));
             signs_t model = {0};

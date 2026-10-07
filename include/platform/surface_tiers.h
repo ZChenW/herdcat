@@ -26,10 +26,13 @@ int surface_tier_model_height(const config_t *config,
 int surface_tier_update(surface_tiers_t *state, int desired, bool blocked,
                         bool transitioning, int64_t now_ms);
 void surface_tier_ready(surface_tiers_t *state);
+// Capacity is committed after configure and buffer allocation, never inferred
+// from surface dimensions. Saved displacement still uses the configured
+// maximum.
 overlay_vertical_t surface_tier_vertical(const config_t *config, int position_y,
                                          int output_height, int surface_height,
                                          bool has_history,
                                          sign_orientation_t previous,
-                                         uint32_t scale);
+                                         uint32_t scale, int capacity);
 
 #endif

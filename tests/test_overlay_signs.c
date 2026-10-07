@@ -1331,7 +1331,7 @@ static void zero_tier_menu(void) {
       config.sign_animations = SIGN_ANIM_FULL;
       surface_size_t zero = surface_tier_size(&config, 0, 800, scales[s]);
       overlay_vertical_t old = surface_tier_vertical(
-          &config, 0, 600, zero.height, false, SIGN_ABOVE, scales[s]);
+          &config, 0, 600, zero.height, false, SIGN_ABOVE, scales[s], 0);
       overlay_signs_capacity(0, 0);
       overlay_signs_width(0, zero.width);
       overlay_signs_place(0, old.orientation, old.cat_y_in_surface);
@@ -1343,7 +1343,7 @@ static void zero_tier_menu(void) {
       TEST_ASSERT(!overlay_signs_frame(0)->menu_open);
       surface_size_t small = surface_tier_size(&config, 5, 800, scales[s]);
       overlay_vertical_t next = surface_tier_vertical(
-          &config, 0, 600, small.height, true, old.orientation, scales[s]);
+          &config, 0, 600, small.height, true, old.orientation, scales[s], 5);
       int x = (small.width - 72) / 2;
       overlay_signs_place(0, next.orientation, next.cat_y_in_surface);
       overlay_signs_rebase(0, x, next.cat_y_in_surface - old.cat_y_in_surface);

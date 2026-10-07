@@ -18,7 +18,7 @@ void clamp_position(overlay_t *overlay) {
   overlay_vertical_t vertical = surface_tier_vertical(
       &overlay->config, overlay->position_y, overlay->output_height,
       overlay->height, overlay->has_orientation, overlay->orientation,
-      overlay->scale);
+      overlay->scale, overlay->tiers.capacity);
   overlay->position_y = vertical.position_y;
   overlay->margin_y = vertical.margin_y;
   overlay->cat_y = vertical.cat_y_in_surface;

@@ -98,14 +98,21 @@ overlay_vertical_t surface_tier_vertical(const config_t *config, int position_y,
                                          int output_height, int surface_height,
                                          bool has_history,
                                          sign_orientation_t previous,
-                                         uint32_t scale) {
+                                         uint32_t scale, int capacity) {
+  if (!config)
+    return (overlay_vertical_t){.orientation = SIGN_ABOVE};
   int full_height = overlay_signs_height(config);
+  config_t placement = *config;
+  if (enabled(config))
+    placement.sign_max = capacity > 5           ? config->sign_max
+                         : config->sign_max < 5 ? config->sign_max
+                                                : 5;
   overlay_vertical_t reference = overlay_place_vertical(
-      config, position_y, output_height, full_height,
+      &placement, position_y, output_height, full_height,
       overlay_signs_resting_y(config, full_height), has_history, previous);
   if (!enabled(config) || surface_height == full_height)
     return reference;
-  // Saved displacement and orientation always use configured capacity.
+  // Saved displacement and pixel phase retain the configured maximum.
   int above_y =
       overlay_signs_resting_y(config, surface_height) - tail_padding(config);
   int lift = (int)(((int64_t)config->cat_height * 8 + 109) / 110);
@@ -118,8 +125,11 @@ overlay_vertical_t surface_tier_vertical(const config_t *config, int position_y,
   if (origin > limit)
     origin = limit;
   bool top = config->overlay_position == POSITION_TOP;
-  int old_origin = top ? reference.margin_y
-                       : output_height - full_height - reference.margin_y;
+  overlay_vertical_t phase = overlay_place_vertical(
+      config, position_y, output_height, full_height,
+      overlay_signs_resting_y(config, full_height), has_history, previous);
+  int old_origin =
+      top ? phase.margin_y : output_height - full_height - phase.margin_y;
   // Translate by whole physical pixels, retaining the pre-tier pixel phase.
   uint32_t a = 120;
   uint32_t b = scale;
