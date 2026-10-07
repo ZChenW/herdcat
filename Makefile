@@ -2,12 +2,17 @@
 .DEFAULT_GOAL := all
 CC = gcc
 PREFIX ?= /usr/local
+INPUT_HELPER_SETGID ?= 1
+INPUT_HELPER_PATH ?= $(PREFIX)/lib/herdcat/herdcat-input
+ifneq ($(INPUT_HELPER_WRAPPER_PATH),)
+BASE_CFLAGS += -DHERDCAT_INPUT_WRAPPER_PATH='"$(INPUT_HELPER_WRAPPER_PATH)"'
+endif
 
 # Build type (debug or release)
 BUILD_TYPE ?= release
 
 # Base flags (using c2x for C23 compatibility on GCC 9+)
-BASE_CFLAGS = -std=c2x -Iinclude -Ilib -Iprotocols
+BASE_CFLAGS += -std=c2x -Iinclude -Ilib -Iprotocols
 BASE_CFLAGS += -Wall -Wextra -Wpedantic -Wformat=2 -Wstrict-prototypes
 BASE_CFLAGS += -Wmissing-prototypes -Wold-style-definition -Wredundant-decls
 BASE_CFLAGS += -Wnested-externs -Wmissing-include-dirs -Wlogical-op
@@ -16,6 +21,7 @@ BASE_CFLAGS += -fstack-protector-strong
 TEXT_CFLAGS := $(shell pkg-config --cflags freetype2 fontconfig)
 TEXT_LIBS := $(shell pkg-config --libs freetype2 fontconfig)
 BASE_CFLAGS += $(TEXT_CFLAGS)
+BASE_CFLAGS += -DHERDCAT_INPUT_HELPER_PATH='"$(INPUT_HELPER_PATH)"'
 
 # Debug flags
 DEBUG_CFLAGS = $(BASE_CFLAGS) -g3 -O0 -DDEBUG -fsanitize=address -fsanitize=undefined
@@ -43,7 +49,7 @@ OBJDIR = $(BUILDDIR)/$(BUILD_TYPE)/obj
 PROTOCOLDIR = protocols
 
 # Source files (including embedded assets which are now committed)
-SOURCES = $(shell find $(SRCDIR) -name "*.c")
+SOURCES = $(shell find $(SRCDIR) -name "*.c" ! -path "src/input/*")
 OBJECTS = $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 
 # Embedded assets (now committed to git, use embed_assets.sh manually when assets change)
@@ -67,7 +73,23 @@ unexport CLAUDE_PID
 
 .PHONY: all clean distclean protocols embed-assets format format-check lint
 
-all: $(TARGET)
+all: $(TARGET) $(BUILDDIR)/herdcat-input
+
+# Prefix/wrapper changes must rebuild the selector, including an install with
+# a different PREFIX after a local build. Keep helper-location state separate
+# from the privileged program's flags and sources.
+.PHONY: input-helper-path-check
+$(BUILDDIR)/input-helper-paths: input-helper-path-check | $(OBJDIR)
+	@printf '%s\n' '$(INPUT_HELPER_PATH)' '$(INPUT_HELPER_WRAPPER_PATH)' > $@.tmp
+	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
+
+$(OBJDIR)/platform/input.o: $(BUILDDIR)/input-helper-paths
+$(BUILDDIR)/test_input $(BUILDDIR)/test_input_helper_selection $(BUILDDIR)/input_helper_fixture $(BUILDDIR)/input_fallback_fixture: $(BUILDDIR)/input-helper-paths
+
+# Separate hardened libc-only executable, even in debug builds. Sanitizer
+# runtimes and the renderer libraries must never enter the privileged helper.
+$(BUILDDIR)/herdcat-input: src/input/input_helper.c include/platform/input_protocol.h | $(OBJDIR)
+	$(CC) -std=c2x -Iinclude -Wall -Wextra -Wpedantic -O2 -fPIE -fstack-protector-strong -D_FORTIFY_SOURCE=2 $< -o $@ -pie -Wl,-z,relro,-z,now,-z,noexecstack
 
 # Generate embedded assets (manual target - run when assets change)
 embed-assets: 
@@ -137,8 +159,17 @@ debug:
 release:
 	$(MAKE) BUILD_TYPE=release
 
-install: $(TARGET)
+install: $(TARGET) $(BUILDDIR)/herdcat-input
 	install -Dm755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/herdcat
+	install -Dm755 $(BUILDDIR)/herdcat-input $(DESTDIR)$(PREFIX)/lib/herdcat/herdcat-input
+	@if [ "$(INPUT_HELPER_SETGID)" != 0 ]; then \
+		if [ "$$(id -u)" = 0 ]; then \
+			chown root:input $(DESTDIR)$(PREFIX)/lib/herdcat/herdcat-input && \
+			chmod 2755 $(DESTDIR)$(PREFIX)/lib/herdcat/herdcat-input || exit 1; \
+		else \
+			echo "Input helper installed without setgid; root:input mode 2755 or device ACL/input group access is required."; \
+		fi; \
+	fi
 	install -Dm644 herdcat.conf.example $(DESTDIR)$(PREFIX)/share/herdcat/herdcat.conf.example
 	install -Dm755 scripts/find_input_devices.sh $(DESTDIR)$(PREFIX)/bin/herdcat-find-devices
 	install -Dm755 scripts/herdcat-setup $(DESTDIR)$(PREFIX)/bin/herdcat-setup
@@ -155,6 +186,8 @@ install: $(TARGET)
 	install -Dm644 man/herdcat.1 $(DESTDIR)$(PREFIX)/share/man/man1/herdcat.1
 
 uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/lib/herdcat/herdcat-input
+	-rmdir $(DESTDIR)$(PREFIX)/lib/herdcat
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat-find-devices
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat-setup
@@ -234,6 +267,12 @@ compiledb: clean
 TESTDIR = tests
 TEST_CFLAGS = $(BASE_CFLAGS) -g3 -O0 -DDEBUG -DTEST_BUILD
 TEST_LDFLAGS = $(TEXT_LIBS) -lm -lpthread
+# Set here rather than passed down: re-quoting flags on a command line
+# loses the quotes inside string-valued -D options.
+ifdef TEST_SANITIZE
+TEST_CFLAGS += -fsanitize=address,undefined
+TEST_LDFLAGS += -fsanitize=address,undefined
+endif
 
 COMPOSITOR_TEST_DEPS = src/platform/compositor.c src/platform/compositor_niri.c src/platform/compositor_niri_json.c src/platform/compositor_niri_windows.c src/platform/compositor_hyprland.c src/platform/compositor_sway.c src/platform/compositor_stream.c src/utils/json.c
 
@@ -314,7 +353,7 @@ AGENT_CHILDREN_SESSION_DEPS = src/core/agent_sessions.c src/core/agent_session_r
 $(BUILDDIR)/test_agent_children: tests/test_agent_children.c $(AGENT_CHILDREN_SESSION_DEPS) $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/platform/agent_watch.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS) -Wl,--wrap=openat
 
-TEST_BINARIES = $(BUILDDIR)/test_post_split $(BUILDDIR)/test_subagent_badge $(BUILDDIR)/test_session_recovery $(BUILDDIR)/test_sign_rows $(BUILDDIR)/test_desk_offset $(BUILDDIR)/test_agent_children $(BUILDDIR)/test_text_centering $(BUILDDIR)/test_sign_names_render $(BUILDDIR)/test_title_hooks $(BUILDDIR)/test_title_focus $(BUILDDIR)/test_agent_title $(BUILDDIR)/test_sign_names $(BUILDDIR)/test_nameplate $(BUILDDIR)/test_name_config $(BUILDDIR)/test_signs_desk_clear $(BUILDDIR)/test_signs_detached $(BUILDDIR)/test_overlay_below $(BUILDDIR)/test_overlay_vertical $(BUILDDIR)/test_signs_below $(BUILDDIR)/test_theme_auto $(BUILDDIR)/test_compositor_backends $(BUILDDIR)/test_theme_watch $(BUILDDIR)/test_overlay_pixels $(BUILDDIR)/test_overlay_geometry $(BUILDDIR)/test_font_panel_memory $(BUILDDIR)/test_terminal_focus $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
+TEST_BINARIES = $(BUILDDIR)/test_input_helper_selection $(BUILDDIR)/test_input_helper $(BUILDDIR)/test_post_split $(BUILDDIR)/test_subagent_badge $(BUILDDIR)/test_session_recovery $(BUILDDIR)/test_sign_rows $(BUILDDIR)/test_desk_offset $(BUILDDIR)/test_agent_children $(BUILDDIR)/test_text_centering $(BUILDDIR)/test_sign_names_render $(BUILDDIR)/test_title_hooks $(BUILDDIR)/test_title_focus $(BUILDDIR)/test_agent_title $(BUILDDIR)/test_sign_names $(BUILDDIR)/test_nameplate $(BUILDDIR)/test_name_config $(BUILDDIR)/test_signs_desk_clear $(BUILDDIR)/test_signs_detached $(BUILDDIR)/test_overlay_below $(BUILDDIR)/test_overlay_vertical $(BUILDDIR)/test_signs_below $(BUILDDIR)/test_theme_auto $(BUILDDIR)/test_compositor_backends $(BUILDDIR)/test_theme_watch $(BUILDDIR)/test_overlay_pixels $(BUILDDIR)/test_overlay_geometry $(BUILDDIR)/test_font_panel_memory $(BUILDDIR)/test_terminal_focus $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
 
 $(BUILDDIR)/test_overlay_pixels: tests/test_overlay_pixels.c src/platform/overlay_geometry.c src/graphics/font_panel.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c src/graphics/animation.c src/graphics/embedded_assets.c src/core/agent_state.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
@@ -352,13 +391,15 @@ $(BUILDDIR)/test_agent_state: tests/test_agent_state.c src/core/agent_state.c $(
 $(TEST_BINARIES): $(PROJECT_HEADERS) tests/test_helpers.h
 
 # The completion test asks the program itself for its options.
-test: $(TEST_BINARIES) $(TARGET)
+test: $(TEST_BINARIES) $(TARGET) $(BUILDDIR)/herdcat-input
 	@echo "Running tests..."
 	@failures=0; \
 	for t in $(TEST_BINARIES); do \
 		echo "--- $$(basename $$t) ---"; \
 		$$t || failures=$$((failures + 1)); \
 	done; \
+	echo "--- test_input_helper.py ---"; \
+	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_input_helper.py || failures=$$((failures + 1)); \
 	echo "--- test_theme_watch.py ---"; \
 	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_theme_watch.py || failures=$$((failures + 1)); \
 	echo "--- test_terminal_commands.py ---"; \
@@ -394,7 +435,7 @@ test: $(TEST_BINARIES) $(TARGET)
 
 test-sanitize:
 	$(MAKE) clean
-	$(MAKE) TEST_CFLAGS="$(TEST_CFLAGS) -fsanitize=address,undefined" TEST_LDFLAGS="$(TEST_LDFLAGS) -fsanitize=address,undefined" test
+	$(MAKE) TEST_SANITIZE=1 test
 
 # Optional protocol fixture; wayland-server is a test-only dependency.
 .PHONY: compositor-test-build
@@ -432,6 +473,12 @@ test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent
 	python3 scripts/test_drag_runtime.py --sign-style off
 	python3 scripts/test_font_panel_runtime.py
 	python3 scripts/test_below_runtime.py
+
+$(BUILDDIR)/test_input_helper_selection: tests/test_input_helper_selection.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=access,--wrap=socketpair,--wrap=posix_spawn,--wrap=close,--wrap=kill,--wrap=waitpid
+
+$(BUILDDIR)/test_input_helper: tests/test_input_helper.c src/input/input_helper.c include/platform/input_protocol.h tests/test_helpers.h | $(OBJDIR)
+	$(CC) -std=c2x -Iinclude -Itests -g -O0 -Wall -Wextra $< -o $@ -Wl,--wrap=open,--wrap=openat,--wrap=fstat,--wrap=setresgid,--wrap=getresgid
 
 $(BUILDDIR)/test_input: tests/test_input.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=ioctl,--wrap=stat
@@ -501,3 +548,13 @@ $(BUILDDIR)/test_subagent_badge: tests/test_subagent_badge.c tests/subagent_pixe
 
 $(BUILDDIR)/test_post_split: tests/test_post_split.c $(SIGNS_TEST_DEPS) src/platform/overlay_geometry.c src/platform/drag.c src/utils/error.c src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+
+# Explicitly outside-sandbox acceptance; never part of make test.
+.PHONY: input-helper-runtime-build
+input-helper-runtime-build: $(BUILDDIR)/input_helper_fixture $(BUILDDIR)/input_fallback_fixture
+
+$(BUILDDIR)/input_helper_fixture: tests/input_helper_fixture.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
+
+$(BUILDDIR)/input_fallback_fixture: tests/input_helper_fixture.c src/platform/input.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) -UHERDCAT_INPUT_HELPER_PATH -UHERDCAT_INPUT_WRAPPER_PATH -DHERDCAT_INPUT_HELPER_PATH='"/nonexistent/herdcat-input"' $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)

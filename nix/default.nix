@@ -23,12 +23,14 @@ stdenv.mkDerivation (finalAttrs: {
     fontconfig
   ];
 
-  makeFlags = ["release"];
+  makeFlags = ["release" "PREFIX=$(out)" "INPUT_HELPER_WRAPPER_PATH=/run/wrappers/bin/herdcat-input"];
   installPhase = ''
     runHook preInstall
 
     # Install binaries
     install -Dm755 build/herdcat $out/bin/${finalAttrs.meta.mainProgram}
+    # The store stays unprivileged; NixOS creates the setgid wrapper.
+    install -Dm755 build/herdcat-input $out/lib/herdcat/herdcat-input
     install -Dm755 scripts/find_input_devices.sh $out/bin/herdcat-find-devices
     install -Dm755 scripts/herdcat-setup $out/bin/herdcat-setup
     substituteInPlace $out/bin/herdcat-setup \

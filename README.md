@@ -39,12 +39,33 @@ cd herdcat && make && sudo make install
 
 A Nix flake is included (`nix run github:ZChenW/herdcat`, modules in [`nix/`](nix/NIXOS.md)). CI builds it on every push, but the author does not run NixOS; sign options that have no module option go through `extraConfig`.
 
-### Setup Permissions
+The default root installation and Arch package install the small libc-only
+`herdcat-input` helper as `root:input`, mode `2755`, under `PREFIX/lib/herdcat`.
+Once installed, you do not need to join the input group. The main program runs
+without that group. The NixOS module creates a setgid `security.wrappers` helper;
+plain `nix run`, profile installs and Home Manager alone need device ACLs or the
+legacy group setup below.
+
+Other processes do not receive key contents through the helper, but can infer
+typing timing and left/right paw activity. See [the security model](docs/security.md).
+
+<details>
+<summary>Not using the setgid helper</summary>
+
+Use `sudo make install INPUT_HELPER_SETGID=0` to install an ordinary helper.
+Non-root installations also use ordinary permissions and print an explanation.
+If the helper is missing or not executable, herdcat uses its existing in-process
+helper. Both unprivileged modes need device ACLs or the old input-group grant:
 
 ```bash
-sudo usermod -a -G input $USER
+sudo usermod -a -G input "$USER"
 # Log out and back in
 ```
+
+Joining input lets **every process of that user read raw keyboard events**.
+Prefer the setgid helper or narrowly scoped device ACLs.
+
+</details>
 
 ### Find Your Keyboard
 
@@ -155,14 +176,15 @@ A nameplate template can use `{name}`, `{project}`, `{title}`, `{agent}` and `{s
 `herdcat --status` shows `input=denied` and `herdcat --list-devices` says which
 fix applies.
 
-```bash
-sudo usermod -a -G input $USER
-# Then log out and back in
-```
+Check the `input-helper=standalone` or `input-helper=in-process` indication.
+For a standalone installation, check `PREFIX/lib/herdcat/herdcat-input` is owned
+by `root:input` with mode `2755`. `nosuid` mounts and services with
+`NoNewPrivileges=yes` suppress the setgid grant. Reinstall with root privileges;
+only the helper should carry setgid, never the main binary.
 
-Joining the group only reaches processes started after a new login. If
-`getent group input` lists you but `id` does not, restart herdcat in a shell
-that has the group:
+For an ordinary helper or the fallback, use device ACLs or the legacy input-group
+setup above. Joining the group takes effect after a new login. If `getent group
+input` lists you but `id` does not, restart herdcat in a shell with the group:
 
 ```bash
 systemctl --user stop herdcat

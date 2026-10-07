@@ -3,7 +3,7 @@
 #define _GNU_SOURCE  // getresgid, setresgid
 #include "platform/input.h"
 
-#include "graphics/paw_frame.h"
+#include "platform/input_protocol.h"
 #include "utils/error.h"
 
 #include <dirent.h>
@@ -99,18 +99,13 @@ static void wait_child_exit(pid_t pid, int max_attempts) {
   while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
 }
 
-typedef struct {
-  uint32_t paws;
-  uint32_t devices;
-  uint32_t denied;
-  int64_t monotonic_ns;
-} input_message_t;
 static atomic_uint local_pending;
 static int helper_socket = -1;
 static pid_t helper_parent;
 static uint32_t device_count;
 static uint32_t denied_count;
 static int64_t input_timestamp_us;
+static bool selector_status;
 
 void input_process_events(void) {
   input_message_t message;
@@ -122,6 +117,7 @@ void input_process_events(void) {
       input_timestamp_us = message.monotonic_ns / 1000;
     } else {
       denied_count = message.denied;
+      selector_status = true;
     }
     if ((message.paws & ~(PAW_LEFT | PAW_RIGHT)) == 0) {
       atomic_fetch_or(&local_pending, message.paws);
@@ -198,7 +194,57 @@ input_group_t input_group_state(void) {
   return state;
 }
 
+#ifndef HERDCAT_INPUT_HELPER_PATH
+#  define HERDCAT_INPUT_HELPER_PATH "/usr/local/lib/herdcat/herdcat-input"
+#endif
+
+static bool standalone_active;
+static bool mode_selected;
+static const char *active_helper_path;
+static char selected_paths[INPUT_MAX_DEVICES][INPUT_PATH_SIZE];
+static int selected_count;
+static bool refresh_selectors;
+
+const char *input_helper_path(void) {
+#ifdef HERDCAT_INPUT_WRAPPER_PATH
+  if (access(HERDCAT_INPUT_WRAPPER_PATH, X_OK) == 0) {
+    return HERDCAT_INPUT_WRAPPER_PATH;
+  }
+#endif
+  return access(HERDCAT_INPUT_HELPER_PATH, X_OK) == 0
+             ? HERDCAT_INPUT_HELPER_PATH
+             : NULL;
+}
+
+const char *input_mode_name(void) {
+  bool standalone =
+      mode_selected ? standalone_active : input_helper_path() != NULL;
+  return standalone ? "standalone" : "in-process";
+}
+
+const char *input_mode_hint(void) {
+  const char *path = mode_selected ? active_helper_path : input_helper_path();
+  if (!path) {
+    return "herdcat-input missing or not executable; fallback requires input "
+           "group membership or device ACLs";
+  }
+  struct stat metadata;
+  struct group *group = getgrnam("input");
+  if (stat(path, &metadata) != 0 || !group || !S_ISREG(metadata.st_mode) ||
+      metadata.st_uid != 0 || metadata.st_gid != group->gr_gid ||
+      (metadata.st_mode & 07777) != 02755) {
+    return "standalone helper lacks root:input setgid installation; device "
+           "ACLs/input group access required (or install mode 2755)";
+  }
+  return "root:input setgid helper installed; no user input group required "
+         "(nosuid/no_new_privs may suppress the grant)";
+}
+
 const char *input_access_hint(void) {
+  if (!strcmp(input_mode_name(), "standalone")) {
+    return "check herdcat-input root:input mode 2755, mount nosuid/service "
+           "NoNewPrivileges and device permissions.";
+  }
   switch (input_group_state()) {
   case INPUT_GROUP_PENDING:
     return "your account is in the input group, but this session started "
@@ -243,6 +289,7 @@ bool input_device_is_keyboard(int fd) {
 }
 
 int input_list_devices(void) {
+  printf("input-helper=%s: %s\n", input_mode_name(), input_mode_hint());
   DIR *dir = opendir("/dev/input");
   if (!dir) {
     fprintf(stderr, "/dev/input: %s\n", strerror(errno));
@@ -272,6 +319,27 @@ int input_list_devices(void) {
     close(fd);
   }
   closedir(dir);
+  if (input_helper_path()) {
+    // The renderer cannot open group-protected devices. Ask the helper for
+    // aggregate access, keeping the existing packet free of device names.
+    herdcat_error_t result = input_start_monitoring(NULL, 0, NULL, 0, 0, 0);
+    if (result == HERDCAT_SUCCESS) {
+      struct pollfd ready = {.fd = wake_fd, .events = POLLIN};
+      if (poll(&ready, 1, 2000) > 0) {
+        input_process_events();
+        keyboards = input_device_count();
+        denied = input_denied_count();
+        printf("helper-readable keyboards=%u denied=%u\n", keyboards, denied);
+      } else {
+        fprintf(stderr, "Input helper did not report access within 2s.\n");
+        keyboards = 0;
+      }
+      input_cleanup();
+    } else {
+      fprintf(stderr, "Input helper could not be started.\n");
+      keyboards = 0;
+    }
+  }
   if (!keyboards && denied) {
     fprintf(stderr, "No accessible keyboards; %s\n", input_access_hint());
   } else if (!keyboards) {
@@ -732,11 +800,114 @@ int input_helper_main(int argc, char **argv) {
   return 0;
 }
 
+static int compare_input_paths(const void *left, const void *right) {
+  return strcmp(left, right);
+}
+
+static bool resolve_input_paths(char **paths, int num_paths, char **names,
+                                int num_names, char resolved[][INPUT_PATH_SIZE],
+                                int *count) {
+  *count = 0;
+  for (int i = 0; i < num_paths; i++) {
+    char canonical[PATH_MAX];
+    const char *path = paths[i];
+    // Missing canonical event nodes are valid selectors for future hotplug.
+    if (!input_event_path(path)) {
+      if (!realpath(path, canonical) || !input_event_path(canonical)) {
+        return false;
+      }
+      path = canonical;
+    }
+    if (*count >= INPUT_MAX_DEVICES) {
+      return false;
+    }
+    memcpy(resolved[(*count)++], path, strlen(path) + 1);
+  }
+  DIR *directory = num_names ? opendir("/sys/class/input") : NULL;
+  struct dirent *entry;
+  while (directory) {
+    entry = readdir(directory);
+    if (!entry) {
+      break;
+    }
+    char event[INPUT_PATH_SIZE];
+    int length = snprintf(event, sizeof(event), "/dev/input/%s", entry->d_name);
+    if (length < 0 || length >= (int)sizeof(event) ||
+        !input_event_path(event)) {
+      continue;
+    }
+    char sysfs[PATH_MAX];
+    snprintf(sysfs, sizeof(sysfs), "/sys/class/input/%s/device/name",
+             entry->d_name);
+    FILE *file = fopen(sysfs, "re");
+    char name[256];
+    bool match = false;
+    if (file) {
+      if (fgets(name, sizeof(name), file)) {
+        char *newline = strchr(name, '\n');
+        if (newline) {
+          *newline = '\0';
+        }
+        for (int i = 0; i < num_names; i++) {
+          if (names[i][0] && strstr(name, names[i]) != NULL) {
+            match = true;
+          }
+        }
+      }
+      fclose(file);
+    }
+    if (match) {
+      if (*count >= INPUT_MAX_DEVICES) {
+        closedir(directory);
+        return false;
+      }
+      snprintf(resolved[(*count)++], INPUT_PATH_SIZE, "%s", event);
+    }
+  }
+  if (directory) {
+    closedir(directory);
+  }
+  qsort(resolved, (size_t)*count, INPUT_PATH_SIZE, compare_input_paths);
+  int unique = 0;
+  for (int i = 0; i < *count; i++) {
+    if (!unique || strcmp(resolved[unique - 1], resolved[i]) != 0) {
+      if (unique != i) {
+        memcpy(resolved[unique], resolved[i], INPUT_PATH_SIZE);
+      }
+      unique++;
+    }
+  }
+  *count = unique;
+  return true;
+}
+
+void input_refresh_selection(char **paths, int num_paths, char **names,
+                             int num_names, int interval) {
+  if (!standalone_active || !refresh_selectors || !selector_status ||
+      interval == 0) {
+    return;
+  }
+  selector_status = false;
+  char resolved[INPUT_MAX_DEVICES][INPUT_PATH_SIZE] = {0};
+  int count;
+  if (resolve_input_paths(paths, num_paths, names, num_names, resolved,
+                          &count) &&
+      (count != selected_count ||
+       memcmp(resolved, selected_paths, sizeof(resolved)) != 0)) {
+    herdcat_error_t result = input_restart_monitoring(paths, num_paths, names,
+                                                      num_names, interval, 0);
+    if (result != HERDCAT_SUCCESS) {
+      herdcat_log_warning("Input selector refresh rejected");
+    }
+  }
+}
+
 herdcat_error_t input_start_monitoring(char **paths, int num_paths,
                                        char **names, int num_names,
                                        int interval, int debug) {
   (void)debug;
-  if (num_paths < 0 || num_names < 0 || num_paths > 256 || num_names > 256) {
+  if (num_paths < 0 || num_names < 0 || num_paths > 256 || num_names > 256 ||
+      interval < 0 || interval > 3600) {
     return HERDCAT_ERROR_INVALID_PARAM;
   }
   int sockets[2];
@@ -750,24 +921,47 @@ herdcat_error_t input_start_monitoring(char **paths, int num_paths,
   snprintf(paths_count, sizeof(paths_count), "%d", num_paths);
   snprintf(names_count, sizeof(names_count), "%d", num_names);
   snprintf(scan, sizeof(scan), "%d", interval);
-  char **args =
-      (char **)calloc((size_t)num_paths + num_names + 7, sizeof(*args));
+  char **args = (char **)calloc(
+      (size_t)num_paths + num_names + INPUT_MAX_DEVICES + 7, sizeof(*args));
   if (!args) {
     close(sockets[0]);
     close(sockets[1]);
     return HERDCAT_ERROR_MEMORY;
   }
-  args[0] = "/proc/self/exe";
-  args[1] = "--input-helper";
-  args[2] = "3";
-  args[3] = paths_count;
-  args[4] = names_count;
-  args[5] = scan;
-  for (int i = 0; i < num_paths; i++) {
-    args[6 + i] = paths[i];
-  }
-  for (int i = 0; i < num_names; i++) {
-    args[6 + num_paths + i] = names[i];
+  const char *program = input_helper_path();
+  char filtered[2] = {num_paths || num_names ? '1' : '0', '\0'};
+  if (program) {
+    memset(selected_paths, 0, sizeof(selected_paths));
+    if (!resolve_input_paths(paths, num_paths, names, num_names, selected_paths,
+                             &selected_count)) {
+      free((void *)args);
+      close(sockets[0]);
+      close(sockets[1]);
+      return HERDCAT_ERROR_INVALID_PARAM;
+    }
+    snprintf(paths_count, sizeof(paths_count), "%d", selected_count);
+    args[0] = (char *)program;
+    args[1] = "3";
+    args[2] = scan;
+    args[3] = filtered;
+    args[4] = paths_count;
+    for (int i = 0; i < selected_count; i++) {
+      args[5 + i] = selected_paths[i];
+    }
+  } else {
+    program = "/proc/self/exe";
+    args[0] = (char *)program;
+    args[1] = "--input-helper";
+    args[2] = "3";
+    args[3] = paths_count;
+    args[4] = names_count;
+    args[5] = scan;
+    for (int i = 0; i < num_paths; i++) {
+      args[6 + i] = paths[i];
+    }
+    for (int i = 0; i < num_names; i++) {
+      args[6 + num_paths + i] = names[i];
+    }
   }
   posix_spawn_file_actions_t actions;
   int error = posix_spawn_file_actions_init(&actions);
@@ -777,8 +971,9 @@ herdcat_error_t input_start_monitoring(char **paths, int num_paths,
       error = posix_spawn_file_actions_addclosefrom_np(&actions, 4);
     }
     if (!error) {
-      error = posix_spawn(&input_child_pid, "/proc/self/exe", &actions, NULL,
-                          args, environ);
+      error = posix_spawn(
+          &input_child_pid, program, &actions, NULL, args,
+          !strcmp(program, "/proc/self/exe") ? environ : (char *[]){NULL});
     }
     posix_spawn_file_actions_destroy(&actions);
   }
@@ -789,6 +984,11 @@ herdcat_error_t input_start_monitoring(char **paths, int num_paths,
     input_child_pid = -1;
     return HERDCAT_ERROR_THREAD;
   }
+  standalone_active = strcmp(program, "/proc/self/exe") != 0;
+  mode_selected = true;
+  active_helper_path = standalone_active ? program : NULL;
+  refresh_selectors = num_names > 0 || num_paths > 0;
+  selector_status = false;
   wake_fd = sockets[0];
   atomic_init(&local_pending, 0);
   pending_paws = &local_pending;

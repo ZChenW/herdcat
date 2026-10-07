@@ -30,6 +30,11 @@ input_restart_monitoring(char **paths, int num_paths, char **names,
 
 int input_helper_main(int argc, char **argv);
 int input_list_devices(void);
+const char *input_helper_path(void);
+const char *input_mode_name(void);
+const char *input_mode_hint(void);
+void input_refresh_selection(char **paths, int num_paths, char **names,
+                             int num_names, int interval);
 bool input_device_is_keyboard(int fd);
 bool input_device_selected(int fd, dev_t identity, char **paths, int num_paths,
                            char **names, int num_names);

@@ -106,12 +106,12 @@ static void no_title_pixels(void) {
   // Frozen without loading a font. Post goldens reflect the split plates;
   // fan values were captured before this change, also without a font.
   static const uint64_t expected[] = {
-      UINT64_C(0x5a1488b4179ffdca), UINT64_C(0x87c4840b9d747811),
-      UINT64_C(0xc1808339ea46f68a), UINT64_C(0xafd9e9288ccad586),
-      UINT64_C(0x8fd1791ac13c4ed4), UINT64_C(0x8b6106835562f5aa),
-      UINT64_C(0x4a12bef2db49292c), UINT64_C(0x82579afe5cc66d42),
-      UINT64_C(0x5f73ee02bf4a051d), UINT64_C(0x40151b3ab024a540),
-      UINT64_C(0xcf05bb9fd1dff9a1), UINT64_C(0x013d85ebe5f1a82d),
+      UINT64_C(0x118254e2911bcbe3), UINT64_C(0x78071947bfd4dd32),
+      UINT64_C(0xf6d58c501cb6f8be), UINT64_C(0xb8487f95645618ff),
+      UINT64_C(0xbfb4ba4c9d01034c), UINT64_C(0x5cbe6cc42852c9e6),
+      UINT64_C(0xf22b145fda63ad78), UINT64_C(0x281ed7b427070a69),
+      UINT64_C(0x2ade814089181345), UINT64_C(0x910a3ab928134e7c),
+      UINT64_C(0x5bf40f95f6d4043b), UINT64_C(0x80d53c3272847855),
       UINT64_C(0x541c7c22afff812c), UINT64_C(0xa7b3fbfb48827f09),
       UINT64_C(0x411937d454b11cf3), UINT64_C(0x95fd5fb0c5efb64e),
       UINT64_C(0xd83eca0eec87286b), UINT64_C(0x07160c897cf500b8),

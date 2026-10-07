@@ -195,15 +195,20 @@ journalctl --user -u herdcat -f
 
 ### Permission Issues
 
-If you get permission errors accessing input devices:
+The NixOS module creates `/run/wrappers/bin/herdcat-input` with
+`security.wrappers` (`root:input`, setgid); no user input-group membership is
+needed. The Nix store copy remains mode 0755 so package builds do not need root.
+The package prefers the wrapper, then its own store helper. Home Manager,
+`nix run` and profile installs alone cannot create system privilege wrappers:
+use the NixOS module, device ACLs, or the legacy group grant below.
 
-1. **Check if you're in the input group:** Run `groups | grep input`
-1. **Add yourself to the `input` group:** Add to your configuration `users.users.<your username>.extraGroups = ["input"];`
-1. **Log out and log back in after you add yourself to the `input` group**
-1. **Check the running instance:** `herdcat --status` shows `input=denied` when
-   it cannot read any keyboard. If `getent group input` lists you but `id` does
-   not, the session predates the change; log in again or restart herdcat from
-   `newgrp input`.
+Check `herdcat --status` and `herdcat --list-devices` for `input-helper` and the
+missing access requirement. Check the wrapper, `nosuid`, service
+`NoNewPrivileges`, and keyboard node group permissions when access is denied.
+If deliberately avoiding the wrapper, add
+`users.users.<your username>.extraGroups = ["input"];` and log in again.
+That grants every process of that user raw keyboard access. See
+[the security model](../docs/security.md).
 
 ### Service Issues
 

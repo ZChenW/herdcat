@@ -41,7 +41,9 @@ flowchart TD
 ## Process and thread model
 
 The renderer owns one Wayland connection and one event loop for every overlay.
-One input helper is executed with `posix_spawn()` through `/proc/self/exe`.
+One libc-only `herdcat-input` helper is executed with `posix_spawn()`.
+If the installed helper is absent or not executable, `/proc/self/exe
+--input-helper` provides the existing unprivileged fallback.
 There are no animation or configuration-watcher threads and no per-monitor
 processes. Runtime dependencies are C23, Linux evdev, Wayland client, FreeType and
 Fontconfig. The text libraries are an intentional dependency: the signs need real text.
@@ -226,18 +228,30 @@ Dragging adds compositor-delivered `wl_pointer` input in the unprivileged
 renderer. Keyboard animation continues to use the existing evdev helper;
 dragging never requests `wl_keyboard` or changes device permissions.
 
-The renderer drops real, effective and saved setgid privilege before loading
-configuration. Executing the installed binary reacquires its setgid group
-only inside helper mode. The helper lowers the effective group while reading
-and raises it only for discovery/opening; this also works after helper restart.
-No setgid installation or permission grant is performed automatically.
+Only `PREFIX/lib/herdcat/herdcat-input` is installed setgid root:input (2755).
+The renderer permanently drops any inherited real/effective/saved setgid grant
+before configuration loading. The standalone helper clears its environment,
+validates numeric arguments and its inherited output fd, and opens only
+canonical `/dev/input/event` nodes with numeric suffixes, no symlink following,
+and character-device major 13. Main-program selectors (names and aliases) are
+resolved without privilege; sysfs names allow discovery without evdev access.
+Scan status packets trigger selector reconciliation on the renderer's next tick;
+changed selectors restart the helper, without automatic fallback to all devices.
 
-The helper authenticates its inherited socketpair and arms PR_SET_PDEATHSIG
-with a parent-race check. `posix_spawn` closes unrelated descriptors. Explicit
-paths/names select devices without unrelated fallback. Empty selectors use
-EVIOCGBIT keyboard capability queries. Stable aliases are compared by device
-identity to avoid duplicates. HUP/ERR/NVAL remove disconnected descriptors;
-normal periodic scanning retries connections. Debug never logs keycodes.
+The helper lowers its effective gid immediately after each device open and
+verifies all gid fields. With hotplug enabled it retains the saved input gid
+only for later opens; scan-once mode drops all three gids permanently. It sets
+non-dumpability again after each gid transition, enables no_new_privs, and
+installs a syscall/argument seccomp allowlist on x86-64 and AArch64. All unrelated
+inherited descriptors are closed. It has no config, logs, control socket,
+exec, device grabs or file writes. Its output is the existing 24-byte paw/count/
+timestamp packet; explicit zero padding prevents disclosure through ABI padding.
+
+The inherited Unix seqpacket output must belong to the same-UID parent. A
+validated write pipe is also supported for tests; eventfd cannot carry this
+packet and is rejected. Polling output HUP/ERR and failed writes terminate the
+helper even while idle; setgid parent-death signal semantics are not relied on.
+See [security.md](docs/security.md) for the boundary and audit instructions.
 
 SIGTERM, SIGINT, SIGQUIT and SIGHUP wake and stop the renderer. Cleanup stops
 input, waits a bounded grace period, escalates to SIGKILL if necessary, reaps

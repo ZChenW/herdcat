@@ -110,7 +110,11 @@ static void geometry_and_shared_ink(void) {
           for (int i = 0; i < shared; i++) {
             sign_shape_t a = expanded.shapes[2 + i];
             sign_shape_t b = fan.shapes[1 + i];
-            near(a.x - face->x, b.x - fan.shapes[1].x);
+            // On the left side the unread dot is mirrored away from the pole.
+            bool mirrored = side == 2 && session.unread && i == 1;
+            near(a.x - face->x, mirrored
+                                    ? face->w - (b.x - fan.shapes[1].x) - b.w
+                                    : b.x - fan.shapes[1].x);
             near(a.y - face->y, b.y - fan.shapes[1].y);
             near(a.w, b.w);
             near(a.h, b.h);
@@ -122,7 +126,7 @@ static void geometry_and_shared_ink(void) {
             TEST_ASSERT(expanded.shapes[i].kind != SIGN_BADGE);
           if (session.unread) {
             const sign_shape_t *dot = &expanded.shapes[3];
-            near(dot->x, face->x + face->w - 4);
+            near(dot->x, side == 2 ? face->x - 5 : face->x + face->w - 4);
             near(dot->y, face->y - 5);
             near(dot->w, 9);
           }

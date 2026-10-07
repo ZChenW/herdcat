@@ -175,6 +175,9 @@ static void extra_ready(uint32_t token) {
   transcript_watch_ready(token, monotonic_ms());
 }
 static void tick(void) {
+  input_refresh_selection(config.keyboard_devices, config.num_keyboard_devices,
+                          config.keyboard_names, config.num_names,
+                          config.hotplug_scan_interval);
   hypr_poll();
   transcript_prompt_poll();
   focus_poll();
@@ -559,7 +562,11 @@ static bool dispatch_client(const cli_options_t *options, int *exit_code) {
   if (options->hook_agent) {
     *exit_code = agent_hook_run(options->hook_agent, options->hook_event);
   } else if (options->request) {
-    *exit_code = control_request(options->request) == 0 ? 0 : 1;
+    int result = control_request(options->request);
+    if (result != 0 && !strcmp(options->request, "status")) {
+      printf("input-helper=%s: %s\n", input_mode_name(), input_mode_hint());
+    }
+    *exit_code = result == 0 ? 0 : 1;
   } else {
     if (options->toggle) {
       int result = control_request("stop");

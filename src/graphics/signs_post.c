@@ -165,9 +165,17 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
                        .stroke = 2 * plate_scale * scale,
                        .fill = with_alpha(fill, opacity),
                        .outline = with_alpha(palette->ink, opacity)};
+  int plate_at = frame->shape_count;
   emit_state_plate(frame, &slot->session, in, &face,
                    plate_x + plate_w * scale / 2, cy, plate_scale * scale,
                    opacity, states);
+  // The unread dot sits on the corner away from the pole. On the left side
+  // that is the plate's left corner; the shared helper drew it on the right.
+  if (direction < 0 && frame->shape_count > plate_at + 1 &&
+      slot->session.unread && finished(agent_sign_state(&slot->session))) {
+    sign_shape_t *dot = &frame->shapes[plate_at + 1];
+    dot->x = 2 * face.x + face.w - dot->x - dot->w;
+  }
   double name_x =
       direction > 0 ? plate_x + (plate_w + POST_NAME_GAP) * scale : x;
   double name_y = cy - POST_NAME_HEIGHT * scale / 2;

@@ -371,11 +371,13 @@ int command(const char *request, char *response, size_t capacity) {
         input_child_is_alive(), input_device_count(), input_denied_count());
     int length = snprintf(
         response, capacity,
-        "running pid=%ld hidden=%s paused=%s input=%s devices=%u denied=%u "
-        "config=%s agent=%s sessions=%d",
+        "running pid=%ld hidden=%s paused=%s input=%s input-helper=%s "
+        "devices=%u denied=%u "
+        "config=%s agent=%s sessions=%d\n%s",
         (long)getpid(), (int)hidden ? "yes" : "no", (int)paused ? "yes" : "no",
-        input, input_device_count(), input_denied_count(), config_path,
-        agent_state_name(animation_get_agent_state()), agent_sessions_count());
+        input, input_mode_name(), input_device_count(), input_denied_count(),
+        config_path, agent_state_name(animation_get_agent_state()),
+        agent_sessions_count(), input_mode_hint());
     if (strcmp(input, "denied") == 0 && length > 0 &&
         (size_t)length < capacity) {
       snprintf(response + length, capacity - (size_t)length,

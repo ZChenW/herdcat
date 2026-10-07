@@ -23,6 +23,16 @@ in {
       '')
     ];
 
+    users.groups.input = {};
+    security.wrappers.herdcat-input = {
+      source = "${cfg.package}/lib/herdcat/herdcat-input";
+      owner = "root";
+      group = "input";
+      setuid = false;
+      setgid = true;
+      permissions = "u+rx,g+rx,o+rx";
+    };
+
     # SystemD service
     systemd.user.services.herdcat = mkIf cfg.autostart {
       enable = true;

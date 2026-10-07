@@ -93,7 +93,7 @@ static uint64_t scene(int which, int scale, sign_theme_t theme) {
 }
 int main(void) {
   static const uint64_t expected[4][2] = {
-      {UINT64_C(0xd9a103583e874fe8), UINT64_C(0xa5ca3c754650baac)},
+      {UINT64_C(0xe72e1f72747c6051), UINT64_C(0x5e73424e5071e388)},
       {UINT64_C(0x2b28efc8d9b12e9c), UINT64_C(0x0849ce61f21f96f8)},
       {UINT64_C(0x559466fb69fe25c8), UINT64_C(0x59be1c10b5127a0c)},
       {UINT64_C(0x11f0e3c6d0287cba), UINT64_C(0x02ad31635d7780f0)}

@@ -20,7 +20,7 @@ pkgver() {
 
 build() {
   cd "$srcdir/herdcat"
-  make release
+  make PREFIX=/usr release
 }
 
 check() {
@@ -31,6 +31,8 @@ check() {
 package() {
   cd "$srcdir/herdcat"
   # Includes the user service, shell completions and share/herdcat setup helper.
-  make BUILD_TYPE=release PREFIX=/usr DESTDIR="$pkgdir" install
+  make BUILD_TYPE=release PREFIX=/usr INPUT_HELPER_SETGID=0 DESTDIR="$pkgdir" install
+  chown root:input "$pkgdir/usr/lib/herdcat/herdcat-input"
+  chmod 2755 "$pkgdir/usr/lib/herdcat/herdcat-input"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
