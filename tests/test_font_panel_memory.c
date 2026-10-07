@@ -181,8 +181,10 @@ int main(int argc, char **argv) {
     TEST_ASSERT(closed.allocated <= baseline.allocated * 3 / 2 + 131072);
     TEST_ASSERT(closed.font_maps <= baseline.font_maps);
   }
-  size_t previous = closed.allocated;
-  bool all_increased = true;
+  // The glyph and face caches are still filling over these cycles, so live
+  // memory may rise every time. A leak adds the same amount each cycle; a
+  // cache adds less and less. Compare the second ten cycles to the first.
+  size_t middle = 0, last = 0;
   for (int cycle = 1; cycle < 20; cycle++) {
     browse(cycle * 20000);
     if (cycle == 19)
@@ -193,9 +195,9 @@ int main(int argc, char **argv) {
     char phase[32];
     snprintf(phase, sizeof(phase), "closed-%02d", cycle + 1);
     memory_t next = memory(phase);
-    if (next.allocated <= previous)
-      all_increased = false;
-    previous = next.allocated;
+    if (cycle == 10)
+      middle = next.allocated;
+    last = next.allocated;
     sign_pixels();
     TEST_ASSERT(!memcmp(before, canvas, sizeof(before)));
     if (!measure) {
@@ -203,8 +205,8 @@ int main(int argc, char **argv) {
       TEST_ASSERT(next.font_maps <= baseline.font_maps);
     }
   }
-  if (!measure)
-    TEST_ASSERT(!all_increased);
+  if (!measure && last > middle && middle > closed.allocated)
+    TEST_ASSERT(last - middle <= (middle - closed.allocated) / 2 + 4096);
   const char *names[2];
   TEST_ASSERT(text_families("en", names, 2) >= 2);
   char tried[128];
