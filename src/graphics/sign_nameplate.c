@@ -14,7 +14,9 @@ void sign_nameplate(sign_text_t *text, const sign_input_t *in,
   char title[AGENT_TITLE_MAX + 4], who[64], state[64];
   sign_title_truncate(session->title, in->title_length, title);
   sign_agent_label(session, false, who);
-  if (session->state == AGENT_STATE_WORKING) {
+  if (agent_sign_waits_on_children(session)) {
+    subagent_state_label(state, session, in, frame);
+  } else if (session->state == AGENT_STATE_WORKING) {
     int64_t elapsed = in->now_ms - session->state_since_ms;
     if (elapsed < 0)
       elapsed = 0;
@@ -39,7 +41,19 @@ void sign_nameplate(sign_text_t *text, const sign_input_t *in,
              in->english ? "Detached" : "已断开");
   }
   // Keep the legacy text fields as a readable frame snapshot.
-  if (session->child_count)
+  if (agent_sign_waits_on_children(session)) {
+    size_t state_len = strlen(state);
+    size_t who_len = strlen(who);
+    size_t budget = sizeof(text->meta) - state_len - 5;
+    if (who_len > budget) {
+      who_len = budget;
+      while (who_len && ((unsigned char)who[who_len] & 0xc0) == 0x80)
+        who_len--;
+    }
+    memcpy(text->meta, who, who_len);
+    memcpy(text->meta + who_len, " · ", 4);
+    memcpy(text->meta + who_len + 4, state, state_len + 1);
+  } else if (session->child_count)
     snprintf(text->meta, sizeof(text->meta), "%.40s · %.18s", who, state);
   else
     snprintf(text->meta, sizeof(text->meta), "%.8s · %.50s", who, state);

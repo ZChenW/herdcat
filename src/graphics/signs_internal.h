@@ -1,6 +1,7 @@
 #ifndef HERDCAT_GRAPHICS_SIGNS_INTERNAL_H
 #define HERDCAT_GRAPHICS_SIGNS_INTERNAL_H
 
+#include "core/agent_sign_state.h"
 #include "graphics/signs.h"
 
 #define MOVE_MS      420
@@ -64,6 +65,8 @@ uint32_t meta_color(agent_state_t state, const sign_input_t *in);
 const char *done_label(const sign_input_t *in, bool fan,
                        const agent_session_view_t *session);
 bool show_session(const sign_input_t *in, agent_state_t state);
+void subagent_state_label(char out[64], const agent_session_view_t *session,
+                          const sign_input_t *in, sign_frame_t *frame);
 double font_ratio(const sign_input_t *in);
 void add_shape(sign_frame_t *frame, sign_shape_kind_t kind, double x, double y,
                double w, double h, double radius, double stroke, uint32_t fill,

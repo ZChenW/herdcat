@@ -443,7 +443,14 @@ it after the parent registers. A child remains in the fixed 32-row session
 table and `herdcat --sessions` appends `parent=<eight-character parent key>`.
 It has no sign, priority, unread completion, waiting/error alert, title or
 typing desk of its own. Only working/waiting children contribute to the parent's
-agent label. Parent state, icon, colour and elapsed time stay independent.
+agent label. The actual parent state remains independent: session/status
+output, alerts, typing, focus and unread handling do not change. For sign display,
+an idle or read done parent with active children looks and ranks as working,
+with `Waiting on subagent N min` / `等待子代理 N 分钟` measured from the earliest
+creation of a still-active child. Other parent states keep their own appearance.
+Fan signs always show an active-child count badge (`9+` above nine), moved to
+the left corner when the unread dot occupies the right. Post boards use `+N`.
+See [sign display rules](signs.md#child-agent-labels) for layout and transitions.
 
 END, process exit or a configured timeout removes a child. Child done/error
 uses `agent_done_timeout` without waiting for acknowledgement; otherwise

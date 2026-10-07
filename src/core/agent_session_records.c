@@ -1,4 +1,5 @@
 #include "agent_sessions_internal.h"
+#include "core/agent_sign_state.h"
 #include "utils/path_wire.h"
 
 #include <stdio.h>
@@ -277,6 +278,8 @@ int agent_sessions_snapshot(agent_session_view_t *out, size_t capacity) {
       if (child->state == AGENT_STATE_WORKING ||
           child->state == AGENT_STATE_WAITING) {
         totals[type]++;
+        if (!v->child_count || child->created_ms < v->child_started_ms)
+          v->child_started_ms = child->created_ms;
         v->child_count++;
       }
     }
@@ -309,8 +312,9 @@ int agent_sessions_select(const agent_session_view_t *input, size_t count,
     for (size_t j = 0; j < count; j++) {
       if (selected[j] || input[j].parent)
         continue;
-      bool active = input[j].state != AGENT_STATE_IDLE;
-      bool best_active = best < count && input[best].state != AGENT_STATE_IDLE;
+      bool active = agent_sign_state(&input[j]) != AGENT_STATE_IDLE;
+      bool best_active =
+          best < count && agent_sign_state(&input[best]) != AGENT_STATE_IDLE;
       if (best == count || (active && !best_active) ||
           (active == best_active &&
            input[j].updated_ms > input[best].updated_ms))

@@ -147,6 +147,21 @@ bool show_session(const sign_input_t *in, agent_state_t state) {
   return state != AGENT_STATE_IDLE || in->idle == SIGN_IDLE_ALWAYS ||
          (in->idle == SIGN_IDLE_HOVER && in->open);
 }
+void subagent_state_label(char out[64], const agent_session_view_t *session,
+                          const sign_input_t *in, sign_frame_t *frame) {
+  int64_t elapsed = in->now_ms - session->child_started_ms;
+  if (elapsed < 0)
+    elapsed = 0;
+  int64_t minutes = elapsed / 60000;
+  if (minutes > 99999)
+    minutes = 99999;
+  snprintf(out, 64,
+           in->english ? "Waiting on subagent %lld min"
+                       : "等待子代理 %lld 分钟",
+           (long long)minutes);
+  if (frame)
+    wake_at(frame, in->now_ms + 60000 - elapsed % 60000);
+}
 double font_ratio(const sign_input_t *in) {
   return in->font_size >= 10 && in->font_size <= 20 ? in->font_size / 13.0 : 1;
 }
@@ -453,7 +468,7 @@ static void build_frame(signs_t *model, const sign_input_t *in,
   } else {
     int shown = 0;
     for (size_t i = 0; i < count; i++)
-      if (show_session(in, in->sessions[i].state))
+      if (show_session(in, agent_sign_state(&in->sessions[i])))
         shown++;
     int row = shown;
     for (size_t i = 0; i < count; i++) {
@@ -462,7 +477,7 @@ static void build_frame(signs_t *model, const sign_input_t *in,
         continue;
       slot->present = true;
       slot->session = in->sessions[i];
-      bool visible = show_session(in, slot->session.state);
+      bool visible = show_session(in, agent_sign_state(&slot->session));
       double bottom = 100;
       if (visible)
         bottom = 100 + --row * 30;

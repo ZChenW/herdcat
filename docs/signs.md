@@ -370,8 +370,34 @@ Custom fan templates expand the existing `{agent}` the same way. Post boards
 show only the active child count, for example `Claude +2 · 3 分钟`.
 No placeholder is added. A child's done/error/idle/END or process exit removes
 it from the label; no active children restores `Claude`. Existing layout and
-width transitions handle the text change. The parent's state, colours, icon,
-name/title and elapsed minutes always remain its own.
+width transitions handle the text change. The name and title remain the
+parent's own.
+
+While any children are working or waiting, an idle parent or a read done parent
+uses the working colour, three dots and working animation. It counts as working
+for visibility (including `sign_idle=hover`), selection and front/back row
+priority. Waiting, error, unread done and working parents retain their own look.
+The fan nameplate, post metadata and custom `{state}` show
+`等待子代理 N 分钟` / `Waiting on subagent N min` for this derived working state.
+Minutes start at the earliest session creation time among still-active children;
+when that child stops, the next oldest active child's start becomes the origin.
+The existing minute deadline refreshes visible elapsed text. Once all children
+stop, the parent's own appearance returns with the usual state transition.
+
+Every fan sign with active children has a 13px count badge at the plate's
+upper-right edge, or upper-left when an unread dot is present. The filled circle
+uses ink, with a thin paper border and upright, centred bold paper digits;
+counts above nine show `9+`. It follows rotation, hover, press and shake, and
+scales to 88% in the back row. The circle and digit stay in the sign's shape
+layer, behind every front sign when in the back row, with reflection keeping
+the digit upright. Its ink contributes to damage bounds and fits the existing
+surface clearance; it adds no hit target. Post boards retain their `+N` text
+and have no badge. Both themes use the same semantic colours.
+
+These rules affect sign display only. `--sessions`, `--status`, alerts, the typing
+desk, focus acknowledgement and unread handling retain the real parent state.
+No extra alert is generated. [Production-rendered examples](design/subagent/README.md)
+cover both themes, hover, unread and the back row.
 
 
 ## Stable names and pointer motion

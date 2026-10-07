@@ -25,7 +25,9 @@ typedef enum {
   SIGN_RECT,
   SIGN_CUT,  // radius is the 45-degree corner cut; stroke is inset.
   SIGN_CHECK,
-  SIGN_CROSS
+  SIGN_CROSS,
+  // Filled count circle, with upright bold text painted in shape order.
+  SIGN_BADGE
 } sign_shape_kind_t;
 
 // Surface logical pixels, y growing downward. A RECT stroke is an inset
@@ -49,6 +51,7 @@ typedef struct {
   // antialiasing; upright groups never set this flag.
   bool reflected;
   bool upright;
+  unsigned badge_count;
   double icon_center_x, icon_center_y;
 } sign_shape_t;
 // Name is bold, metadata is medium. Measure metadata, keep `gap`, and

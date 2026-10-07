@@ -33,6 +33,8 @@ typedef struct {
   uint64_t key, order;
   uint64_t parent;
   unsigned child_count;
+  // Earliest creation time among children that are still working/waiting.
+  int64_t child_started_ms;
   char child_agents[2][AGENT_NAME_MAX + 1];
   unsigned child_counts[2], child_other;
   char agent[AGENT_NAME_MAX + 1];

@@ -10,4 +10,6 @@ void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
                 double scale, pix_t limit, bool store);
 void draw_text(uint8_t *dst, int dw, int dh, const sign_text_t *text,
                double scale, pix_t bounds, bool store);
+void draw_badge_text(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
+                     double scale, pix_t bounds);
 #endif

@@ -4,7 +4,32 @@
 #include "sign_draw_internal.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
+
+void draw_badge_text(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
+                     double scale, pix_t bounds) {
+  char label[3];
+  if (shape->badge_count > 9)
+    strcpy(label, "9+");
+  else
+    snprintf(label, sizeof(label), "%u", shape->badge_count);
+  double x = shape->x, y = shape->y;
+  if (shape->pixel_snap) {
+    x = round(x * scale) / scale;
+    y = round(y * scale) / scale;
+  }
+  float px = (float)(shape->h * (shape->badge_count > 9 ? 7.5 : 9) / 13);
+  double baseline = text_baseline(y, shape->h, px, true);
+  double left = x + (shape->w - text_measure(label, px, true)) / 2;
+  pix_t clip = intersect(bounds, pix_of(x, y, shape->w, shape->h, scale));
+  if (clip.r <= clip.x || clip.b <= clip.y)
+    return;
+  text_draw_clip(
+      dst, dw, dh, (int)lround(left * scale), (int)lround(baseline * scale),
+      label, px, true, shape->outline, 0,
+      (text_clip_t){clip.x, clip.y, clip.r - clip.x, clip.b - clip.y});
+}
 
 static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
                      double scale, pix_t bounds, bool store) {

@@ -514,8 +514,11 @@ void sign_draw_clip(uint8_t *dst, int dw, int dh, int scale_120,
   for (int i = 0; i < frame->shape_count; i++) {
     const sign_shape_t *shape = &frame->shapes[i];
     bool over = shape->above;
-    if (over == (layer == SIGN_DRAW_OVER))
+    if (over == (layer == SIGN_DRAW_OVER)) {
       draw_shape(dst, dw, dh, shape, scale, bounds, store);
+      if (shape->kind == SIGN_BADGE)
+        draw_badge_text(dst, dw, dh, shape, scale, bounds);
+    }
   }
   for (int i = 0; i < frame->text_count; i++) {
     const sign_text_t *text = &frame->texts[i];

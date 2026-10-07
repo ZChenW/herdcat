@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Idle and read done parents with active subagents now display and rank as
+  working, with “Waiting on subagent N min” / “等待子代理 N 分钟” measured
+  from the oldest still-active child's start. Actual session state and alerts
+  are unchanged. Fan plates show an upright active-child badge, capped at `9+`,
+  switching to the left corner beside unread completion; post boards use `+N`.
+
 ## [0.2.0] - 2026-10-06
 
 ### Added

@@ -24,8 +24,12 @@ static void board_label(const sign_slot_t *slot, const sign_input_t *in,
   }
   char who[64];
   sign_agent_label(&slot->session, true, who);
-  if (slot->session.state == AGENT_STATE_WORKING) {
-    int64_t elapsed = in->now_ms - slot->session.state_since_ms;
+  if (agent_sign_waits_on_children(&slot->session)) {
+    char state[64];
+    subagent_state_label(state, &slot->session, in, NULL);
+    snprintf(text->meta, sizeof(text->meta), "%.20s · %.38s", who, state);
+  } else if (agent_sign_state(&slot->session) == AGENT_STATE_WORKING) {
+    int64_t elapsed = in->now_ms - agent_sign_since(&slot->session);
     if (elapsed < 0)
       elapsed = 0;
     int64_t minutes = elapsed / 60000;
@@ -35,9 +39,9 @@ static void board_label(const sign_slot_t *slot, const sign_input_t *in,
              (long long)minutes, WORDS[in->english ? 1 : 0].minute);
   } else {
     const char *label = WORDS[in->english ? 1 : 0].idle;
-    if (slot->session.state == AGENT_STATE_WAITING)
+    if (agent_sign_state(&slot->session) == AGENT_STATE_WAITING)
       label = WORDS[in->english ? 1 : 0].waiting;
-    else if (finished(slot->session.state))
+    else if (finished(agent_sign_state(&slot->session)))
       label = done_label(in, false, &slot->session);
     snprintf(text->meta, sizeof(text->meta), "%.20s · %.36s", who, label);
   }
@@ -53,11 +57,13 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
                   sign_frame_t *frame, double pole_x, double cat_bottom,
                   double scale, double desk_clear) {
   const sign_palette_t *palette = sign_palette(in->theme);
-  bool visible = slot->present && (show_session(in, slot->session.state)) &&
+  bool visible = slot->present &&
+                 (show_session(in, agent_sign_state(&slot->session))) &&
                  !(in->typing && in->typing_key == slot->session.key);
   // Waiting and error say what they are without being hovered.
-  bool expanded = in->open || slot->session.state == AGENT_STATE_WAITING ||
-                  slot->session.state == AGENT_STATE_ERROR;
+  bool expanded = in->open ||
+                  agent_sign_state(&slot->session) == AGENT_STATE_WAITING ||
+                  agent_sign_state(&slot->session) == AGENT_STATE_ERROR;
   sign_text_t label = {0};
   if (visible || slot->opacity.target > 0)
     board_label(slot, in, &label);
@@ -95,7 +101,8 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
     opacity *= .55;
   double states[AGENT_STATE_COUNT], sum = 0;
   for (int state = 0; state < AGENT_STATE_COUNT; state++) {
-    double target = slot->session.state == (agent_state_t)state ? 1 : 0;
+    double target =
+        agent_sign_state(&slot->session) == (agent_state_t)state ? 1 : 0;
     states[state] = clamp_unit(
         aim(&slot->states[state], target, FADE_MS, &BEZIER_EASE, in, frame));
     sum += states[state];
@@ -154,14 +161,14 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
     frame->shapes[i].clip_w = fmax(0, (width - 4) * scale);
     frame->shapes[i].clip_h = 22 * scale;
   }
-  if (slot->session.unread && finished(slot->session.state)) {
-    add_unread(frame, slot->session.state, x, y, width * scale, scale, opacity,
-               in);
+  if (slot->session.unread && finished(agent_sign_state(&slot->session))) {
+    add_unread(frame, agent_sign_state(&slot->session), x, y, width * scale,
+               scale, opacity, in);
   }
   snap_from(frame, board_at, nudging);
   if (width > 41 && frame->text_count < SIGN_MAX_TEXTS) {
     sign_text_t *text = &frame->texts[frame->text_count++];
-    uint32_t meta = meta_color(slot->session.state, in);
+    uint32_t meta = meta_color(agent_sign_state(&slot->session), in);
     double line_h = 13 * scale * ratio;
     *text = (sign_text_t){.x = x + (direction > 0 ? 33 : 8) * scale,
                           .line_top = y + 2 * scale + (22 * scale - line_h) / 2,
@@ -177,8 +184,8 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
                               with_alpha(palette->secondary, opacity),
                           .meta_color = with_alpha(meta, opacity),
                           .reverse = direction < 0};
-    if (slot->session.state == AGENT_STATE_WORKING) {
-      int64_t elapsed = in->now_ms - slot->session.state_since_ms;
+    if (agent_sign_state(&slot->session) == AGENT_STATE_WORKING) {
+      int64_t elapsed = in->now_ms - agent_sign_since(&slot->session);
       if (elapsed < 0)
         elapsed = 0;
       wake_at(frame, in->now_ms + 60000 - elapsed % 60000);
