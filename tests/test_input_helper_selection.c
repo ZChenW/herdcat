@@ -7,6 +7,9 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 
+enum {
+  FAKE_SOCKET = 250
+};
 static bool available;
 static bool executable;
 static int spawn_count;
@@ -29,8 +32,10 @@ int __wrap_socketpair(int domain, int type, int protocol, int sockets[2]) {
   TEST_ASSERT(domain == AF_UNIX &&
               type == (SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK) &&
               protocol == 0);
-  sockets[0] = 10000;
-  sockets[1] = 10001;
+  // Stay below the open-file limit: glibc refuses a spawn file action on a
+  // descriptor at or above it, and an ordinary shell allows only 1024.
+  sockets[0] = FAKE_SOCKET;
+  sockets[1] = FAKE_SOCKET + 1;
   return 0;
 }
 int __wrap_posix_spawn(pid_t *pid, const char *path,
@@ -57,7 +62,7 @@ int __wrap_posix_spawn(pid_t *pid, const char *path,
   return 0;
 }
 int __wrap_close(int fd) {
-  return fd == 10000 || fd == 10001 ? 0 : __real_close(fd);
+  return fd == FAKE_SOCKET || fd == FAKE_SOCKET + 1 ? 0 : __real_close(fd);
 }
 int __wrap_kill(pid_t pid, int sig) {
   TEST_ASSERT(pid == 1000000 && sig == SIGTERM);
