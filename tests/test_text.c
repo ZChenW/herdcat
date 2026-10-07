@@ -278,7 +278,9 @@ int main(void) {
   test_family();
   test_catalog();
   test_class();
-  TEST_ASSERT(text_init(NULL) == 0);
+  // Keep the full-opacity assertion below deterministic: small periods in
+  // the system's arbitrary default face can be entirely antialiased.
+  TEST_ASSERT(text_init("DejaVu Sans") == 0);
   TEST_ASSERT(text_measure("", 13, true) == 0);
   TEST_ASSERT(text_measure("abc", 13, true) > text_measure("ab", 13, true));
   TEST_ASSERT(text_measure("\xff", 13, false) == text_measure("�", 13, false));

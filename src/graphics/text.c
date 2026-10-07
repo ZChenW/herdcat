@@ -450,13 +450,52 @@ static uint32_t next(const char **s) {
   *s += n ? n : 1;
   return n ? cp : 0xfffd;
 }
+typedef struct {
+  glyph_t *dot;
+  int diameter, width;
+  double step;
+} ellipsis_t;
+// U+2026 is an internal truncation marker. Use this geometry for both
+// measuring and painting, independently of the font's centred ellipsis.
+static ellipsis_t ellipsis_geometry(const char *family, float px, bool bold) {
+  ellipsis_t e = {0};
+  if (!library || !isfinite(px) || px <= 0 || px > 256)
+    return e;
+  int f = face_for(family, 0, bold);
+  if (f >= 0 && FT_Get_Char_Index(faces[f].ft, '.'))
+    e.dot = glyph(family, '.', px, bold);
+  if (e.dot && e.dot->w > 0 && e.dot->h > 0) {
+    e.diameter = e.dot->w;
+    e.step = (int)lround(e.dot->advance / 64.0 * .8);
+  } else {
+    e.dot = NULL;
+    e.diameter = (int)ceil((double)px * scale_120 / 120 * .12);
+    e.step = e.diameter + 1;
+  }
+  // Keep three distinct dots at small sizes, including heavy faces.
+  e.step = e.step > e.diameter ? e.step : e.diameter + 1;
+  double scale = scale_120 / 120.0;
+  // Match the public API's whole-logical-pixel budget at fractional scales.
+  e.width = (int)floor(ceil((2 * e.step + e.diameter) / scale) * scale);
+  e.step = (e.width - e.diameter) / 2.0;
+  return e;
+}
+static double advance(const char *family, uint32_t cp, float px, bool bold) {
+  if (cp == 0x2026)
+    return ellipsis_geometry(family, px, bold).width;
+  glyph_t *g = glyph(family, cp, px, bold);
+  return g ? g->advance / 64.0 : 0;
+}
 static double width(const char *family, const char *s, float px, bool bold) {
-  double w = 0;
+  double w = 0, content_end = 0;
   if (s)
     while (*s) {
-      glyph_t *g = glyph(family, next(&s), px, bold);
-      if (g)
-        w += g->advance / 64.0;
+      uint32_t cp = next(&s);
+      if (cp == 0x2026)
+        w = content_end;
+      w += advance(family, cp, px, bold);
+      if (cp != ' ')
+        content_end = w;
     }
   return w;
 }
@@ -603,7 +642,7 @@ double text_baseline_family(const char *family, double line_top, double line_h,
 double text_baseline(double line_top, double line_h, float px, bool bold) {
   return text_baseline_family(NULL, line_top, line_h, px, bold);
 }
-static void paint(uint8_t *dst, int dw, int dh, int x, int y, glyph_t *g,
+static void paint(uint8_t *dst, int dw, int dh, int64_t x, int y, glyph_t *g,
                   uint32_t color, text_clip_t clip) {
   for (int gy = 0; gy < g->h; gy++) {
     int64_t yy = (int64_t)y - g->top + gy;
@@ -624,12 +663,47 @@ static void paint(uint8_t *dst, int dw, int dh, int x, int y, glyph_t *g,
     }
   }
 }
+static void paint_ellipsis(uint8_t *dst, int dw, int dh, int x, int y,
+                           const char *family, float px, bool bold,
+                           uint32_t color, text_clip_t clip) {
+  ellipsis_t e = ellipsis_geometry(family, px, bold);
+  if (!e.width)
+    return;
+  if (e.dot) {
+    // Font bearings may centre even a period. Anchor its ink bottom to the
+    // baseline and remove its left bearing from the shared width budget.
+    glyph_t dot = *e.dot;
+    dot.left = 0;
+    dot.top = dot.h - 1;
+    for (int i = 0; i < 3; i++)
+      paint(dst, dw, dh, (int64_t)x + lround(i * e.step), y, &dot, color, clip);
+    return;
+  }
+  size_t bytes = (size_t)e.diameter * (size_t)e.diameter;
+  uint8_t *pixels = malloc(bytes);
+  if (!pixels)
+    return;
+  double radius = e.diameter / 2.0;
+  for (int gy = 0; gy < e.diameter; gy++)
+    for (int gx = 0; gx < e.diameter; gx++) {
+      double dx = gx + .5 - radius, dy = gy + .5 - radius;
+      double coverage = fmax(0, fmin(1, radius + .5 - hypot(dx, dy)));
+      pixels[gy * e.diameter + gx] = (uint8_t)lround(coverage * 255);
+    }
+  glyph_t dot = {.w = e.diameter,
+                 .h = e.diameter,
+                 .top = e.diameter - 1,
+                 .pixels = pixels};
+  for (int i = 0; i < 3; i++)
+    paint(dst, dw, dh, (int64_t)x + lround(i * e.step), y, &dot, color, clip);
+  free(pixels);
+}
 static void draw_line(uint8_t *dst, int dw, int dh, int x, int y,
                       const char *family, const char *s, float px, bool bold,
                       uint32_t color, int max_w, text_clip_t clip) {
   if (!dst || dw <= 0 || dh <= 0 || !s || clip.w <= 0 || clip.h <= 0)
     return;
-  double total = width(family, s, px, bold), pen = x;
+  double total = width(family, s, px, bold), pen = x, content_end = x;
   bool shortened = max_w > 0 && total > max_w;
   double ellipsis = shortened ? width(family, "…", px, bold) : 0;
   double available = max_w > 0 ? max_w - ellipsis : total;
@@ -644,21 +718,31 @@ static void draw_line(uint8_t *dst, int dw, int dh, int x, int y,
   if (shortened && ellipsis > max_w)
     return;
   while (*s) {
-    glyph_t *g = glyph(family, next(&s), px, bold);
-    if (!g)
-      continue;
-    if (pen - x + g->advance / 64.0 > available + .001)
+    uint32_t cp = next(&s);
+    glyph_t *g = cp == 0x2026 ? NULL : glyph(family, cp, px, bold);
+    double step = cp == 0x2026 ? ellipsis_geometry(family, px, bold).width
+                  : g          ? g->advance / 64.0
+                               : 0;
+    // A prefix may end at a space, including title-length markers stored in
+    // strings. Remove only the gap before the marker; " · " stays unchanged.
+    if (cp == 0x2026)
+      pen = content_end;
+    if (cp != ' ' && pen - x + step > available + .001)
       break;
     if (pen > INT32_MAX || pen < INT32_MIN)
       break;
-    paint(dst, dw, dh, (int)lround(pen), y, g, color, clip);
-    pen += g->advance / 64.0;
-  }
-  if (shortened && pen <= INT32_MAX && pen >= INT32_MIN) {
-    glyph_t *g = glyph(family, 0x2026, px, bold);
-    if (g)
+    if (cp == 0x2026)
+      paint_ellipsis(dst, dw, dh, (int)lround(pen), y, family, px, bold, color,
+                     clip);
+    else if (g)
       paint(dst, dw, dh, (int)lround(pen), y, g, color, clip);
+    pen += step;
+    if (cp != ' ')
+      content_end = pen;
   }
+  if (shortened && content_end <= INT32_MAX && content_end >= INT32_MIN)
+    paint_ellipsis(dst, dw, dh, (int)lround(content_end), y, family, px, bold,
+                   color, clip);
 }
 void text_draw_clip_family(uint8_t *dst, int dw, int dh, int x, int y,
                            const char *family, const char *s, float px,

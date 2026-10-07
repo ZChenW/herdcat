@@ -374,6 +374,7 @@ $(BUILDDIR)/test_compositor_backends: TEST_WRAPS = -Wl,--wrap=socket,--wrap=conn
 $(BUILDDIR)/test_agent_children: TEST_WRAPS = -Wl,--wrap=openat
 $(BUILDDIR)/test_title_hooks: TEST_WRAPS = -Wl,--wrap=control_request
 $(BUILDDIR)/test_text_centering: TEST_WRAPS = -Wl,--wrap=FT_Get_Sfnt_Table,--wrap=FT_Get_Char_Index
+$(BUILDDIR)/test_ellipsis: TEST_WRAPS = -Wl,--wrap=FT_Get_Char_Index
 $(BUILDDIR)/test_session_recovery: TEST_WRAPS = -Wl,--wrap=signs_frame
 
 # These tests embed a source implementation with their own defines/flags.

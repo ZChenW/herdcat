@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Truncation ellipses use three compact baseline periods in the selected
+  font and weight, including CJK faces, with a circular-dot fallback when
+  periods are missing. Sign, typing-desk and font-panel width budgets match
+  the drawn dots; middle-dot separators retain their spacing and position.
+
 ### Changed
 
 - Transparent sign surfaces now allocate buffers for the current board count:

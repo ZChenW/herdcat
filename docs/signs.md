@@ -283,6 +283,13 @@ No sign-related periodic wakes remain when there are no sessions, hover or
 keys. Reduced/off disable loops, including the desk caret blink; visible working
 duration labels still update once a minute.
 
+Truncation markers use three compact periods from the selected font and weight,
+anchored to the text baseline. A font without periods uses three circular dots.
+These dots share their measurement and drawing geometry across nameplates,
+post pills, the typing desk, the switch card and the font panel. They follow the
+cut text without a space; the higher ` · ` separator keeps its original spaces.
+See the [before/after examples](design/ellipsis/README.md).
+
 ## Dragging
 
 Hold the left mouse button on the cat and move it horizontally or vertically.
