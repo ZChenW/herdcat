@@ -216,6 +216,7 @@ int main(void) {
   boards();
   caret_and_menu();
   sign_draw_cleanup();
-  puts("stage 23 cap sources, caching, content widths and edge limits passed");
+  puts("text centering cap sources, caching, content widths and edge limits "
+       "passed");
   return 0;
 }

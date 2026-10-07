@@ -402,36 +402,32 @@ cleanup:
   return exit_code;
 }
 
-int main(int argc, char **argv) {
-  input_privilege_init();
-  if (argc > 1 && strcmp(argv[1], "--input-helper") == 0) {
-    return input_helper_main(argc, argv);
-  }
-  input_privilege_drop();
-  if (argc > 1 && !strcmp(argv[1], "--transcript-prompt"))
-    return agent_prompt_main(argc, argv);
-  if (argc > 1 && strcmp(argv[1], "setup") == 0) {
-    argv[1] = "herdcat-setup";
-    execvp(argv[1], &argv[1]);
-    fprintf(stderr,
-            "Cannot run herdcat-setup: %s. Install the setup script and "
-            "Python 3, and include its bin directory in PATH.\n",
-            strerror(errno));
-    return 1;
-  }
-  herdcat_error_init(0);
-  const char *explicit_path = NULL;
-  const char *request = NULL;
-  const char *hook_agent = NULL;
-  const char *hook_event = NULL;
-  static char state_request[32];
-  static char pane_request[384];
-  bool watch = false;
-  bool toggle = false;
-  bool check = false;
-  bool devices = false;
-  bool monitors = false;
-  bool doctor = false;
+typedef struct {
+  const char *explicit_path;
+  const char *request;
+  const char *hook_agent;
+  const char *hook_event;
+  char state_request[32];
+  char pane_request[384];
+  bool watch;
+  bool toggle;
+  bool check;
+  bool devices;
+  bool monitors;
+  bool doctor;
+} cli_options_t;
+
+static int run_setup(char **argv) {
+  argv[1] = "herdcat-setup";
+  execvp(argv[1], &argv[1]);
+  fprintf(stderr,
+          "Cannot run herdcat-setup: %s. Install the setup script and "
+          "Python 3, and include its bin directory in PATH.\n",
+          strerror(errno));
+  return 1;
+}
+
+static int parse_arguments(int argc, char **argv, cli_options_t *options) {
   for (int i = 1; i < argc; i++) {
     const char *arg = argv[i];
     if (!strcmp(arg, "--help") || !strcmp(arg, "-h")) {
@@ -449,12 +445,12 @@ int main(int argc, char **argv) {
         return 1;
       }
       if (!strcmp(arg, "--config") || !strcmp(arg, "-c")) {
-        explicit_path = argv[i];
+        options->explicit_path = argv[i];
       } else {
         monitor_override = argv[i];
       }
     } else if (!strcmp(arg, "--hook")) {
-      if (request || hook_agent) {
+      if (options->request || options->hook_agent) {
         fprintf(stderr, "Select one control command\n");
         return 1;
       }
@@ -462,26 +458,27 @@ int main(int argc, char **argv) {
         fprintf(stderr, "--hook requires an agent name matching [a-z]{1,8}\n");
         return 1;
       }
-      hook_agent = argv[i];
+      options->hook_agent = argv[i];
     } else if (!strcmp(arg, "--event")) {
-      if (!hook_agent || hook_event || ++i >= argc || !argv[i][0] ||
-          strlen(argv[i]) >= 64) {
+      if (!options->hook_agent || options->hook_event || ++i >= argc ||
+          !argv[i][0] || strlen(argv[i]) >= 64) {
         fprintf(stderr, "--event requires a name after --hook AGENT\n");
         return 1;
       }
-      hook_event = argv[i];
+      options->hook_event = argv[i];
     } else if (!strcmp(arg, "--tmux")) {
-      if (request || hook_agent) {
+      if (options->request || options->hook_agent) {
         fprintf(stderr, "Select one control command\n");
         return 1;
       }
-      if (!agent_terminal_tmux_message(pane_request, sizeof(pane_request))) {
+      if (!agent_terminal_tmux_message(options->pane_request,
+                                       sizeof(options->pane_request))) {
         fprintf(stderr, "--tmux requires a valid TMUX server environment\n");
         return 1;
       }
-      request = pane_request;
+      options->request = options->pane_request;
     } else if (!strcmp(arg, "--pane")) {
-      if (request || hook_agent) {
+      if (options->request || options->hook_agent) {
         fprintf(stderr, "Select one control command\n");
         return 1;
       }
@@ -503,16 +500,18 @@ int main(int argc, char **argv) {
       }
       i += 2;
       if (tmux) {
-        if (!agent_terminal_pane_message(pane_request, sizeof(pane_request),
+        if (!agent_terminal_pane_message(options->pane_request,
+                                         sizeof(options->pane_request),
                                          pane_pid, pane_split, &terminal))
           return 1;
       } else {
-        snprintf(pane_request, sizeof(pane_request), "pane %ld %llu",
-                 (long)pane_pid, (unsigned long long)pane_split);
+        snprintf(options->pane_request, sizeof(options->pane_request),
+                 "pane %ld %llu", (long)pane_pid,
+                 (unsigned long long)pane_split);
       }
-      request = pane_request;
+      options->request = options->pane_request;
     } else if (!strcmp(arg, "--state") || !strcmp(arg, "--focus")) {
-      if (request || hook_agent) {
+      if (options->request || options->hook_agent) {
         fprintf(stderr, "Select one control command\n");
         return 1;
       }
@@ -524,67 +523,78 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Unknown agent state\n");
         return 1;
       }
-      snprintf(state_request, sizeof(state_request), "%s %s", arg + 2, argv[i]);
-      request = state_request;
+      snprintf(options->state_request, sizeof(options->state_request), "%s %s",
+               arg + 2, argv[i]);
+      options->request = options->state_request;
     } else if (!strcmp(arg, "--watch-config") || !strcmp(arg, "-w")) {
-      watch = true;
+      options->watch = true;
     } else if (!strcmp(arg, "--toggle") || !strcmp(arg, "-t")) {
-      toggle = true;
+      options->toggle = true;
     } else if (!strcmp(arg, "--check-config")) {
-      check = true;
+      options->check = true;
     } else if (!strcmp(arg, "--list-devices")) {
-      devices = true;
+      options->devices = true;
     } else if (!strcmp(arg, "--list-monitors")) {
-      monitors = true;
+      options->monitors = true;
     } else if (!strcmp(arg, "--doctor")) {
-      doctor = true;
+      options->doctor = true;
     } else if (!strcmp(arg, "--hide") || !strcmp(arg, "--show") ||
                !strcmp(arg, "--pause") || !strcmp(arg, "--resume") ||
                !strcmp(arg, "--reload") || !strcmp(arg, "--status") ||
                !strcmp(arg, "--sessions") || !strcmp(arg, "--reset-position")) {
-      if (request || hook_agent) {
+      if (options->request || options->hook_agent) {
         fprintf(stderr, "Select one control command\n");
         return 1;
       }
-      request = arg + 2;
+      options->request = arg + 2;
     } else {
       fprintf(stderr, "Unknown option: %s\n", arg);
       return 1;
     }
   }
-  if (hook_agent) {
-    return agent_hook_run(hook_agent, hook_event);
-  }
-  if (request) {
-    return control_request(request) == 0 ? 0 : 1;
-  }
-  if (toggle) {
-    int result = control_request("stop");
-    if (result != 2) {
-      return result;
+  return -1;
+}
+
+static bool dispatch_client(const cli_options_t *options, int *exit_code) {
+  if (options->hook_agent) {
+    *exit_code = agent_hook_run(options->hook_agent, options->hook_event);
+  } else if (options->request) {
+    *exit_code = control_request(options->request) == 0 ? 0 : 1;
+  } else {
+    if (options->toggle) {
+      int result = control_request("stop");
+      if (result != 2) {
+        *exit_code = result;
+        return true;
+      }
+    }
+    if (options->devices && !options->doctor) {
+      *exit_code = input_list_devices();
+    } else if (options->monitors && !options->doctor) {
+      *exit_code = wayland_list_monitors(false);
+    } else {
+      return false;
     }
   }
-  if (devices && !doctor) {
-    return input_list_devices();
-  }
-  if (monitors && !doctor) {
-    return wayland_list_monitors(false);
-  }
-  config_path = config_resolve_path(explicit_path);
+  return true;
+}
+
+static int run_configured_application(const cli_options_t *options) {
+  config_path = config_resolve_path(options->explicit_path);
   if (!config_path) {
     config_path = strdup("herdcat.conf");
   }
   if (!config_path) {
     return 1;
   }
-  herdcat_error_t result = (check || doctor)
+  herdcat_error_t result = (options->check || options->doctor)
                                ? load_config_strict(&config, config_path)
                                : load_config(&config, config_path);
-  if (check || doctor) {
+  if (options->check || options->doctor) {
     printf("Config: %s (%s)\n", config_path,
            result == HERDCAT_SUCCESS ? "valid" : "invalid");
     int failure = result != HERDCAT_SUCCESS;
-    if (doctor) {
+    if (options->doctor) {
       printf("Agent integrations: herdcat setup --status\n");
       const compositor_ops_t *ops =
           compositor_detect(config.compositor_experimental != 0);
@@ -599,5 +609,23 @@ int main(int argc, char **argv) {
     free(config_path);
     return failure;
   }
-  return run_application(watch, result);
+  return run_application(options->watch, result);
+}
+
+int main(int argc, char **argv) {
+  input_privilege_init();
+  if (argc > 1 && strcmp(argv[1], "--input-helper") == 0) {
+    return input_helper_main(argc, argv);
+  }
+  input_privilege_drop();
+  if (argc > 1 && !strcmp(argv[1], "--transcript-prompt"))
+    return agent_prompt_main(argc, argv);
+  if (argc > 1 && strcmp(argv[1], "setup") == 0)
+    return run_setup(argv);
+  herdcat_error_init(0);
+  cli_options_t options = {0};
+  int exit_code = parse_arguments(argc, argv, &options);
+  if (exit_code >= 0 || dispatch_client(&options, &exit_code))
+    return exit_code;
+  return run_configured_application(&options);
 }

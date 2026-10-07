@@ -30,6 +30,7 @@ check() {
 
 package() {
   cd "$srcdir/herdcat"
+  # Includes the user service, shell completions and share/herdcat setup helper.
   make BUILD_TYPE=release PREFIX=/usr DESTDIR="$pkgdir" install
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

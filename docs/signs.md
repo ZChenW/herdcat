@@ -79,7 +79,7 @@ Post signs simply continue their alternating sides to ten rows. Menu opening
 retracts both fan rows. The typing desk, switch card and font panel keep their
 existing layout. Surface height and above/below thresholds reserve room for
 the configured `sign_max`, even when fewer sessions are present; values up to
-five retain the previous height. See the [stage 26 report](performance/stage26-report.md)
+five retain the previous height. See the [sign rows report](performance/sign-rows-report.md)
 and [rendered examples](design/two-rows/README.md).
 
 ## Terminal support
@@ -396,4 +396,4 @@ The isolated `scripts/measure_scenarios.py --scenario pointer` scenario sends
 4000 motions at a nominal 1000 Hz over four seconds, alternating by one logical
 pixel inside one settled post sign. It records renderer CPU/context switches,
 compositor submissions and the number of received motions; it never moves the
-real desktop pointer. See [stage 27 report](performance/stage27-report.md).
+real desktop pointer. See [session recovery report](performance/session-recovery-report.md).

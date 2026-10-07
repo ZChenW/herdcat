@@ -27,7 +27,7 @@
 
 // Freeze the old board geometry with deterministic measured content. These
 // shape-only goldens exercise rasterization, independently of installed fonts
-// and the new content-dependent layout (covered in test_stage23).
+// and the new content-dependent layout (covered in test_text_centering).
 int __wrap_text_measure(const char *text, float px, bool bold);
 int __wrap_text_measure(const char *text, float px, bool bold) {
   (void)px;

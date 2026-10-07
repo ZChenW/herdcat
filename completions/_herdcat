@@ -1,0 +1,35 @@
+#compdef herdcat
+local -a agents
+agents=(opencode claude codex grok kimi cursor copilot pi)
+
+if [[ $words[2] == setup ]]; then
+  _arguments \
+    '--status[Check integrations]' \
+    '--dry-run[Preview without writing]' \
+    '--remove[Remove integrations]' \
+    '--yes[Apply without confirmation]' \
+    '(-h --help)'{-h,--help}'[Show help]' \
+    "*:integration:($agents tmux kitty)"
+else
+  _arguments \
+    '(-c --config)'{-c,--config}'[Configuration path]:file:_files' \
+    '(-w --watch-config)'{-w,--watch-config}'[Watch configuration]' \
+    '(-m --monitor)'{-m,--monitor}'[Override output]:monitor:' \
+    '(-t --toggle)'{-t,--toggle}'[Start or stop herdcat]' \
+    '--hide[Hide overlays]' '--show[Show overlays]' \
+    '--pause[Pause input animation]' '--resume[Resume animation]' \
+    '--focus[Focus session terminal]:session key:' \
+    '--pane[Report focused split]:process ID::split ID:' \
+    '--tmux[Refresh TMUX sessions]' \
+    '--state[Set manual state]:state:(idle working waiting done error)' \
+    '--sessions[List sessions]' '--reset-position[Reset positions]' \
+    '--event[Override hook event]:event:' \
+    "--hook[Read lifecycle event]:agent:($agents)" \
+    '--reload[Reload configuration]' '--status[Query running herdcat]' \
+    '--check-config[Validate configuration]' \
+    '--list-devices[List input devices]' '--list-monitors[List outputs]' \
+    '--doctor[Check configuration and permissions]' \
+    '(-h --help)'{-h,--help}'[Show help]' \
+    '(-v --version)'{-v,--version}'[Show version]' \
+    '1:command:(setup)'
+fi

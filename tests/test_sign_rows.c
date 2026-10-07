@@ -2,8 +2,8 @@
 #include "graphics/sign_draw.h"
 #include "graphics/text.h"
 #include "platform/overlay_vertical.h"
+#include "sign_rows_hashes.h"
 #include "signs_nanosvg.h"
-#include "stage26_pixel_hashes.h"
 #include "test_helpers.h"
 
 #include <math.h>

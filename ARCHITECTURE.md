@@ -1,12 +1,62 @@
 # Architecture
 
+## Module map
+
+```mermaid
+flowchart TD
+    CLI[CLI and setup] --> MAIN[core/main: startup and shared event loop]
+    CONFIG[config: parsing, validation and watching] --> MAIN
+    INPUT[platform/input: evdev helper] -->|private socketpair| MAIN
+    HOOK[core/agent_hook: adapter event scanner] -->|authenticated control socket| CONTROL[core/control]
+    CLI --> CONTROL
+    CONTROL --> MAIN
+    WATCH[platform: process, focus, transcript and theme watches] --> MAIN
+    MAIN --> SESSIONS[core: agent sessions and runtime coordination]
+    SESSIONS --> STORE[platform/session_store: private state records]
+    STORE -->|restore| SESSIONS
+    MAIN --> WAYLAND[platform/wayland: outputs and overlay lifecycle]
+    WAYLAND --> POINTER[platform/overlay_pointer: pointer and drag]
+    POINTER --> SESSIONS
+    WAYLAND --> SIGNS[platform/overlay_signs: per-output state]
+    SESSIONS --> SIGNS
+    SIGNS --> GRAPHICS[graphics: signs, text, SVG and animation]
+    GRAPHICS --> PRESENT[platform/overlay_present and shm_buffer]
+    PRESENT -->|surface commits| COMPOSITOR[Wayland compositor]
+    COMPOSITOR -->|outputs and pointer events| WAYLAND
+    COMPOSITOR -->|focus event stream| WATCH
+```
+
+## Event routes
+
+| Event source | Processing and ownership | Destination |
+| --- | --- | --- |
+| Keyboard evdev devices | Input helper sends paw bits and timestamps over its private socketpair; renderer applies mapping and `note_key` | Per-output animation, typing desk and overlay commits |
+| Agent lifecycle hook | `agent_hook` adapter scanner → authenticated `control` → runtime session commands | Session state, child ownership, process watches and signs |
+| Compositor window focus | Compositor backend → `focus_watch` map via agent epoll → runtime focus matching | Seen/current session, completion acknowledgement and desk |
+| Wayland pointer | Seat callbacks → `overlay_pointer`, sign hit tests and drag geometry | Session focus, menus, saved position and surface commits |
+| Configuration replacement/change | Parent-directory inotify → `config_watcher` debounce → strict `reload` | Config swap, output reconciliation, input restart and text/theme updates |
+| Session records | `session_store` startup load; generation changes and flush deadlines in `tick` | Restored sessions/terminals and bounded private state file |
+| XDG theme portal | Bounded busctl query/monitor → `theme_watch` on agent epoll | Effective sign palette, damage and redraw |
+
+## Process and thread model
+
 The renderer owns one Wayland connection and one event loop for every overlay.
 One input helper is executed with `posix_spawn()` through `/proc/self/exe`.
 There are no animation or configuration-watcher threads and no per-monitor
 processes. Runtime dependencies are C23, Linux evdev, Wayland client, FreeType and
 Fontconfig. The text libraries are an intentional dependency: the signs need real text.
 
+The renderer and input helper each run a single thread. The helper handles evdev
+discovery and reading; the renderer owns configuration, sessions, menus, drawing
+and all output surfaces. Hook and control clients are short-lived processes.
+Terminal/compositor commands and busctl run as bounded asynchronous jobs or
+managed listeners; transcript title recovery uses an unprivileged short-lived
+copy of the executable. Their descriptors and deadlines join the renderer's
+poll/epoll loop, with cleanup and reaping owned by the spawning module.
+
 ## Ownership and event flow
+
+### Shared event loop and deadlines
 
 The renderer polls Wayland, the private input socket, directory inotify,
 authenticated control connections, agent process epoll and a signal eventfd. Timeouts are the
@@ -15,6 +65,8 @@ Idle overlays have no animation timeout; sleeping overlays wait for meaningful
 deadlines. Animation redraws respect live FPS changes, including `fps=1`.
 Wayland read preparation is cancelled whenever a poll wakeup has no display
 input. Flush backpressure adds POLLOUT interest.
+
+### Output lifecycle and presentation
 
 Each overlay owns a layer surface, optional viewport/fractional-scale object,
 two release-aware SHM buffers, effective monitor configuration, animation
@@ -38,6 +90,8 @@ overlays continue. Configuration reload reconciles
 selection without restarting the process. Configure events determine actual
 surface dimensions.
 
+### Animation and fullscreen visibility
+
 `graphics/animation.c` shares parsed embedded SVGs and the rasterizer, while
 holding paw deadlines and caches separately for each overlay. Input packets
 contain only paw bits, monotonic timestamps and device counts. Configured
@@ -52,6 +106,8 @@ bounded `posix_spawnp()` jobs: one-second deadline, bounded output, checked
 exit status and termination/reaping on failure. It does not block Wayland.
 
 ## Configuration and control
+
+### Pointer geometry and saved positions
 
 The first Wayland seat supplies `wl_pointer` events only; no keyboard seat is
 requested. Pointer enter selects an overlay. When configured, visible and
@@ -98,6 +154,8 @@ mode 0600; descriptor-based opens reject symlinks and non-regular files. Reload,
 scale/output changes and reconnection clamp saved positions. `reset-position`
 removes the state file and resets all overlays without rewriting configuration.
 
+### Configuration loading and reload
+
 `config/config.c` owns loading, diagnostics, strict/tolerant policy, defaults
 and monitor overrides without input access.
 `config/config_parse.c` holds existing file, section and key/value parsing.
@@ -114,6 +172,8 @@ Reload creates a temporary configuration before swapping the active one.
 and reloads 300 ms after the last relevant event. Atomic replacement,
 deletion/recreation, overflow and invalidated directory watches are handled.
 
+### Authenticated control and singleton ownership
+
 `core/control.c` locks a user-owned regular PID file before truncation, rejects
 symlinks and unsafe metadata, and retains its inode between runs. The lock is
 held until all cleanup finishes. Controls use a mode-0600 Unix sequenced-packet
@@ -122,6 +182,8 @@ Toggle requests a stop through the socket; it never trusts a stale PID to
 signal an unrelated process group.
 
 ## Agent sessions and hooks
+
+### Session state and process watches
 
 `core/agent_sessions.c` owns a fixed 32-slot table keyed by the FNV-1a hash of
 agent and session ID; key zero is the manual session. The table resolves waiting
@@ -136,6 +198,8 @@ loop removes sessions for exited processes, expires deadlines and resolves state
 before processing controls. END, eviction and PID replacement prune watches
 only when no remaining session references them. Unavailable pidfds fall back to
 stale expiry; watched waiting sessions do not expire. There is no polling worker.
+
+### Hook transport and child sessions
 
 `core/agent_hook.c` streams stdin into a bounded JSON scanner, maps lifecycle
 events and sends a short `ev` request through the existing authenticated control
@@ -421,7 +485,7 @@ Theme and experimental snapshot descriptors use the existing agent epoll;
 six basics plus the control socket still fit the seven external poll slots.
 
 
-## Stage 27 metadata and pointer work
+## Session metadata recovery and pointer frame reuse
 
 cwd handoffs use a bounded hex pathname plus the hook's existing place label.
 The daemon lexically normalizes the first cwd, persists it in version-4 private

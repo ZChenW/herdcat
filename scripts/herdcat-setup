@@ -15,6 +15,16 @@ import sys
 import tempfile
 import urllib.parse
 
+_script_dir = Path(__file__).resolve().parent
+for _helper_dir in (_script_dir, _script_dir.parent / 'share/herdcat'):
+    if (_helper_dir / 'herdcat_setup_json.py').is_file():
+        sys.path.insert(0, str(_helper_dir))
+        break
+else:
+    print('Cannot find herdcat_setup_json.py beside herdcat-setup or in '
+          '../share/herdcat; reinstall herdcat setup files.', file=sys.stderr)
+    raise SystemExit(1)
+
 from herdcat_setup_json import SetupError, load_json, Jsonc, apply_edits
 
 

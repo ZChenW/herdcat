@@ -82,7 +82,7 @@ static void invoke(const char *agent, const char *event, const char *extra) {
   char data[2048];
   int length = snprintf(data, sizeof(data),
                         "{\"session_id\":\"test-id\",\"sessionId\":\"test-id\","
-                        "\"cwd\":\"/tmp/stage21-project\",\"agent_pid\":%ld%s}",
+                        "\"cwd\":\"/tmp/title-project\",\"agent_pid\":%ld%s}",
                         (long)getppid(), extra);
   TEST_ASSERT(length > 0 && (size_t)length < sizeof(data));
   int input[2];
@@ -107,7 +107,7 @@ static void scenario(const char *agent) {
   if (!strcmp(agent, "grok")) {
     invoke(agent, "UserPromptSubmit", ",\"prompt\":\"SYNTHETIC_PROMPT\"");
     expect("SYNTHETIC_PROMPT", true);
-    put(".grok/sessions/%2Ftmp%2Fstage21-project/test-id/summary.json",
+    put(".grok/sessions/%2Ftmp%2Ftitle-project/test-id/summary.json",
         "{\"info\":{\"id\":\"test-id\"},\"generated_title\":\"SYNTHETIC_"
         "REAL\"}");
     invoke(agent, "Stop", "");
@@ -130,12 +130,12 @@ static void scenario(const char *agent) {
     expect("SYNTHETIC_REAL", false);
     TEST_ASSERT(ids == 2 && asks == 1);
   } else if (!strcmp(agent, "pi")) {
-    put(".pi/agent/sessions/--tmp-stage21-project--/timestamp_test-id.jsonl",
+    put(".pi/agent/sessions/--tmp-title-project--/timestamp_test-id.jsonl",
         "{\"type\":\"session_info\",\"name\":\"SYNTHETIC_REAL\"}\n");
     char extra[1600];
     snprintf(extra, sizeof(extra),
              ",\"transcript_path\":\"%s/.pi/agent/sessions/"
-             "--tmp-stage21-project--/timestamp_test-id.jsonl\"",
+             "--tmp-title-project--/timestamp_test-id.jsonl\"",
              home);
     invoke(agent, "session_start", extra);
     expect("SYNTHETIC_REAL", false);
@@ -167,13 +167,13 @@ static void scenario(const char *agent) {
           "summary: SYNTHETIC_REAL\n");
       invoke(agent, "agentStop", ",\"stopReason\":\"end_turn\"");
     } else if (!strcmp(agent, "claude")) {
-      put(".claude/projects/--tmp-stage21-project--/test-id.jsonl",
+      put(".claude/projects/--tmp-title-project--/test-id.jsonl",
           "{\"type\":\"ai-title\",\"aiTitle\":\"SYNTHETIC_REAL\","
           "\"sessionId\":\"test-id\"}\n");
       char extra[1600];
       snprintf(extra, sizeof(extra),
                ",\"transcript_path\":\"%s/.claude/projects/"
-               "--tmp-stage21-project--/test-id.jsonl\"",
+               "--tmp-title-project--/test-id.jsonl\"",
                home);
       invoke(agent, "Stop", extra);
     } else if (!strcmp(agent, "codex")) {
@@ -234,8 +234,8 @@ int main(int argc, char **argv) {
   const char *dirs[] = {
       ".grok",
       ".grok/sessions",
-      ".grok/sessions/%2Ftmp%2Fstage21-project",
-      ".grok/sessions/%2Ftmp%2Fstage21-project/test-id",
+      ".grok/sessions/%2Ftmp%2Ftitle-project",
+      ".grok/sessions/%2Ftmp%2Ftitle-project/test-id",
       ".kimi-code",
       ".kimi-code/sessions",
       ".kimi-code/sessions/0123456789abcdef0123456789abcdef",
@@ -243,13 +243,13 @@ int main(int argc, char **argv) {
       ".pi",
       ".pi/agent",
       ".pi/agent/sessions",
-      ".pi/agent/sessions/--tmp-stage21-project--",
+      ".pi/agent/sessions/--tmp-title-project--",
       ".copilot",
       ".copilot/session-state",
       ".copilot/session-state/test-id",
       ".claude",
       ".claude/projects",
-      ".claude/projects/--tmp-stage21-project--",
+      ".claude/projects/--tmp-title-project--",
       ".codex"};
   for (size_t i = 0; i < sizeof(dirs) / sizeof(*dirs); i++)
     directory(dirs[i]);
@@ -259,12 +259,12 @@ int main(int argc, char **argv) {
   for (size_t i = 0; i < sizeof(agents) / sizeof(*agents); i++)
     child_test(agents[i]);
   const char *files[] = {
-      ".grok/sessions/%2Ftmp%2Fstage21-project/test-id/summary.json",
+      ".grok/sessions/%2Ftmp%2Ftitle-project/test-id/summary.json",
       ".kimi-code/session_index.jsonl",
       ".kimi-code/sessions/0123456789abcdef0123456789abcdef/test-id/state.json",
-      ".pi/agent/sessions/--tmp-stage21-project--/timestamp_test-id.jsonl",
+      ".pi/agent/sessions/--tmp-title-project--/timestamp_test-id.jsonl",
       ".copilot/session-state/test-id/workspace.yaml",
-      ".claude/projects/--tmp-stage21-project--/test-id.jsonl",
+      ".claude/projects/--tmp-title-project--/test-id.jsonl",
       ".codex/session_index.jsonl"};
   char path[1024];
   for (size_t i = 0; i < sizeof(files) / sizeof(*files); i++) {

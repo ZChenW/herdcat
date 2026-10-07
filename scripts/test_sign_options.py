@@ -68,7 +68,7 @@ try:
     wait(lambda: (r / 'herdcat.sock').exists())
     wire('ev claude waiting aaaaaaaaaaaaaaaa 0')
     wire('name aaaaaaaaaaaaaaaa 演示 project')
-    wire('ask aaaaaaaaaaaaaaaa STAGE22_PRIVATE_TITLE')
+    wire('ask aaaaaaaaaaaaaaaa SIGNS_PRIVATE_TITLE')
     values = {
         'sign_style': ['fan', 'post', 'off'],
         'sign_max': list(range(1, 11)),
@@ -144,7 +144,7 @@ try:
     assert app.wait(timeout=5) == 0
     log = (r / 'app.log').read_text()
     assert 'AddressSanitizer' not in log and 'runtime error:' not in log
-    assert 'STAGE22_PRIVATE_TITLE' not in log
+    assert 'SIGNS_PRIVATE_TITLE' not in log
     print('Sign reload matrix, sticky/timeout, invalid reload and replay passed.')
 finally:
     if app and app.poll() is None:

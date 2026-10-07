@@ -101,9 +101,9 @@ static void displacement(void) {
       }
 }
 int main(void) {
-  // Frozen before stage 25: desk plus signs, both themes and orientations,
-  // at integer and fractional output scales. Shapes only: no font is loaded
-  // yet, because glyph rasterisation differs between FreeType builds.
+  // Frozen before desk offset changes: desk plus signs, both themes and
+  // orientations, at integer and fractional output scales. Shapes only: no font
+  // is loaded yet, because glyph rasterisation differs between FreeType builds.
   static const uint64_t expected[] = {
       UINT64_C(0xbb7926a4bb079d85), UINT64_C(0xa2b331068e5c2f49),
       UINT64_C(0x94e129211f98bf3d), UINT64_C(0xb1e1dab1c95751f5),

@@ -20,4 +20,4 @@ examples, or the examples with obsolete managed entries removed. It never
 executes hook commands or loads an agent, and requires no credentials.
 
 Evidence and version differences are recorded locally in
-`docs/performance/stage11.md`.
+`docs/performance/agent-integrations-report.md`.

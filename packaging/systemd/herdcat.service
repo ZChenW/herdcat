@@ -1,0 +1,11 @@
+[Unit]
+Description=Herdcat coding agent desktop overlay
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=@BINDIR@/herdcat -w
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target

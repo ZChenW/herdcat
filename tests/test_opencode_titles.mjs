@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 // Replace process spawning, keeping the actual bridge logic and event stream.
 // Payloads are synthetic and stay in memory; no socket or service is required.
 const captured = [];
-globalThis.stage21Spawn = (command, args, options) => {
+globalThis.titleTestSpawn = (command, args, options) => {
   assert.equal(command, "herdcat");
   assert.deepEqual(options.stdio, ["pipe", "ignore", "ignore"]);
   const child = new EventEmitter();
@@ -19,7 +19,7 @@ globalThis.stage21Spawn = (command, args, options) => {
 };
 const source = (await readFile(new URL("../integrations/opencode/index.js", import.meta.url), "utf8"))
   .replace('import { spawn } from "node:child_process";',
-           'const spawn = globalThis.stage21Spawn;');
+           'const spawn = globalThis.titleTestSpawn;');
 const { default: plugin } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 
 const info = new Map();
@@ -74,5 +74,5 @@ for (const { payload } of captured) {
   assert.ok(!("content" in payload) && !("agent_pid" in payload));
   assert.ok(!JSON.stringify(payload).includes("SYNTHETIC_DO_NOT_FORWARD"));
 }
-delete globalThis.stage21Spawn;
+delete globalThis.titleTestSpawn;
 console.log("opencode title refresh, filtering and payload privacy passed");

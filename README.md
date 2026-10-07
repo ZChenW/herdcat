@@ -60,6 +60,10 @@ herdcat --watch-config
 herdcat --watch-config --monitor eDP-1
 ```
 
+For automatic startup, run `systemctl --user enable --now herdcat`.
+niri users can also use `spawn-at-startup "herdcat" "-w"` in their config.
+Choose one startup method to avoid starting herdcat twice.
+
 ### Connect Your Agents
 
 Connect installed agents with one command (requires Python 3):

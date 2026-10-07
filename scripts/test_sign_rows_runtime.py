@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Stage 26: real reload, input-region and height checks on the fixture.
+"""Sign rows: real reload, input-region and height checks on the fixture.
 
 Requires Unix/Wayland sockets; intentionally not runnable in the sandbox.
-Model/pixel/group ordering is checked by test_stage26 without sockets.
+Model/pixel/group ordering is checked by test_sign_rows without sockets.
 """
 from pathlib import Path
 import socket
@@ -13,7 +13,7 @@ from runtime_test_helpers import runtime_env, wait_settled, wait_until
 
 binary = str(Path('build/herdcat').resolve())
 fixture = str(Path('build/compositor/server').resolve())
-with tempfile.TemporaryDirectory(prefix='herdcat-stage26-runtime-') as directory:
+with tempfile.TemporaryDirectory(prefix='herdcat-sign-rows-runtime-') as directory:
     root = Path(directory)
     env = runtime_env(XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
                       WAYLAND_DISPLAY='wayland-test', HERDCAT_TEST_DRAG='1')
@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-stage26-runtime-') as directory
 
     def settled():
         return wait_settled(records, ready=lambda x: ('snapshot', 'TEST-1') in x,
-                            description='stage26 committed regions',
+                            description='sign rows committed regions',
                             diagnostics=diagnostics)
 
     with server_log.open('w') as server_file, app_log.open('w') as app_file:
@@ -113,7 +113,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-stage26-runtime-') as directory
             assert app.wait(timeout=3) == 0
             log = app_log.read_text()
             assert 'AddressSanitizer' not in log and 'runtime error:' not in log
-            print('Stage 26 capacity, height, card and reload matrix passed.')
+            print('Sign rows capacity, height, card and reload matrix passed.')
         finally:
             for process in (app, server):
                 if process and process.poll() is None:

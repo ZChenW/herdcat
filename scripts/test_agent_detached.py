@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 27 detached ownership over the production parser/pidfd fixture."""
+"""Session recovery and pointer handling detached ownership over the production parser/pidfd fixture."""
 from pathlib import Path
 import os
 import ctypes
@@ -10,11 +10,11 @@ import socket
 import subprocess
 import tempfile
 
-fixture = str(Path('build/stage24_runtime_fixture').resolve())
+fixture = str(Path('build/agent_children_fixture').resolve())
 
 
 def fixture_test():
-    with tempfile.TemporaryDirectory(prefix='herdcat-stage27-detached-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='herdcat-agent-detached-') as temporary:
         root = Path(temporary)
         parent = subprocess.Popen(['sleep', '60'])
         child = subprocess.Popen(['sleep', '60'], start_new_session=True,
@@ -50,7 +50,7 @@ def fixture_test():
                 assert 'parent=' not in wire('sessions')
                 client.sendall(b'stop')
                 assert app.wait(timeout=3) == 0
-                print('Stage 27 detached owner validation and labels passed.')
+                print('Session recovery and pointer handling detached owner validation and labels passed.')
         finally:
             for process in (app, child, parent):
                 if process and process.poll() is None:
@@ -60,7 +60,7 @@ def fixture_test():
 
 def hook_test():
     binary = str(Path('build/herdcat').resolve())
-    with tempfile.TemporaryDirectory(prefix='herdcat-stage27-hook-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='herdcat-agent-owner-hook-') as temporary:
         env = dict(os.environ, XDG_RUNTIME_DIR=temporary, CLAUDE_PID=str(os.getpid()))
         env.pop('HERDCAT_HOOK_DEBUG', None)
         received, errors = [], []
@@ -89,14 +89,14 @@ def hook_test():
             fields = received[0].split()
             assert fields[:3] == ['ev', 'codex', 'working']
             assert fields[4:] == ['0', str(child.pid), '0', str(os.getpid())]
-        print('Stage 27 headless hook inherited owner handoff passed.')
+        print('Session recovery and pointer handling headless hook inherited owner handoff passed.')
 
 
 if __name__ == '__main__':
     if '--hook-child' in sys.argv:
         ctypes.CDLL(None).prctl(15, b'codex', 0, 0, 0)
         binary = str(Path('build/herdcat').resolve())
-        payload = dict(hook_event_name='PreToolUse', session_id='stage27-child')
+        payload = dict(hook_event_name='PreToolUse', session_id='detached-child')
         result = subprocess.run([binary, '--hook', 'codex'], input=json.dumps(payload),
                                 capture_output=True, text=True, timeout=4)
         assert result.returncode == 0 and not result.stdout and not result.stderr

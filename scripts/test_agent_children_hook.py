@@ -17,7 +17,7 @@ BINARY = str(Path('build/herdcat').resolve())
 def child():
     # Name this fake agent process, detach its controlling tty, run the hook.
     ctypes.CDLL(None).prctl(15, b'codex', 0, 0, 0)
-    payload = {'hook_event_name': 'PreToolUse', 'session_id': 'stage24-child'}
+    payload = {'hook_event_name': 'PreToolUse', 'session_id': 'agent-child'}
     return subprocess.run([BINARY, '--hook', 'codex'], input=json.dumps(payload),
                           text=True, capture_output=True, timeout=4)
 
@@ -54,7 +54,7 @@ def run():
             fields = requests[0].split()
             assert fields[:3] == ['ev', 'codex', 'working'], fields
             assert fields[4:] == ['0', str(fake.pid), '0'], fields
-        print('Stage 24 headless hook candidate handoff passed.')
+        print('Agent children headless hook candidate handoff passed.')
 
 
 if __name__ == '__main__':

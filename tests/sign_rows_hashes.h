@@ -1,4 +1,4 @@
-// Captured from the pre-stage-26 renderer with no font loaded, so the
+// Captured from the single-row renderer with no font loaded, so the
 // values hold on every platform; do not regenerate.
 static const uint64_t LEGACY_HASHES[] = {
     UINT64_C(0x567c6e2bb77d8391), UINT64_C(0x05bdef03792981d7),

@@ -413,8 +413,9 @@ class SetupTests(unittest.TestCase):
         script = prefix / 'bin/herdcat-setup'
         script.parent.mkdir(parents=True)
         shutil.copyfile(SCRIPT, script)
-        shutil.copyfile(ROOT / "scripts/herdcat_setup_json.py",
-                        script.parent / "herdcat_setup_json.py")
+        helper = prefix / 'share/herdcat/herdcat_setup_json.py'
+        helper.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / 'scripts/herdcat_setup_json.py', helper)
         templates = prefix / 'share/herdcat/integrations'
         shutil.copytree(ROOT / 'integrations', templates)
         def run(*args):
@@ -518,13 +519,34 @@ class SetupTests(unittest.TestCase):
         script = prefix / 'bin/herdcat-setup'
         script.parent.mkdir(parents=True)
         shutil.copyfile(SCRIPT, script)
-        shutil.copyfile(ROOT / "scripts/herdcat_setup_json.py",
-                        script.parent / "herdcat_setup_json.py")
+        helper = prefix / 'share/herdcat/herdcat_setup_json.py'
+        helper.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / 'scripts/herdcat_setup_json.py', helper)
         shutil.copytree(ROOT / 'integrations', prefix / 'share/herdcat/integrations')
         result = subprocess.run([sys.executable, str(script), 'codex', '--yes'],
                                 env=self.env, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(b'/hooks', result.stdout)
+
+    def test_installed_layout_symlink_and_missing_helper(self):
+        prefix = self.home / 'prefix'
+        script = prefix / 'bin/herdcat-setup'
+        script.parent.mkdir(parents=True)
+        shutil.copyfile(SCRIPT, script)
+        helper = prefix / 'share/herdcat/herdcat_setup_json.py'
+        helper.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / 'scripts/herdcat_setup_json.py', helper)
+        link = self.bin / 'setup-link'
+        link.symlink_to(script)
+        result = subprocess.run([sys.executable, str(link), '--help'],
+                                env=self.env, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        helper.unlink()
+        result = subprocess.run([sys.executable, str(link), '--help'],
+                                env=self.env, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b'Cannot find herdcat_setup_json.py', result.stderr)
+        self.assertNotIn(b'Traceback', result.stderr)
 
     def test_c_entry_forwards_and_reports_missing_script(self):
         binary = ROOT / 'build/herdcat'

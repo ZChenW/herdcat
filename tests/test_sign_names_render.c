@@ -15,7 +15,7 @@
 #include <unistd.h>
 
 static config_t defaults(void) {
-  char path[] = "/tmp/herdcat-stage22-config-XXXXXX";
+  char path[] = "/tmp/herdcat-sign-names-config-XXXXXX";
   int fd = mkstemp(path);
   TEST_ASSERT(fd >= 0);
   close(fd);
@@ -86,8 +86,8 @@ static uint64_t pixels(const sign_frame_t *frame, int scale) {
 }
 
 static void no_title_pixels(void) {
-  // Stage 23 optical baselines/content-sized boards; includes text ink.
-  // Previous hashes and changes: docs/performance/stage23-text-hashes.json.
+  // Text centering optical baselines/content-sized boards; includes text ink.
+  // Previous hashes and changes: docs/performance/text-centering-hashes.json.
   static const uint64_t expected[] = {
       UINT64_C(0x8460f64bb01b937f), UINT64_C(0x345aeea8f52a1d1c),
       UINT64_C(0xad7b8bfd6b469c62), UINT64_C(0xb5b8282c7659bb93),
@@ -313,6 +313,7 @@ int main(void) {
   desk_and_equal_names();
   sign_draw_cleanup();
   text_cleanup();
-  puts("stage 22 defaults, frozen pixels, board extras and desk passed");
+  puts("sign name rendering defaults, frozen pixels, board extras and desk "
+       "passed");
   return 0;
 }

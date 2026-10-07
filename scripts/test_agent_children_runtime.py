@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Socket/pidfd integration with an injected fake /proc tree.
 
-Requires build/stage24_runtime_fixture. This fixture runs the production
+Requires build/agent_children_fixture. This fixture runs the production
 session request parser/model/labels and pidfd loop, without a compositor.
 """
 import socket
@@ -11,7 +11,7 @@ from pathlib import Path
 
 from runtime_test_helpers import wait_until
 
-FIXTURE = str(Path('build/stage24_runtime_fixture').resolve())
+FIXTURE = str(Path('build/agent_children_fixture').resolve())
 
 
 def run():
@@ -92,7 +92,7 @@ def run():
                 client.sendall(b'stop')
                 assert app.wait(timeout=3) == 0
                 app = None
-            print('Stage 24 socket, fake ancestry, labels and pidfd integration passed.')
+            print('Agent children socket, fake ancestry, labels and pidfd integration passed.')
         finally:
             if app is not None:
                 app.terminate()

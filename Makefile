@@ -142,7 +142,13 @@ install: $(TARGET)
 	install -Dm644 herdcat.conf.example $(DESTDIR)$(PREFIX)/share/herdcat/herdcat.conf.example
 	install -Dm755 scripts/find_input_devices.sh $(DESTDIR)$(PREFIX)/bin/herdcat-find-devices
 	install -Dm755 scripts/herdcat-setup $(DESTDIR)$(PREFIX)/bin/herdcat-setup
-	install -Dm644 scripts/herdcat_setup_json.py $(DESTDIR)$(PREFIX)/bin/herdcat_setup_json.py
+	install -Dm644 scripts/herdcat_setup_json.py $(DESTDIR)$(PREFIX)/share/herdcat/herdcat_setup_json.py
+	install -d $(DESTDIR)$(PREFIX)/lib/systemd/user
+	sed 's|@BINDIR@|$(PREFIX)/bin|g' packaging/systemd/herdcat.service > $(DESTDIR)$(PREFIX)/lib/systemd/user/herdcat.service
+	chmod 644 $(DESTDIR)$(PREFIX)/lib/systemd/user/herdcat.service
+	install -Dm644 completions/herdcat.bash $(DESTDIR)$(PREFIX)/share/bash-completion/completions/herdcat
+	install -Dm644 completions/_herdcat $(DESTDIR)$(PREFIX)/share/zsh/site-functions/_herdcat
+	install -Dm644 completions/herdcat.fish $(DESTDIR)$(PREFIX)/share/fish/vendor_completions.d/herdcat.fish
 	@for file in integrations/hooks/* integrations/pi/herdcat.ts integrations/opencode/index.js integrations/kitty/* integrations/tmux/*; do \
 		install -Dm644 $$file $(DESTDIR)$(PREFIX)/share/herdcat/$$file || exit 1; \
 	done
@@ -152,7 +158,11 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat-find-devices
 	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat-setup
-	rm -f $(DESTDIR)$(PREFIX)/bin/herdcat_setup_json.py
+	rm -f $(DESTDIR)$(PREFIX)/share/herdcat/herdcat_setup_json.py
+	rm -f $(DESTDIR)$(PREFIX)/lib/systemd/user/herdcat.service
+	rm -f $(DESTDIR)$(PREFIX)/share/bash-completion/completions/herdcat
+	rm -f $(DESTDIR)$(PREFIX)/share/zsh/site-functions/_herdcat
+	rm -f $(DESTDIR)$(PREFIX)/share/fish/vendor_completions.d/herdcat.fish
 	@for file in integrations/hooks/* integrations/pi/herdcat.ts integrations/opencode/index.js integrations/kitty/* integrations/tmux/*; do \
 		rm -f $(DESTDIR)$(PREFIX)/share/herdcat/$$file; \
 	done
@@ -299,12 +309,12 @@ $(BUILDDIR)/test_compositor_backends: tests/test_compositor_backends.c $(COMPOSI
 $(BUILDDIR)/test_theme_auto: tests/test_theme_auto.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
 
-STAGE24_SESSION_DEPS = src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/core/agent_state.c src/platform/transcript_path.c src/utils/json.c
+AGENT_CHILDREN_SESSION_DEPS = src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/core/agent_state.c src/platform/transcript_path.c src/utils/json.c
 
-$(BUILDDIR)/test_stage24: tests/test_stage24.c $(STAGE24_SESSION_DEPS) $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/platform/agent_watch.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_agent_children: tests/test_agent_children.c $(AGENT_CHILDREN_SESSION_DEPS) $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/platform/agent_watch.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS) -Wl,--wrap=openat
 
-TEST_BINARIES = $(BUILDDIR)/test_stage27 $(BUILDDIR)/test_stage26 $(BUILDDIR)/test_stage25 $(BUILDDIR)/test_stage24 $(BUILDDIR)/test_stage23 $(BUILDDIR)/test_stage22_names $(BUILDDIR)/test_title_hooks $(BUILDDIR)/test_title_focus $(BUILDDIR)/test_agent_title $(BUILDDIR)/test_sign_names $(BUILDDIR)/test_nameplate $(BUILDDIR)/test_name_config $(BUILDDIR)/test_signs_desk_clear $(BUILDDIR)/test_signs_detached $(BUILDDIR)/test_overlay_below $(BUILDDIR)/test_overlay_vertical $(BUILDDIR)/test_signs_below $(BUILDDIR)/test_theme_auto $(BUILDDIR)/test_compositor_backends $(BUILDDIR)/test_theme_watch $(BUILDDIR)/test_overlay_pixels $(BUILDDIR)/test_overlay_geometry $(BUILDDIR)/test_font_panel_memory $(BUILDDIR)/test_terminal_focus $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
+TEST_BINARIES = $(BUILDDIR)/test_session_recovery $(BUILDDIR)/test_sign_rows $(BUILDDIR)/test_desk_offset $(BUILDDIR)/test_agent_children $(BUILDDIR)/test_text_centering $(BUILDDIR)/test_sign_names_render $(BUILDDIR)/test_title_hooks $(BUILDDIR)/test_title_focus $(BUILDDIR)/test_agent_title $(BUILDDIR)/test_sign_names $(BUILDDIR)/test_nameplate $(BUILDDIR)/test_name_config $(BUILDDIR)/test_signs_desk_clear $(BUILDDIR)/test_signs_detached $(BUILDDIR)/test_overlay_below $(BUILDDIR)/test_overlay_vertical $(BUILDDIR)/test_signs_below $(BUILDDIR)/test_theme_auto $(BUILDDIR)/test_compositor_backends $(BUILDDIR)/test_theme_watch $(BUILDDIR)/test_overlay_pixels $(BUILDDIR)/test_overlay_geometry $(BUILDDIR)/test_font_panel_memory $(BUILDDIR)/test_terminal_focus $(BUILDDIR)/test_sign_palette $(BUILDDIR)/test_theme_pixels $(BUILDDIR)/test_sign_cache $(BUILDDIR)/test_buffer_damage $(BUILDDIR)/test_transcript $(BUILDDIR)/test_agent_adapters $(BUILDDIR)/test_overlay_signs $(BUILDDIR)/test_font_panel $(BUILDDIR)/test_sign_draw $(BUILDDIR)/test_signs $(BUILDDIR)/test_text $(BUILDDIR)/test_focus $(BUILDDIR)/test_focus_watch $(BUILDDIR)/test_drag $(BUILDDIR)/test_prefs $(BUILDDIR)/test_agent_hook $(BUILDDIR)/test_agent_watch $(BUILDDIR)/test_agent_sessions $(BUILDDIR)/test_agent_state $(BUILDDIR)/test_nanosvg $(BUILDDIR)/test_input $(BUILDDIR)/test_animation $(BUILDDIR)/test_hyprland $(BUILDDIR)/test_runtime $(BUILDDIR)/test_config $(BUILDDIR)/test_paw_frame $(BUILDDIR)/test_scale $(BUILDDIR)/test_fullscreen_state $(BUILDDIR)/test_session_store $(BUILDDIR)/test_agent_discover $(BUILDDIR)/test_agent_terminal
 
 $(BUILDDIR)/test_overlay_pixels: tests/test_overlay_pixels.c src/platform/overlay_geometry.c src/graphics/font_panel.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/text.c src/graphics/animation.c src/graphics/embedded_assets.c src/core/agent_state.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
@@ -365,6 +375,9 @@ test: $(TEST_BINARIES)
 	echo "--- test_setup.py ---"; \
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_setup.py || \
 		failures=$$((failures + 1)); \
+	echo "--- test_completions.py ---"; \
+	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_completions.py || \
+		failures=$$((failures + 1)); \
 	if command -v node >/dev/null 2>&1; then \
 		node tests/test_opencode_titles.mjs || failures=$$((failures + 1)); \
 	else \
@@ -399,12 +412,12 @@ $(BUILDDIR)/test_hyprland: tests/test_hyprland.c src/platform/hyprland.c src/uti
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
 
 .PHONY: test-runtime
-test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/stage24_runtime_fixture
-	python3 scripts/test_stage27_runtime.py
-	python3 scripts/test_stage27_detached.py
-	python3 scripts/test_stage26_runtime.py
-	python3 scripts/test_stage24_runtime.py
-	python3 scripts/test_stage24_hook.py
+test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent_children_fixture
+	python3 scripts/test_pointer_hover_runtime.py
+	python3 scripts/test_agent_detached.py
+	python3 scripts/test_sign_rows_runtime.py
+	python3 scripts/test_agent_children_runtime.py
+	python3 scripts/test_agent_children_hook.py
 	python3 scripts/test_runtime.py
 	python3 scripts/test_hook_client.py
 	python3 scripts/test_transcript_runtime.py
@@ -462,20 +475,20 @@ $(BUILDDIR)/test_title_focus: tests/test_title_focus.c src/platform/focus_window
 $(BUILDDIR)/test_title_hooks: tests/test_title_hooks.c src/platform/session_store.c src/platform/agent_terminal.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/core/agent_transcript.c src/platform/transcript_watch.c src/platform/command_job.c src/platform/agent_watch.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/agent_adapters.c src/core/control.c src/utils/error.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=control_request
 
-$(BUILDDIR)/test_stage22_names: tests/test_stage22_names.c $(CONFIG_TEST_DEPS) $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_sign_names_render: tests/test_sign_names_render.c $(CONFIG_TEST_DEPS) $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
 
-$(BUILDDIR)/test_stage23: tests/test_stage23.c src/graphics/post_text_layout.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_text_centering: tests/test_text_centering.c src/graphics/post_text_layout.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/nameplate_layout.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) -Wl,--wrap=FT_Get_Sfnt_Table,--wrap=FT_Get_Char_Index
 
-$(BUILDDIR)/stage24_runtime_fixture: tests/stage24_runtime_fixture.c $(STAGE24_SESSION_DEPS) src/platform/agent_watch.c src/graphics/sign_names.c src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/agent_children_fixture: tests/agent_children_fixture.c $(AGENT_CHILDREN_SESSION_DEPS) src/platform/agent_watch.c src/graphics/sign_names.c src/core/agent_adapters.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS)
 
-$(BUILDDIR)/test_stage25: tests/test_stage25.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_desk_offset: tests/test_desk_offset.c $(SIGNS_TEST_DEPS) src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c src/graphics/text.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
 
-$(BUILDDIR)/test_stage26: tests/test_stage26.c tests/stage26_pixel_hashes.h $(SIGNS_TEST_DEPS) src/platform/overlay_vertical.c src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_sign_rows: tests/test_sign_rows.c tests/sign_rows_hashes.h $(SIGNS_TEST_DEPS) src/platform/overlay_vertical.c src/core/agent_adapters.c src/graphics/sign_draw.c src/graphics/sign_draw_text.c src/graphics/post_text_layout.c src/graphics/nameplate_layout.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS)
 
-$(BUILDDIR)/test_stage27: tests/test_stage27.c $(CONFIG_MODULE_SOURCES) $(OVERLAY_SIGNS_TEST_DEPS) $(SIGNS_TEST_DEPS) src/graphics/text.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_windows.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/control.c src/utils/error.c src/platform/session_store.c src/platform/transcript_watch.c src/core/agent_transcript.c $(PROJECT_HEADERS) | $(OBJDIR)
+$(BUILDDIR)/test_session_recovery: tests/test_session_recovery.c $(CONFIG_MODULE_SOURCES) $(OVERLAY_SIGNS_TEST_DEPS) $(SIGNS_TEST_DEPS) src/graphics/text.c src/core/agent_adapters.c src/core/agent_sessions.c src/core/agent_session_records.c src/core/agent_session_titles.c src/core/agent_title.c src/core/agent_title_kimi.c src/core/agent_title_copilot.c src/utils/json.c src/platform/transcript_path.c src/core/agent_state.c src/platform/drag.c src/platform/focus_watch.c src/platform/focus_current.c src/platform/agent_watch.c src/platform/focus.c src/platform/focus_windows.c $(COMPOSITOR_TEST_DEPS) src/platform/command_job.c src/platform/focus_json.c src/platform/agent_terminal.c src/core/agent_hook.c src/core/agent_hook_scan.c src/core/agent_hook_prompt.c src/core/control.c src/utils/error.c src/platform/session_store.c src/platform/transcript_watch.c src/core/agent_transcript.c $(PROJECT_HEADERS) | $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) $(sort $(filter %.c,$^)) -o $@ $(TEST_LDFLAGS) $(TEXT_LIBS) -Wl,--wrap=signs_frame

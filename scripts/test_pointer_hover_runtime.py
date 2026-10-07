@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 27 production control/Wayland regression; requires Unix sockets."""
+"""Session recovery and pointer handling production control/Wayland regression; requires Unix sockets."""
 from pathlib import Path
 import os
 import socket
@@ -11,7 +11,7 @@ from runtime_test_helpers import runtime_env, wait_until
 
 binary = str(Path('build/herdcat').resolve())
 fixture = str(Path('build/compositor/server').resolve())
-with tempfile.TemporaryDirectory(prefix='herdcat-stage27-runtime-') as temporary:
+with tempfile.TemporaryDirectory(prefix='herdcat-pointer-hover-runtime-') as temporary:
     root = Path(temporary)
     env = runtime_env(XDG_RUNTIME_DIR=temporary, XDG_STATE_HOME=temporary,
                       HOME=temporary, WAYLAND_DISPLAY='wayland-test',
@@ -90,7 +90,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-stage27-runtime-') as temporary
             wire('cwd 1111111100000000 ' + b'/work/Projects'.hex() + ' wrong')
             assert ' herdcat' in wire('sessions')
             assert 'title=explicit title' in wire('sessions')
-            print('Stage 27 cwd restart, asynchronous title/privacy and 1000 motions passed.')
+            print('Session recovery and pointer handling cwd restart, asynchronous title/privacy and 1000 motions passed.')
         finally:
             for process in (app, server):
                 if process and process.poll() is None:

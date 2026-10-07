@@ -132,6 +132,11 @@ static void test_cursor(void) {
 }
 
 int main(int argc, char **argv) {
+  if (argc == 2 && !strcmp(argv[1], "--list-agents")) {
+    for (size_t i = 0; i < agent_adapter_count(); i++)
+      puts(agent_adapter_at(i)->name);
+    return 0;
+  }
   if (argc == 2 && !strcmp(argv[1], "--client"))
     return agent_hook_run_adapter("fixture", NULL, &FIXTURE);
   test_grok();

@@ -16,7 +16,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-static char root[] = "/tmp/herdcat-stage24-XXXXXX";
+static char root[] = "/tmp/herdcat-agent-children-XXXXXX";
 static unsigned reads;
 int __real_openat(int dir, const char *path, int flags, ...);
 int __wrap_openat(int dir, const char *path, int flags, ...);
@@ -341,6 +341,6 @@ int main(void) {
   labels();
   lifecycle();
   cleanup();
-  puts("Stage 24 ancestry, labels, alerts, lifetimes and pidfd passed.");
+  puts("Agent children ancestry, labels, alerts, lifetimes and pidfd passed.");
   return 0;
 }

@@ -26,7 +26,7 @@
 #include <string.h>
 #include <time.h>
 
-#ifdef STAGE14_BASELINE
+#ifdef FONT_PANEL_BASELINE
 #  define text_preview_begin() ((void)0)
 #  define text_preview_end()   ((void)0)
 #endif
@@ -222,7 +222,7 @@ int main(int argc, char **argv) {
   (void)matches;
   sign_pixels();
   TEST_ASSERT(!memcmp(before, canvas, sizeof(before)));
-#ifndef STAGE14_BASELINE
+#ifndef FONT_PANEL_BASELINE
   TEST_ASSERT(text_match_count() == matches);
 #endif
   memory_t restored = memory("hover-restored");

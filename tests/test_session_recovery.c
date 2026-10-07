@@ -77,7 +77,7 @@ void __wrap_signs_frame(signs_t *model, const sign_input_t *input,
   builds++;
   __real_signs_frame(model, input, frame);
 }
-static char root[] = "/tmp/herdcat-stage27-XXXXXX";
+static char root[] = "/tmp/herdcat-session-recovery-XXXXXX";
 static agent_session_view_t view(uint64_t key) {
   agent_session_view_t rows[AGENT_SESSIONS_MAX];
   int n = agent_sessions_snapshot(rows, AGENT_SESSIONS_MAX);
@@ -388,7 +388,8 @@ int main(int argc, char **argv) {
   snprintf(path, sizeof(path), "%s/herdcat", root);
   TEST_ASSERT(!rmdir(path));
   TEST_ASSERT(!rmdir(root));
-  puts("Stage 27 cwd, prompt recovery, 1000 motions and detached owners "
+  puts("Session recovery and pointer handling cwd, prompt recovery, 1000 "
+       "motions and detached owners "
        "passed.");
   return 0;
 }
