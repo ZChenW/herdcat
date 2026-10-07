@@ -36,7 +36,7 @@ double text_baseline(double line_top, double line_h, float px, bool bold);
 double text_baseline_family(const char *family, double line_top, double line_h,
                             float px, bool bold);
 // Logical width, rounded up. Font sizes are always logical pixels.
-// U+2026 marks truncation: three compact baseline periods with shared
+// U+2026 marks truncation: three spaced baseline periods with shared
 // measurement/drawing geometry. Spaces immediately before it are omitted;
 // the stored UTF-8 string and middle-dot separators remain unchanged.
 // A null or empty family uses the main face. text_set_family keeps the

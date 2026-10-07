@@ -452,7 +452,7 @@ static uint32_t next(const char **s) {
 }
 typedef struct {
   glyph_t *dot;
-  int diameter, width;
+  int diameter, gap, ink_left, width;
   double step;
 } ellipsis_t;
 // U+2026 is an internal truncation marker. Use this geometry for both
@@ -465,19 +465,40 @@ static ellipsis_t ellipsis_geometry(const char *family, float px, bool bold) {
   if (f >= 0 && FT_Get_Char_Index(faces[f].ft, '.'))
     e.dot = glyph(family, '.', px, bold);
   if (e.dot && e.dot->w > 0 && e.dot->h > 0) {
-    e.diameter = e.dot->w;
-    e.step = (int)lround(e.dot->advance / 64.0 * .8);
+    // Budget actual period ink, including faces with transparent edge columns.
+    int right = -1;
+    e.ink_left = e.dot->w;
+    for (int y = 0; y < e.dot->h; y++)
+      for (int x = 0; x < e.dot->w; x++)
+        if (e.dot->pixels[y * e.dot->w + x]) {
+          if (x < e.ink_left)
+            e.ink_left = x;
+          if (x > right)
+            right = x;
+        }
+    e.diameter = right >= e.ink_left ? right - e.ink_left + 1 : e.dot->w;
+    e.step = (int)lround(e.dot->advance / 64.0);
   } else {
     e.dot = NULL;
     e.diameter = (int)ceil((double)px * scale_120 / 120 * .12);
     e.step = e.diameter + 1;
   }
+  double scale = scale_120 / 120.0;
+  int minimum = (int)ceil((double)px * scale * .16);
+  int maximum = (int)floor((double)px * scale * .28);
+  minimum = minimum > 0 ? minimum : 1;
+  maximum = maximum > minimum ? maximum : minimum;
   // Keep three distinct dots at small sizes, including heavy faces.
   e.step = e.step > e.diameter ? e.step : e.diameter + 1;
-  double scale = scale_120 / 120.0;
+  // Stand as far from the text as the dots stand from each other, so the
+  // first dot does not read as a full stop glued to the last letter.
+  e.gap = e.dot ? e.dot->left + e.ink_left : minimum;
+  if (e.gap < e.step - e.diameter)
+    e.gap = e.step - e.diameter;
+  e.gap = e.gap < minimum ? minimum : e.gap > maximum ? maximum : e.gap;
   // Match the public API's whole-logical-pixel budget at fractional scales.
-  e.width = (int)floor(ceil((2 * e.step + e.diameter) / scale) * scale);
-  e.step = (e.width - e.diameter) / 2.0;
+  e.width = (int)floor(ceil((e.gap + 2 * e.step + e.diameter) / scale) * scale);
+  e.step = (e.width - e.gap - e.diameter) / 2.0;
   return e;
 }
 static double advance(const char *family, uint32_t cp, float px, bool bold) {
@@ -671,9 +692,9 @@ static void paint_ellipsis(uint8_t *dst, int dw, int dh, int x, int y,
     return;
   if (e.dot) {
     // Font bearings may centre even a period. Anchor its ink bottom to the
-    // baseline and remove its left bearing from the shared width budget.
+    // baseline; use the clamped bearing shared with the width budget.
     glyph_t dot = *e.dot;
-    dot.left = 0;
+    dot.left = e.gap - e.ink_left;
     dot.top = dot.h - 1;
     for (int i = 0; i < 3; i++)
       paint(dst, dw, dh, (int64_t)x + lround(i * e.step), y, &dot, color, clip);
@@ -690,7 +711,8 @@ static void paint_ellipsis(uint8_t *dst, int dw, int dh, int x, int y,
       double coverage = fmax(0, fmin(1, radius + .5 - hypot(dx, dy)));
       pixels[gy * e.diameter + gx] = (uint8_t)lround(coverage * 255);
     }
-  glyph_t dot = {.w = e.diameter,
+  glyph_t dot = {.left = e.gap,
+                 .w = e.diameter,
                  .h = e.diameter,
                  .top = e.diameter - 1,
                  .pixels = pixels};

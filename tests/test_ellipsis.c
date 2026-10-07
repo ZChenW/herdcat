@@ -28,7 +28,7 @@ static void no_space_before_marker(void) {
   text_draw(ink, W, H, 0, BASE, "ABC DEF GHI", 13, false, 0xffffffff, budget);
   text_draw(clipped, W, H, 0, BASE, "ABC…", 13, false, 0xffffffff, budget);
   TEST_ASSERT(!memcmp(ink, clipped, sizeof(ink)));
-  // Stored markers retain their strings; a cut at whitespace adds no gap.
+  // ASCII spaces before stored markers are removed; spacing is geometric.
   TEST_ASSERT(text_measure("ABC   … · DEF", 13, false) ==
               text_measure("ABC… · DEF", 13, false));
   memset(ink, 0, sizeof(ink));
@@ -118,6 +118,47 @@ static void baseline(const char *family, bool bold, int scale, float px) {
     }
   text_cleanup();
 }
+// Observe the rendered gap, independently of the marker width calculation.
+static void ink_gap(const char *family, bool bold, int scale, float px) {
+  TEST_ASSERT(text_init(family) == 0);
+  text_set_scale(scale);
+  memset(ink, 0, sizeof(ink));
+  text_draw(ink, W, H, 0, BASE, "a", px, bold, 0xffffffff, 0);
+  int last = -1;
+  for (int x = 0; x < W; x++)
+    for (int y = 0; y < H; y++)
+      if (ink[(y * W + x) * 4 + 3])
+        last = x;
+  TEST_ASSERT(last >= 0);
+  memset(clipped, 0, sizeof(clipped));
+  text_draw(clipped, W, H, 0, BASE, "a… · a", px, bold, 0xffffffff, 0);
+  int first = W;
+  for (int x = last + 1; x < W && first == W; x++)
+    for (int y = 0; y < H; y++)
+      if (clipped[(y * W + x) * 4 + 3])
+        first = x;
+  int minimum = (int)floor((double)px * scale / 120.0 * .08);
+  if (minimum < 1)
+    minimum = 1;
+  printf("gap %s bold=%d scale=%d px=%.1f: blank=%d minimum=%d last=%d "
+         "first=%d advance=%d\n",
+         family, bold, scale, (double)px, first - last - 1, minimum, last,
+         first, text_measure("a", px, bold));
+  TEST_ASSERT(first < W && first - last - 1 >= minimum);
+  // The standalone marker starts at the clamped bearing, not a space glyph.
+  memset(ink, 0, sizeof(ink));
+  text_draw(ink, W, H, 0, BASE, "…", px, bold, 0xffffffff, 0);
+  first = W;
+  for (int x = 0; x < W && first == W; x++)
+    for (int y = 0; y < H; y++)
+      if (ink[(y * W + x) * 4 + 3])
+        first = x;
+  int maximum = (int)floor((double)px * scale / 120.0 * .28);
+  if (maximum < 1)
+    maximum = 1;
+  TEST_ASSERT(first >= minimum && first <= maximum);
+  text_cleanup();
+}
 static void budgets(const char *family) {
   TEST_ASSERT(text_init(family) == 0);
   sign_text_t text = {.px = 13, .meta_px = 11.5, .gap = 7, .templated = true};
@@ -192,17 +233,22 @@ static void no_font(void) {
 int main(int argc, char **argv) {
   no_font();
   no_space_before_marker();
-  const char *families[] = {"Noto Sans CJK SC", "DejaVu Sans", NULL};
+  const char *families[] = {"Noto Serif CJK HK", "Noto Sans CJK SC",
+                            "DejaVu Sans", "JetBrains Mono", NULL};
+  for (int f = 0; f < 4; f++)
+    for (int bold = 0; bold < 2; bold++)
+      for (int scale = 120; scale <= 240; scale += 30)
+        ink_gap(families[f], bold, scale, 13);
   const float sizes[] = {10, 11.5f, 13, 15, 20};
   for (int missing = argc > 1 && !strcmp(argv[1], "missing"); missing < 2;
        missing++) {
     missing_period = missing;
-    for (int f = 0; f < 3; f++)
+    for (int f = 0; f < 5; f++)
       for (int bold = 0; bold < 2; bold++)
         for (int scale = 120; scale <= 240; scale += 30)
           for (size_t px = 0; px < sizeof(sizes) / sizeof(sizes[0]); px++)
             baseline(families[f], bold, scale, sizes[px]);
-    for (int f = 0; f < 3; f++)
+    for (int f = 0; f < 5; f++)
       budgets(families[f]);
     family_override();
   }
