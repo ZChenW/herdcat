@@ -56,6 +56,9 @@ jobs:
           pacman -Syu --noconfirm --needed base-devel git wayland \
             wayland-protocols freetype2 fontconfig python sway \
             noto-fonts noto-fonts-cjk ttf-dejavu ttf-liberation
+          # Arch gives sway cap_sys_nice. The container lacks that
+          # capability, so the kernel refuses to execute the file at all.
+          setcap -r /usr/bin/sway
 
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
