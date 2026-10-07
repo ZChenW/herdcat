@@ -56,6 +56,7 @@ int overlay_signs_regions(size_t index, const config_t *config, int cat_x,
                           int capacity);
 
 // Records the pointer. True on a board or a switch (pointer cursor).
+void overlay_signs_frame_wait(size_t index, bool waiting);
 bool overlay_signs_pointer(size_t index, double x, double y);
 void overlay_signs_leave(void);
 // False for the left button, so the existing press path still runs.

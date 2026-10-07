@@ -373,3 +373,27 @@ it from the label; no active children restores `Claude`. Existing layout and
 width transitions handle the text change. The parent's state, colours, icon,
 name/title and elapsed minutes always remain its own.
 
+
+## Stable names and pointer motion
+
+A current hook's first cwd fixes the session's start directory. The project
+name follows later cwd changes only into strict subdirectories of that start.
+Returning to the start, moving above it or working elsewhere keeps the last
+name. Restarts preserve this rule. Untitled Claude and Codex sessions can
+recover a temporary first-user-message title from a known transcript;
+explicit titles still take precedence. Detached children carrying a validated
+`CLAUDE_PID` remain folded into their tracked Claude parent's sign.
+
+Settled signs reuse their frame while the selected sessions, hover/press target,
+font, theme and geometry are unchanged and no animation deadline is due.
+Motion still checks the live hit geometry, including plate, cat, hover-pad and
+card boundaries. It does not repaint, rebuild the input region or commit a
+surface merely because another packet arrived. Cursor-shape requests are
+also deduplicated. Drag travel continues to use the existing surface-frame
+callback gate, retaining the newest coordinates while a callback is pending.
+
+The isolated `scripts/measure_scenarios.py --scenario pointer` scenario sends
+4000 motions at a nominal 1000 Hz over four seconds, alternating by one logical
+pixel inside one settled post sign. It records renderer CPU/context switches,
+compositor submissions and the number of received motions; it never moves the
+real desktop pointer. See [stage 27 report](performance/stage27-report.md).

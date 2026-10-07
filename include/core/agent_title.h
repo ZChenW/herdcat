@@ -22,6 +22,11 @@ bool agent_title_kimi(const char *id, char out[AGENT_TITLE_MAX + 1]);
 // Never logs source data. Rejected input leaves the output empty.
 bool agent_title_line(const char *agent, const char *id, const char *line,
                       size_t length, char out[AGENT_TITLE_MAX + 1]);
+bool agent_prompt_line(const char *agent, const char *line, size_t length,
+                       char out[AGENT_TITLE_MAX + 1]);
+bool agent_prompt_read(const char *agent, const char *path,
+                       char out[AGENT_TITLE_MAX + 1]);
+int agent_prompt_main(int argc, char **argv);
 bool agent_title_read(const char *agent, const char *id, const char *path,
                       char out[AGENT_TITLE_MAX + 1]);
 #endif

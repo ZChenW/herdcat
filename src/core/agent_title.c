@@ -153,3 +153,122 @@ bool agent_title_read(const char *agent, const char *id, const char *path,
   free(tail);
   return found;
 }
+
+static bool prompt_space(uint32_t cp) {
+  return cp == ' ' || (cp >= '\t' && cp <= '\r') || cp == 0x85 || cp == 0xa0 ||
+         cp == 0x1680 || (cp >= 0x2000 && cp <= 0x200a) || cp == 0x2028 ||
+         cp == 0x2029 || cp == 0x202f || cp == 0x205f || cp == 0x3000;
+}
+static bool prompt_text(json_span_t value, char out[AGENT_TITLE_MAX + 1]) {
+  char decoded[AGENT_TRANSCRIPT_LINE_MAX + 1];
+  if (!agent_title_scalar(value, decoded, sizeof(decoded)))
+    return false;
+  size_t used = 0;
+  bool space = false;
+  for (const char *p = decoded; *p;) {
+    uint32_t cp;
+    size_t n = utf8_decode(p, &cp);
+    if (!n)
+      return false;
+    if (prompt_space(cp)) {
+      if (used && (cp == '\n' || cp == '\r' || cp == 0x85 || cp == 0x2028 ||
+                   cp == 0x2029))
+        break;
+      space = used > 0;
+    } else {
+      if (utf8_control(cp) || (!used && cp == '/'))
+        return false;
+      if (used + space + n > AGENT_TITLE_MAX)
+        break;
+      if (space)
+        out[used++] = ' ';
+      memcpy(out + used, p, n);
+      used += n;
+      space = false;
+    }
+    p += n;
+  }
+  out[used] = 0;
+  return used && utf8_label_valid(out, AGENT_TITLE_MAX);
+}
+bool agent_prompt_line(const char *agent, const char *line, size_t length,
+                       char out[AGENT_TITLE_MAX + 1]) {
+  out[0] = 0;
+  json_span_t doc, type, message, role, content, meta;
+  if (!agent || length > AGENT_TRANSCRIPT_LINE_MAX ||
+      !json_document(line, length, &doc) || !json_field(doc, "type", &type))
+    return false;
+  if (!strcmp(agent, "claude")) {
+    if (!json_equal(type, "user") ||
+        (json_field(doc, "isMeta", &meta) &&
+         (meta.end - meta.p != 5 || memcmp(meta.p, "false", 5))) ||
+        !json_field(doc, "message", &message) ||
+        !json_field(message, "role", &role) || !json_equal(role, "user") ||
+        !json_field(message, "content", &content))
+      return false;
+  } else if (!strcmp(agent, "codex")) {
+    if (!json_field(doc, "payload", &message))
+      return false;
+    if (json_equal(type, "event_msg")) {
+      return json_field(message, "type", &role) &&
+             json_equal(role, "user_message") &&
+             json_field(message, "message", &content) &&
+             prompt_text(content, out);
+    }
+    if (!json_equal(type, "response_item") ||
+        !json_field(message, "role", &role) || !json_equal(role, "user") ||
+        !json_field(message, "content", &content))
+      return false;
+  } else
+    return false;
+  if (*content.p == '"')
+    return prompt_text(content, out);
+  if (*content.p != '[')
+    return false;
+  json_span_t block, text;
+  for (size_t i = 0; json_item(content, i, &block); i++)
+    if (json_field(block, "type", &type) &&
+        (json_equal(type, "text") ||
+         (!strcmp(agent, "codex") && json_equal(type, "input_text"))) &&
+        json_field(block, "text", &text))
+      return prompt_text(text, out);
+  return false;
+}
+bool agent_prompt_read(const char *agent, const char *path,
+                       char out[AGENT_TITLE_MAX + 1]) {
+  out[0] = 0;
+  int fd = transcript_watch_open(path);
+  if (fd < 0)
+    return false;
+  const size_t limit = 256 * 1024;
+  char *head = malloc(limit);
+  if (!head) {
+    close(fd);
+    return false;
+  }
+  ssize_t got = pread(fd, head, limit, 0);
+  close(fd);
+  bool found = false;
+  for (size_t at = 0; got > 0 && at < (size_t)got && !found;) {
+    const char *end = memchr(head + at, '\n', (size_t)got - at);
+    if (!end)
+      break;
+    size_t n = (size_t)(end - head - at);
+    found = agent_prompt_line(agent, head + at, n, out);
+    at += n + 1;
+  }
+  free(head);
+  return found;
+}
+int agent_prompt_main(int argc, char **argv) {
+  if (argc != 4)
+    return 1;
+  alarm(1);
+  char prompt[AGENT_TITLE_MAX + 1];
+  if (agent_prompt_read(argv[2], argv[3], prompt)) {
+    size_t length = strlen(prompt);
+    if (write(STDOUT_FILENO, prompt, length) != (ssize_t)length)
+      return 1;
+  }
+  return 0;
+}

@@ -12,6 +12,7 @@ import socket
 import statistics
 import subprocess
 import tempfile
+import threading
 import time
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -137,6 +138,11 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
            working=False, manual=False, frame_ms=17, release_ms=16,
            profile_dir=None, font_panel=False, focus_depth=None,
            release_to=None):
+    pointer_scenario = scenario == 'pointer'
+    # An idle event alone creates no session, so hover a working sign.
+    state = 'working' if pointer_scenario else scenario
+    if pointer_scenario:
+        seconds = 4
     with tempfile.TemporaryDirectory(prefix="herdcat-measure-") as temporary:
         directory = Path(temporary)
         env = dict(os.environ, XDG_RUNTIME_DIR=temporary,
@@ -151,10 +157,13 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
         for key in ("NIRI_SOCKET", "HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_DEBUG",
                     "HERDCAT_TEST_DRAG"):
             env.pop(key, None)
-        if font_panel:
+        if font_panel or pointer_scenario:
             env['HERDCAT_TEST_DRAG'] = '1'
         config = directory / "measure.conf"
         config_text = CONFIG
+        if pointer_scenario:
+            config_text = config_text.replace('sign_style=fan', 'sign_style=post')
+            config_text = config_text.replace('sign_idle=hover', 'sign_idle=always')
         if font is not None:
             config_text = config_text.replace('sign_font=\n', f'sign_font={font}\n')
         config.write_text(config_text)
@@ -170,7 +179,7 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
                 env['NIRI_SOCKET'] = str(focus.path)
             with server_path.open("w") as server_log, app_path.open("w") as app_log:
                 server = subprocess.Popen([fixture], env=env,
-                                          stdin=subprocess.PIPE if font_panel else subprocess.DEVNULL,
+                                          stdin=subprocess.PIPE if font_panel or pointer_scenario else subprocess.DEVNULL,
                                           stdout=server_log, stderr=server_log, text=True)
                 wait_for(lambda: (directory / "wayland-test").exists(), [server])
                 app = subprocess.Popen([binary, "-c", str(config)], env=env,
@@ -184,25 +193,36 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
                     warm_font_panel(server, server_path, [server, app])
                 if scenario != "idle":
                     if manual:
-                        wire(directory, f"state {scenario}")
+                        wire(directory, f"state {state}")
                     else:
-                        wire(directory, f"ev claude {scenario} aaaaaaaaaaaaaaaa 0")
+                        wire(directory, f"ev claude {state} aaaaaaaaaaaaaaaa 0")
                         wire(directory, "name aaaaaaaaaaaaaaaa 测量")
                 if working:
                     pid = focus.agent_pid if focus is not None else 0
                     wire(directory, f"ev claude working bbbbbbbbbbbbbbbb {pid}")
                     wire(directory, "name bbbbbbbbbbbbbbbb Claude 测量")
+                if pointer_scenario:
+                    def plate():
+                        regions = [tuple(map(int, line.split()[2:]))
+                                   for line in server_path.read_text().splitlines()
+                                   if line.startswith('sign-input TEST-1 ')]
+                        return regions[-1] if regions else (0, 0, 0, 0)
+                    wait_for(lambda: plate()[2] > 0, [server, app])
+                    px, py, pw, ph = plate()
+                    px, py = px + pw // 2, py + ph // 2
+                    server.stdin.write(f'hover TEST-1 {px} {py}\n')
+                    server.stdin.flush()
                 time.sleep(warmup)
                 status = wire(directory, "status")
                 sessions = wire(directory, "sessions")
-                if f"agent={scenario}" not in status:
+                if f"agent={state}" not in status:
                     raise RuntimeError(f"unexpected state: {status}")
                 if scenario == "idle":
                     assert "sessions=0" in status
                 else:
                     expected = 2 if working else 1
                     assert f"sessions={expected}" in status
-                    assert f" {scenario} " in sessions
+                    assert f" {state} " in sessions
                     if working:
                         assert " working " in sessions
                 helpers = [int(pid) for pid in Path(
@@ -223,13 +243,41 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
                     if os.readlink(descriptor).startswith("/dev/input/"):
                         raise RuntimeError("measurement opened a real input device")
                 commits_before = server_path.read_text().count("commit TEST-1 ")
-                measurement = subprocess.run(
+                sampler = subprocess.Popen(
                     [str(ROOT / "scripts/measure_idle.sh"), str(app.pid), str(seconds)],
-                    text=True, capture_output=True, timeout=seconds + 10, check=True)
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                pointer_evidence = None
+                writer = None
+                if pointer_scenario:
+                    def move_pointer():
+                        started = time.monotonic()
+                        for i in range(4000):
+                            remaining = started + i / 1000 - time.monotonic()
+                            if remaining > 0:
+                                time.sleep(remaining)
+                            server.stdin.write(f'motion TEST-1 {px + i % 2} {py}\n')
+                            server.stdin.flush()
+                        server.stdin.write('motion-stats\n')
+                        server.stdin.flush()
+                    writer = threading.Thread(target=move_pointer)
+                    writer.start()
+                stdout, stderr = sampler.communicate(timeout=seconds + 10)
+                if sampler.returncode:
+                    raise RuntimeError(f'sampler failed: {stderr}')
+                measurement = subprocess.CompletedProcess(sampler.args, sampler.returncode,
+                                                          stdout, stderr)
+                if writer is not None:
+                    writer.join(timeout=6)
+                    assert not writer.is_alive()
+                    wait_for(lambda: 'motion-count 4000' in server_path.read_text(),
+                             [server, app])
+                    pointer_evidence = dict(rate_hz=1000, duration_seconds=4,
+                                            sent=4000, received=4000,
+                                            x=px, y=py, travel_pixels=1)
                 commits_after = server_path.read_text().count("commit TEST-1 ")
                 status_after = wire(directory, "status")
                 sessions_after = wire(directory, "sessions")
-                if f"agent={scenario}" not in status_after:
+                if f"agent={state}" not in status_after:
                     raise RuntimeError(f"state changed during sampling: {status_after}")
                 metrics = {}
                 for line in measurement.stdout.splitlines():
@@ -246,6 +294,8 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
                               buffer_commits_delta=commits_after - commits_before,
                               status=status, sessions=sessions,
                               status_after=status_after, sessions_after=sessions_after)
+                if pointer_evidence is not None:
+                    result["pointer"] = pointer_evidence
                 result.update(fixture_sample(server_path.read_text(), metrics))
                 if release_to is not None:
                     request = (f'state {release_to}' if manual else
@@ -359,7 +409,7 @@ def main():
                         help='use an owned PTY agent and private Niri stream with N ancestors')
     parser.add_argument('--frame-ms', type=int, choices=range(1, 1001), default=17)
     parser.add_argument('--release-ms', type=int, choices=range(1, 1001), default=16)
-    parser.add_argument('--scenario', choices=['idle', 'working', 'waiting'],
+    parser.add_argument('--scenario', choices=['idle', 'working', 'waiting', 'pointer'],
                         help='sample only this scenario')
     parser.add_argument('--binary', type=Path,
                         help='alternate local binary, for profiling builds')
@@ -371,6 +421,10 @@ def main():
     binary, fixture = ROOT / "build/release/herdcat", ROOT / "build/compositor/server"
     if args.binary is not None:
         binary = args.binary.resolve()
+    if args.scenario == 'pointer':
+        args.seconds = 4
+    if args.scenario == 'pointer' and (args.manual or args.working or args.font_panel):
+        parser.error('pointer uses one hook session and its settled sign')
     if args.working and args.scenario != 'waiting':
         parser.error('--working requires --scenario waiting')
     if args.focus_depth is not None and not args.working:

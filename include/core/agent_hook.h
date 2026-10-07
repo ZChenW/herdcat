@@ -69,6 +69,7 @@ int agent_process_tty(pid_t pid);
 // controlling terminal and runs in cwd. 0 when there is none or more than
 // one. Codex without --no-daemon runs its hooks in a background server; this
 // finds the terminal program the session belongs to.
+pid_t agent_hook_owner_pid(const char *proc_root, pid_t pid);
 pid_t agent_hook_front_process(const char *root, const char *comm,
                                const char *cwd);
 // Quiet, bounded hook client. Only invalid CLI agent names return nonzero.

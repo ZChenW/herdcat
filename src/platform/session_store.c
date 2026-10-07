@@ -8,6 +8,7 @@
 #include "platform/agent_watch.h"
 #include "platform/transcript_watch.h"
 #include "utils/error.h"
+#include "utils/path_wire.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -21,7 +22,7 @@
 #include <unistd.h>
 
 #define STORE_DELAY_MS 1000
-#define STORE_LINE_MAX 1536
+#define STORE_LINE_MAX 2304
 #define STORE_FILE_MAX (AGENT_SESSIONS_MAX * STORE_LINE_MAX)
 
 static uint64_t seen_generation;
@@ -137,7 +138,8 @@ static bool parse_pid(const char *text, pid_t *out) {
 }
 
 static bool parse_line(char *line, agent_session_record_t *out) {
-  bool version3 = !strncmp(line, "3 ", 2);
+  bool version4 = !strncmp(line, "4 ", 2);
+  bool version3 = version4 || !strncmp(line, "3 ", 2);
   bool version2 = version3 || !strncmp(line, "2 ", 2);
   if (!version2 && strncmp(line, "1 ", 2))
     return false;
@@ -165,6 +167,13 @@ static bool parse_line(char *line, agent_session_record_t *out) {
         return false;
       *temporary++ = 0;
     }
+  }
+  char *cwd = "";
+  if (version4) {
+    cwd = strchr(temporary, '\t');
+    if (!cwd)
+      return false;
+    *cwd++ = 0;
   }
   if (strchr(tab + 1, '\t') || strlen(tab + 1) > AGENT_TRANSCRIPT_PATH_MAX ||
       strlen(title) > AGENT_TITLE_MAX || strlen(id) > AGENT_SESSION_ID_MAX)
@@ -195,6 +204,8 @@ static bool parse_line(char *line, agent_session_record_t *out) {
   if (strcmp(temporary, "0") && strcmp(temporary, "1"))
     return false;
   row.title_temporary = temporary[0] == '1';
+  if (*cwd && !path_unhex(cwd, row.start_cwd))
+    return false;
   snprintf(row.title, sizeof(row.title), "%s", title);
   snprintf(row.session_id, sizeof(row.session_id), "%s", id);
   row.unread = unread[0] == '1';
@@ -301,13 +312,15 @@ static int write_file(int dir) {
     const char *path = rows[i].transcript;
     if (strchr(path, '\n') || strchr(path, '\t'))
       path = "";
+    char cwd[AGENT_CWD_MAX * 2 + 1];
+    path_hex(rows[i].start_cwd, cwd);
     if (dprintf(fd,
-                "3 %016" PRIx64 " %s %ld %s %d %" PRId64
-                " %s\t%s\t%s\t%s\t0\t%d\n",
+                "4 %016" PRIx64 " %s %ld %s %d %" PRId64
+                " %s\t%s\t%s\t%s\t0\t%d\t%s\n",
                 rows[i].key, rows[i].agent, (long)rows[i].pid,
                 agent_state_name(rows[i].state), rows[i].unread ? 1 : 0,
                 rows[i].updated_ms, rows[i].name, path, rows[i].title,
-                rows[i].session_id, rows[i].title_temporary ? 1 : 0) < 0)
+                rows[i].session_id, rows[i].title_temporary ? 1 : 0, cwd) < 0)
       result = -1;
   }
   if (!result && fsync(fd))

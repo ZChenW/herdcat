@@ -93,6 +93,7 @@ static void sign_frame_done(void *data, struct wl_callback *callback,
   wl_callback_destroy(callback);
   if (index < MAX_OUTPUTS && sign_frames[index] == callback) {
     sign_frames[index] = NULL;
+    overlay_signs_frame_wait(index, false);
   }
   overlay->redraw = true;
 }
@@ -108,6 +109,7 @@ static void arm_sign_frame(overlay_t *overlay) {
     return;
   }
   sign_frames[index] = callback;
+  overlay_signs_frame_wait(index, true);
   wl_callback_add_listener(callback, &SIGN_FRAME_LISTENER, overlay);
 }
 static void fill_bar(overlay_t *overlay, shm_buffer_t *buffer,

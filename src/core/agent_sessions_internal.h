@@ -13,11 +13,12 @@ typedef struct {
   bool watched;
   uint64_t key, order;
   uint64_t parent_order, parent_key;
-  pid_t candidate_pid;
+  pid_t candidate_pid, owner_pid;
   bool ancestry_checked;
   char name[48];
+  char start_cwd[AGENT_CWD_MAX + 1];
   char title[AGENT_TITLE_MAX + 1];
-  bool title_temporary;
+  bool title_temporary, prompt_attempted;
   char session_id[AGENT_SESSION_ID_MAX + 1];
   int64_t created_ms, state_since_ms;
   char agent[AGENT_NAME_MAX + 1];

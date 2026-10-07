@@ -9,6 +9,10 @@ typedef struct {
 } box_t;
 typedef struct {
   signs_t model;
+  sign_input_t cached_input;
+  agent_session_view_t cached_sessions[SIGN_MAX_VISIBLE];
+  bool cached, waiting_frame;
+  uint64_t cached_text_key;
   sign_style_t style;
   sign_orientation_t orientation;
   int resting_y;

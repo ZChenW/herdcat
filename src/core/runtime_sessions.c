@@ -189,13 +189,13 @@ static void capture_kitty(uint64_t key, pid_t pid) {
 }
 
 static int agent_apply(uint64_t key, const char *agent, agent_event_t event,
-                       pid_t pid, pid_t candidate, bool metadata) {
+                       pid_t pid, pid_t candidate, bool metadata, pid_t owner) {
   pid_t before[AGENT_SESSIONS_MAX], after[AGENT_SESSIONS_MAX];
   int before_count = agent_sessions_pids(before, AGENT_SESSIONS_MAX);
   pid_t previous = agent_sessions_pid(key);
-  if (agent_sessions_apply_process(key, agent, event, pid, candidate, metadata,
-                                   "/proc", monotonic_ms(),
-                                   config.agent_done_timeout) < 0) {
+  if (agent_sessions_apply_owned(key, agent, event, pid, candidate, metadata,
+                                 owner, "/proc", monotonic_ms(),
+                                 config.agent_done_timeout) < 0) {
     return 1;
   }
   if (event == AGENT_EVENT_DONE || event == AGENT_EVENT_REST ||
@@ -226,12 +226,12 @@ static int agent_command(const char *request) {
   char agent[AGENT_NAME_MAX + 1];
   agent_event_t event;
   uint64_t key;
-  pid_t pid, candidate;
+  pid_t pid, candidate, owner;
   bool metadata;
-  if (!agent_event_request(request, &key, agent, &event, &pid, &candidate,
-                           &metadata))
+  if (!agent_event_owner_request(request, &key, agent, &event, &pid, &candidate,
+                                 &metadata, &owner))
     return 1;
-  return agent_apply(key, agent, event, pid, candidate, metadata);
+  return agent_apply(key, agent, event, pid, candidate, metadata, owner);
 }
 
 static int focus_command(const char *key) {
@@ -287,10 +287,10 @@ int command(const char *request, char *response, size_t capacity) {
       agent_event_parse(request + 6, &event);
       // An error only replaces a turn in progress, so start one first.
       if (state == AGENT_STATE_ERROR)
-        agent_apply(0, "manual", AGENT_EVENT_WORKING, 0, 0, false);
+        agent_apply(0, "manual", AGENT_EVENT_WORKING, 0, 0, false, 0);
       result = agent_apply(0, "manual",
                            state == AGENT_STATE_IDLE ? AGENT_EVENT_END : event,
-                           0, 0, false);
+                           0, 0, false, 0);
     } else {
       result = 1;
     }
@@ -331,6 +331,8 @@ int command(const char *request, char *response, size_t capacity) {
     result = agent_sessions_id_command(request);
   } else if (strncmp(request, "path ", 5) == 0) {
     result = transcript_watch_command(request, monotonic_ms());
+  } else if (strncmp(request, "cwd ", 4) == 0) {
+    result = agent_sessions_cwd_command(request);
   } else if (strncmp(request, "name ", 5) == 0) {
     char key[17];
     int end = 0;
@@ -385,9 +387,9 @@ int command(const char *request, char *response, size_t capacity) {
   }
   // Metadata handoffs retry an unmerged candidate after a late parent arrives.
   if (!result &&
-      (!strncmp(request, "sid ", 4) || !strncmp(request, "name ", 5) ||
-       !strncmp(request, "path ", 5) || !strncmp(request, "ttl ", 4) ||
-       !strncmp(request, "ask ", 4))) {
+      (!strncmp(request, "sid ", 4) || !strncmp(request, "cwd ", 4) ||
+       !strncmp(request, "name ", 5) || !strncmp(request, "path ", 5) ||
+       !strncmp(request, "ttl ", 4) || !strncmp(request, "ask ", 4))) {
     const char *space = strchr(request, ' ');
     uint64_t key = strtoull(space + 1, NULL, 16);
     pid_t before[AGENT_SESSIONS_MAX], after[AGENT_SESSIONS_MAX];

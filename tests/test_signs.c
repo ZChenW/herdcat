@@ -213,7 +213,9 @@ static void test_easing_hover_and_press(void) {
   TEST_ASSERT(frame.hits[0].x == (int)rested);
   in.now_ms = 2800;
   signs_frame(&model, &in, &frame);
-  TEST_ASSERT(frame.hits[0].x == (int)rested + 5);
+  // The board slid 5 away; its target still reaches where it rested.
+  TEST_ASSERT(frame.hits[0].x == (int)rested &&
+              frame.hits[0].w == POST_BOARD_MIN + 5);
   in.has_pressed = true;
   in.pressed_key = session0.key;
   in.has_hover = false;

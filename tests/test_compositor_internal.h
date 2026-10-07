@@ -19,7 +19,7 @@ struct test_surface {
   struct wl_event_source *release_timer;
   struct monitor *monitor;
   unsigned width, height;
-  struct test_rect input, cat_input;
+  struct test_rect input, cat_input, sign_input;
   unsigned input_count;
   int margin_top, margin_bottom, margin_left;
   bool configure_pending, layered;

@@ -173,7 +173,7 @@ static void frame(struct wl_client *client, struct wl_resource *resource,
   wl_resource_destroy(callback);
 }
 struct test_region {
-  struct test_rect first, last;
+  struct test_rect first, second, last;
   unsigned count;
 };
 static void input_region(struct wl_client *client, struct wl_resource *resource,
@@ -183,6 +183,7 @@ static void input_region(struct wl_client *client, struct wl_resource *resource,
   struct test_region *rects = region ? wl_resource_get_user_data(region) : NULL;
   surface->input = rects ? rects->last : (struct test_rect){0};
   surface->cat_input = rects ? rects->first : (struct test_rect){0};
+  surface->sign_input = rects ? rects->second : (struct test_rect){0};
   surface->input_count = rects ? rects->count : 0;
 }
 static void region_request(struct wl_client *client,
@@ -203,6 +204,9 @@ static void commit(struct wl_client *client, struct wl_resource *resource) {
     surface->configure_pending = false;
   }
   if (drag_mode && surface->monitor) {
+    printf("sign-input %s %d %d %d %d\n", surface->monitor->name,
+           surface->sign_input.x, surface->sign_input.y,
+           surface->sign_input.width, surface->sign_input.height);
     printf("input-count %s %u\n", surface->monitor->name, surface->input_count);
     printf("input %s %d %d %d %d\n", surface->monitor->name, surface->input.x,
            surface->input.y, surface->input.width, surface->input.height);
@@ -274,6 +278,8 @@ static void add_region(struct wl_client *client, struct wl_resource *resource,
   struct test_region *rects = wl_resource_get_user_data(resource);
   if (!rects->first.width)
     rects->first = (struct test_rect){x, y, width, height};
+  if (rects->count == 1)
+    rects->second = (struct test_rect){x, y, width, height};
   rects->last = (struct test_rect){x, y, width, height};
   rects->count++;
 }

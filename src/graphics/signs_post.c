@@ -188,10 +188,18 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
     memcpy(text->meta, label.meta, sizeof(text->meta));
   }
   if (visible && frame->hit_count < SIGN_MAX_VISIBLE) {
+    // The board slides away from the pole when hovered, nudged or shaken.
+    // Its target also covers where it rests, or a pointer on the pole-side
+    // edge would lose the board it just hovered and make it slide back.
+    double rest =
+        pole_x + direction * 5 * scale - (direction < 0 ? width * scale : 0);
+    if (in->surface_width > 0)
+      rest = fmax(0, fmin(rest, in->surface_width - width * scale));
+    double left = fmin(x, rest), right = fmax(x, rest) + width * scale;
     frame->hits[frame->hit_count++] =
-        (sign_hit_t){.x = (int)floor(x),
+        (sign_hit_t){.x = (int)floor(left),
                      .y = (int)floor(y),
-                     .w = (int)ceil(x + width * scale) - (int)floor(x),
+                     .w = (int)ceil(right) - (int)floor(left),
                      .h = (int)ceil(y + 26 * scale) - (int)floor(y),
                      .key = slot->session.key,
                      .pid = slot->session.pid};

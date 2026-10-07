@@ -176,6 +176,7 @@ static void extra_ready(uint32_t token) {
 }
 static void tick(void) {
   hypr_poll();
+  transcript_prompt_poll();
   focus_poll();
   overlay_signs_note_focus(focus_take_result(), monotonic_ms());
   config_watcher_process(&watcher);
@@ -219,6 +220,7 @@ static int runtime_timeout(void) {
                       focus_timeout(),
                       focus_watch_timeout(),
                       theme_watch_timeout(),
+                      transcript_prompt_timeout(monotonic_ms()),
                       rest_wait,
                       sign_draw_cache_timeout(monotonic_ms()),
                       session_store_timeout(monotonic_ms())};
@@ -406,6 +408,8 @@ int main(int argc, char **argv) {
     return input_helper_main(argc, argv);
   }
   input_privilege_drop();
+  if (argc > 1 && !strcmp(argv[1], "--transcript-prompt"))
+    return agent_prompt_main(argc, argv);
   if (argc > 1 && strcmp(argv[1], "setup") == 0) {
     argv[1] = "herdcat-setup";
     execvp(argv[1], &argv[1]);

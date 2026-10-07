@@ -6,6 +6,7 @@
 #include "core/agent_title.h"
 #include "core/agent_transcript.h"
 #include "platform/agent_watch.h"
+#include "platform/command_job.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -36,6 +37,40 @@ static transcript_t slots[AGENT_SESSIONS_MAX];
 static int notify_fd = -1, backlog_fd = -1;
 static bool enabled;
 static unsigned cursor;
+#define PROMPT_TOKEN 0x70726f6dU
+static command_job_t prompt_job = {.fd = -1};
+static uint64_t prompt_key, prompt_order;
+
+void transcript_prompt_poll(void) {
+  if (prompt_job.pid > 0) {
+    int fd = prompt_job.fd;
+    int result = job_process(&prompt_job);
+    if (!result)
+      return;
+    agent_watch_unlisten(fd);
+    if (result > 0 && prompt_job.used <= AGENT_TITLE_MAX &&
+        !memchr(prompt_job.buffer, 0, prompt_job.used))
+      agent_sessions_recovered_prompt(prompt_key, prompt_order,
+                                      prompt_job.buffer);
+    memset(prompt_job.buffer, 0, sizeof(prompt_job.buffer));
+  }
+  agent_session_record_t row;
+  if (!agent_sessions_next_prompt(&row))
+    return;
+  const char *argv[] = {"/proc/self/exe", "--transcript-prompt", row.agent,
+                        row.transcript, NULL};
+  if (job_start(&prompt_job, argv) < 0)
+    return;
+  prompt_key = row.key;
+  prompt_order = row.order;
+  if (agent_watch_listen(prompt_job.fd, PROMPT_TOKEN, EPOLLIN | EPOLLHUP) < 0)
+    job_cleanup(&prompt_job);
+}
+int transcript_prompt_timeout(int64_t now) {
+  if (prompt_job.pid <= 0)
+    return -1;
+  return prompt_job.deadline <= now ? 0 : (int)(prompt_job.deadline - now);
+}
 
 static void disarm(transcript_t *slot) {
   if (!slot->active)
@@ -117,6 +152,7 @@ int transcript_watch_count(void) {
 void transcript_watch_sync(bool on, int64_t now_ms) {
   (void)now_ms;
   enabled = on;
+  transcript_prompt_poll();
   agent_session_view_t views[AGENT_SESSIONS_MAX];
   int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
@@ -217,6 +253,10 @@ static bool feed(transcript_t *slot, const char *data, size_t length,
   return false;
 }
 void transcript_watch_ready(uint32_t token, int64_t now_ms) {
+  if (token == PROMPT_TOKEN) {
+    transcript_prompt_poll();
+    return;
+  }
   if ((token != TRANSCRIPT_TOKEN && token != BACKLOG_TOKEN) || notify_fd < 0)
     return;
   if (token == BACKLOG_TOKEN) {
@@ -291,6 +331,10 @@ void transcript_watch_ready(uint32_t token, int64_t now_ms) {
     close_notifiers();
 }
 void transcript_watch_cleanup(void) {
+  if (prompt_job.fd >= 0)
+    agent_watch_unlisten(prompt_job.fd);
+  job_cleanup(&prompt_job);
+  memset(prompt_job.buffer, 0, sizeof(prompt_job.buffer));
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++)
     disarm(&slots[i]);
   memset(slots, 0, sizeof(slots));

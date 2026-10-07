@@ -56,6 +56,8 @@ typedef struct {
   bool rest_title;
   // Exact /proc comm. NULL when that process cannot be identified.
   const char *process_name;
+  // Inherited owner PID exported by this agent to its children.
+  const char *owner_pid_env;
 } agent_adapter_t;
 
 // Return the display name, or capitalize an unknown name in fallback.

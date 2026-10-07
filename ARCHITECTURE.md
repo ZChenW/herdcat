@@ -419,3 +419,31 @@ its private runtime_internal.h shares existing application state with main.
 `platform/command_job.c` holds the moved spawn/deadline/reaping mechanism.
 Theme and experimental snapshot descriptors use the existing agent epoll;
 six basics plus the control socket still fit the seven external poll slots.
+
+
+## Stage 27 metadata and pointer work
+
+cwd handoffs use a bounded hex pathname plus the hook's existing place label.
+The daemon lexically normalizes the first cwd, persists it in version-4 private
+session records, and accepts later labels only below that start directory.
+Legacy name handoffs retain their semantics; version-1 through version-3 store
+records remain readable. No path or title metadata is logged.
+
+Untitled Claude/Codex transcript recovery is serialized through one short-lived
+`posix_spawn` of `/proc/self/exe --transcript-prompt`. The unprivileged child
+uses the same safe opener and reads only the first 256 KiB, parses complete
+4096-byte JSONL records, and returns at most 96 bytes through a private pipe.
+The pipe joins agent_watch's existing epoll; its one-second command deadline
+joins runtime timeouts. Session creation order guards late replies. There is
+no worker thread, periodic retry or added outer poll descriptor. Recovery is
+independent of interruption detection and session working/waiting state.
+
+The optional final ev field carries an inherited owner PID. Ordinary ancestry
+wins; otherwise an exact other tracked Claude PID can own the child's real
+candidate PID. Metadata retries retain the candidate and owner, while merged
+children keep the existing creation-order association and process lifetime.
+
+Sign frame reuse compares inputs, selected session views and the text layout
+key until the next model deadline. Focus-failure mutations invalidate reuse.
+Hit tests remain against current geometry. The pointer caches the submitted
+cursor shape and enter serial; drag margins remain callback-coalesced.

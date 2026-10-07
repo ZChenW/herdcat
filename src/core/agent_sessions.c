@@ -168,6 +168,19 @@ static agent_session_t *process_owner(const agent_session_t *s, pid_t candidate,
   return parent;
 }
 
+static agent_session_t *inherited_owner(const agent_session_t *s, pid_t child,
+                                        pid_t owner) {
+  if (owner <= 1 || owner == child)
+    return NULL;
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+    agent_session_t *p = &sessions[i];
+    if (p != s && p->used && p->key && p->pid == owner &&
+        !strcmp(p->agent, "claude"))
+      return p;
+  }
+  return NULL;
+}
+
 static void merge_child(agent_session_t *s, const agent_session_t *parent) {
   if (!s || s == parent)
     return;
@@ -220,6 +233,8 @@ void agent_sessions_process(uint64_t key, pid_t candidate, bool metadata,
     return;
   s->ancestry_checked = true;
   agent_session_t *parent = process_owner(s, s->candidate_pid, proc_root);
+  if (!parent)
+    parent = inherited_owner(s, s->candidate_pid, s->owner_pid);
   if (parent)
     merge_child(s, parent);
 }
@@ -450,17 +465,19 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   return 0;
 }
 
-int agent_sessions_apply_process(uint64_t key, const char *agent,
-                                 agent_event_t event, pid_t pid,
-                                 pid_t candidate, bool metadata,
-                                 const char *proc_root, int64_t now_ms,
-                                 int done_timeout_s) {
+int agent_sessions_apply_owned(uint64_t key, const char *agent,
+                               agent_event_t event, pid_t pid, pid_t candidate,
+                               bool metadata, pid_t owner,
+                               const char *proc_root, int64_t now_ms,
+                               int done_timeout_s) {
   // A headless worker may have the same directory as a terminal agent of
   // its own type. Classify before the fallback PID can alias the parent's
   // row. This preflight is only needed for a new session key.
   if (proc_root && *proc_root == '/' && candidate > 1 && candidate != pid &&
       !find_session(key) && !find_alias(key) && event != AGENT_EVENT_END) {
     agent_session_t *parent = process_owner(NULL, candidate, proc_root);
+    if (!parent)
+      parent = inherited_owner(NULL, candidate, owner);
     uint64_t order = parent ? parent->order : 0;
     int result =
         agent_sessions_apply(key, agent, event, parent ? candidate : pid,
@@ -469,6 +486,7 @@ int agent_sessions_apply_process(uint64_t key, const char *agent,
     if (result < 0 || !s)
       return result;
     s->candidate_pid = candidate;
+    s->owner_pid = owner;
     s->ancestry_checked = true;
     if (parent && parent->used && parent->order == order)
       merge_child(s, parent);
@@ -480,10 +498,23 @@ int agent_sessions_apply_process(uint64_t key, const char *agent,
   pid_t effective = s && s->parent_order ? s->pid : pid;
   int result = agent_sessions_apply(key, agent, event, effective, now_ms,
                                     done_timeout_s, NULL);
-  if (!result)
+  if (!result) {
+    s = find_session(key);
+    if (s && owner > 1)
+      s->owner_pid = owner;
     agent_sessions_process(key, candidate > 1 ? candidate : pid,
                            metadata || event == AGENT_EVENT_START, proc_root);
+  }
   return result;
+}
+
+int agent_sessions_apply_process(uint64_t key, const char *agent,
+                                 agent_event_t event, pid_t pid,
+                                 pid_t candidate, bool metadata,
+                                 const char *proc_root, int64_t now_ms,
+                                 int done_timeout_s) {
+  return agent_sessions_apply_owned(key, agent, event, pid, candidate, metadata,
+                                    0, proc_root, now_ms, done_timeout_s);
 }
 
 static int64_t session_deadline(const agent_session_t *s, int stale_timeout_s) {

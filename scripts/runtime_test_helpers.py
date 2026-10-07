@@ -96,7 +96,7 @@ def runtime_env(**overrides):
                 'TMUX_PANE', 'WEZTERM_PANE', 'WEZTERM_UNIX_SOCKET',
                 'TERM_PROGRAM', 'WAYLAND_DEBUG', 'HERDCAT_HOOK_DEBUG',
                 'HERDCAT_TEST_DRAG', 'HERDCAT_TEST_MEASURE',
-                'HERDCAT_TEST_RELEASE_MS'):
+                'HERDCAT_TEST_RELEASE_MS', 'CLAUDE_PID'):
         env.pop(key, None)
     env.update(overrides)
     env['PYTHONDONTWRITEBYTECODE'] = '1'

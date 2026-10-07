@@ -1,4 +1,5 @@
 #include "agent_sessions_internal.h"
+#include "utils/path_wire.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,6 +83,39 @@ int agent_sessions_set_name(uint64_t key, const char *name) {
   return 0;
 }
 
+int agent_sessions_set_cwd_name(uint64_t key, const char *cwd,
+                                const char *name) {
+  char normalized[AGENT_CWD_MAX + 1];
+  if (!path_normalize(cwd, normalized) || !utf8_label_valid(name, 40))
+    return -1;
+  agent_sessions_adopt(key);
+  agent_session_t *s = find_session(key);
+  if (!s)
+    return -1;
+  if (!s->start_cwd[0]) {
+    memcpy(s->start_cwd, normalized, strlen(normalized) + 1);
+    touch_sessions();
+    return agent_sessions_set_name(key, name);
+  }
+  size_t n = strlen(s->start_cwd);
+  bool below = !strncmp(normalized, s->start_cwd, n) &&
+               (n == 1 ? normalized[1] != 0
+                       : normalized[n] == '/' && normalized[n + 1] != 0);
+  return below ? agent_sessions_set_name(key, name) : 0;
+}
+int agent_sessions_cwd_command(const char *request) {
+  char key[17], encoded[AGENT_CWD_MAX * 2 + 1], cwd[AGENT_CWD_MAX + 1];
+  int end = 0;
+  if (!request || strlen(request) > 575 ||
+      sscanf(request, "cwd %16[0-9a-fA-F] %510[0-9a-fA-F]%n", key, encoded,
+             &end) != 2 ||
+      strlen(key) != 16 || !strtoull(key, NULL, 16) || request[20] != ' ' ||
+      request[end] != ' ' || !path_unhex(encoded, cwd))
+    return 1;
+  return agent_sessions_set_cwd_name(strtoull(key, NULL, 16), cwd,
+                                     request + end + 1) < 0;
+}
+
 static bool transcript_ok(const char *path) {
   return path && path[0] == '/' && !strchr(path, '\n') && !strchr(path, '\t') &&
          strlen(path) <= AGENT_TRANSCRIPT_PATH_MAX;
@@ -118,6 +152,7 @@ int agent_sessions_export(agent_session_record_t *out, size_t capacity) {
   for (size_t i = 0; i < count; i++) {
     const agent_session_t *s = sorted[i];
     agent_session_record_t row = {.key = s->key,
+                                  .order = s->order,
                                   .state = s->state,
                                   .pid = s->pid,
                                   .updated_ms = s->updated_ms,
@@ -128,6 +163,7 @@ int agent_sessions_export(agent_session_record_t *out, size_t capacity) {
     row.title_temporary = s->title_temporary;
     memcpy(row.session_id, s->session_id, sizeof(row.session_id));
     memcpy(row.transcript, s->transcript, sizeof(row.transcript));
+    memcpy(row.start_cwd, s->start_cwd, sizeof(row.start_cwd));
     out[i] = row;
   }
   return (int)count;
@@ -171,6 +207,8 @@ int agent_sessions_restore(const agent_session_record_t *record, int64_t now_ms,
     snprintf(s->session_id, sizeof(s->session_id), "%s", record->session_id);
   if (transcript_ok(record->transcript))
     memcpy(s->transcript, record->transcript, strlen(record->transcript) + 1);
+  if (record->start_cwd[0])
+    path_normalize(record->start_cwd, s->start_cwd);
   if (finished(s->state) && !s->unread && done_timeout_s > 0)
     s->done_until_ms = deadline(now_ms, done_timeout_s);
   applied_done_timeout = done_timeout_s;
@@ -380,12 +418,13 @@ int agent_sessions_tmux_pids(const char *socket, pid_t *pids, size_t capacity) {
   return (int)count;
 }
 
-bool agent_event_request(const char *request, uint64_t *key, char agent[9],
-                         agent_event_t *event, pid_t *pid, pid_t *candidate,
-                         bool *metadata) {
+bool agent_event_owner_request(const char *request, uint64_t *key,
+                               char agent[9], agent_event_t *event, pid_t *pid,
+                               pid_t *candidate, bool *metadata, pid_t *owner) {
   char event_name[10], key_text[17], pid_text[8], candidate_text[8];
   int agent_end = 0, event_end = 0, key_end = 0, end = 0;
   if (!request || !key || !agent || !event || !pid || !candidate || !metadata ||
+      !owner ||
       sscanf(request, "ev %8[a-z]%n %9[a-z]%n %16[0-9a-fA-F]%n %7[0-9]%n",
              agent, &agent_end, event_name, &event_end, key_text, &key_end,
              pid_text, &end) != 4 ||
@@ -393,14 +432,26 @@ bool agent_event_request(const char *request, uint64_t *key, char agent[9],
       request[key_end] != ' ' || strlen(key_text) != 16 ||
       agent_event_parse(event_name, event) < 0)
     return false;
+  *owner = 0;
   unsigned long actual = 0;
   int flag = 0, extra_end = 0;
   if (request[end]) {
     if (request[end] != ' ' ||
         sscanf(request + end, " %7[0-9] %1[01]%n", candidate_text, event_name,
-               &extra_end) != 2 ||
-        request[end + extra_end])
+               &extra_end) != 2)
       return false;
+    const char *rest = request + end + extra_end;
+    if (*rest) {
+      char owner_text[8];
+      int used = 0;
+      if (*rest != ' ' || sscanf(rest, " %7[0-9]%n", owner_text, &used) != 1 ||
+          rest[used])
+        return false;
+      unsigned long value = strtoul(owner_text, NULL, 10);
+      if (value <= 1 || value > 4194304)
+        return false;
+      *owner = (pid_t)value;
+    }
     flag = event_name[0] == '1';
     actual = strtoul(candidate_text, NULL, 10);
     if (actual <= 1 || actual > 4194304UL)
@@ -415,4 +466,12 @@ bool agent_event_request(const char *request, uint64_t *key, char agent[9],
   *candidate = (pid_t)actual;
   *metadata = flag != 0;
   return true;
+}
+
+bool agent_event_request(const char *request, uint64_t *key, char agent[9],
+                         agent_event_t *event, pid_t *pid, pid_t *candidate,
+                         bool *metadata) {
+  pid_t owner;
+  return agent_event_owner_request(request, key, agent, event, pid, candidate,
+                                   metadata, &owner);
 }

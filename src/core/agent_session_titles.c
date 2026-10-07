@@ -106,3 +106,33 @@ bool agent_sessions_title(pid_t pid, char *out, size_t capacity) {
   }
   return false;
 }
+
+bool agent_sessions_next_prompt(agent_session_record_t *record) {
+  if (!record)
+    return false;
+  agent_session_t *chosen = NULL;
+  for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+    agent_session_t *s = &sessions[i];
+    if (!s->used || s->parent_order || s->title[0] || !s->transcript[0] ||
+        s->prompt_attempted ||
+        (strcmp(s->agent, "claude") && strcmp(s->agent, "codex")))
+      continue;
+    if (!chosen || s->order < chosen->order)
+      chosen = s;
+  }
+  if (!chosen)
+    return false;
+  chosen->prompt_attempted = true;
+  *record =
+      (agent_session_record_t){.key = chosen->key, .order = chosen->order};
+  memcpy(record->agent, chosen->agent, sizeof(record->agent));
+  memcpy(record->transcript, chosen->transcript, sizeof(record->transcript));
+  return true;
+}
+
+void agent_sessions_recovered_prompt(uint64_t key, uint64_t order,
+                                     const char *prompt) {
+  agent_session_t *s = find_session(key);
+  if (s && s->order == order)
+    agent_sessions_set_prompt(key, prompt);
+}

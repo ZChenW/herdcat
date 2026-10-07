@@ -131,10 +131,15 @@ static void begin(const char *agent, const char *path) {
   transcript_watch_sync(true, now);
   TEST_ASSERT(agent_sessions_apply(1, agent, AGENT_EVENT_WORKING, 0, now, 5,
                                    NULL) == 0);
+  // A titled session starts no prompt recovery job; that job shares the
+  // watch descriptor and would make the readiness checks below race.
+  TEST_ASSERT(agent_sessions_set_title(1, "fixture") == 0);
   transcript_watch_path(1, path, now);
   TEST_ASSERT(transcript_watch_count() == 1);
 }
-int main(void) {
+int main(int argc, char **argv) {
+  if (argc > 1 && !strcmp(argv[1], "--transcript-prompt"))
+    return agent_prompt_main(argc, argv);
   parser();
   hook_path();
   char home[] = "/tmp/herdcat-transcript-XXXXXX";

@@ -121,7 +121,9 @@ static void cleanup_dirs(const char *jsonl) {
   rmdir(home);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+  if (argc > 1 && !strcmp(argv[1], "--transcript-prompt"))
+    return agent_prompt_main(argc, argv);
   TEST_ASSERT(mkdtemp(home) && mkdtemp(runtime));
   TEST_ASSERT(setenv("HOME", home, 1) == 0);
   TEST_ASSERT(setenv("XDG_RUNTIME_DIR", runtime, 1) == 0);

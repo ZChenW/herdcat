@@ -84,6 +84,7 @@ static void teardown(overlay_t *overlay) {
   if (index < MAX_OUTPUTS && sign_frames[index]) {
     wl_callback_destroy(sign_frames[index]);
     sign_frames[index] = NULL;
+    overlay_signs_frame_wait(index, false);
   }
   if (pointer_overlay == overlay) {
     finish_drag();

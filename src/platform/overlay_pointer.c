@@ -52,7 +52,7 @@ static struct wl_pointer *pointer;
 struct wp_cursor_shape_manager_v1 *cursor_manager;
 struct wp_cursor_shape_device_v1 *cursor_device;
 uint32_t seat_id, cursor_manager_id;
-static uint32_t pointer_serial;
+static uint32_t pointer_serial, last_cursor_serial, last_cursor_shape;
 overlay_t *pointer_overlay;
 static bool dragging, drag_moved;
 static double pointer_x, pointer_y, origin_x, origin_y;
@@ -62,8 +62,12 @@ static void drag_follow(overlay_t *overlay);
 static struct wl_callback *drag_frame;
 
 void cursor_shape(uint32_t shape) {
-  if (cursor_device && (pointer_overlay || font_panel_surface_armed()))
+  if (cursor_device && (pointer_overlay || font_panel_surface_armed()) &&
+      (pointer_serial != last_cursor_serial || shape != last_cursor_shape)) {
     wp_cursor_shape_device_v1_set_shape(cursor_device, pointer_serial, shape);
+    last_cursor_serial = pointer_serial;
+    last_cursor_shape = shape;
+  }
 }
 
 void finish_drag(void) {
@@ -321,6 +325,7 @@ static void release_pointer(void) {
   if (cursor_device) {
     wp_cursor_shape_device_v1_destroy(cursor_device);
     cursor_device = NULL;
+    last_cursor_serial = last_cursor_shape = 0;
   }
   if (pointer) {
     if (wl_pointer_get_version(pointer) >= WL_POINTER_RELEASE_SINCE_VERSION) {

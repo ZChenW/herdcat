@@ -54,6 +54,16 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Stable project names** - Remember each session's first cwd across restarts;
+  subsequent cwd updates rename signs only inside strict subdirectories.
+- **Missed initial prompts** - Recover a temporary first-user-message title
+  for untitled Claude and Codex sessions from a known transcript, using a
+  bounded asynchronous helper and no title/prompt logging.
+- **Pointer motion work** - Reuse unchanged settled sign models and deduplicate
+  cursor-shape requests. Add a 1000-motion regression and isolated 1000 Hz sample.
+- **Detached child agents** - Validate inherited `CLAUDE_PID` against tracked
+  Claude sessions when normal ancestry no longer reaches their parent.
+
 - **Font panel memory** - Closing the panel releases the faces it loaded for
   previews. A cat that had shown it once stayed near 45 MB instead of 10.
 

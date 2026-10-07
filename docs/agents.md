@@ -452,3 +452,36 @@ waiting and PID-bound idle rows remain tied to process exit. Removing or
 evicting the top session leaves child rows hidden with their recorded parent
 key until their own END, exit or timeout. Relationships are kept in memory and use creation order so a
 provisional parent adopting its real session key preserves its children.
+
+## Names, transcript recovery and detached children
+
+The first cwd delivered by a current hook becomes the session's start directory.
+The first name uses that directory as before: the git root's final component,
+or the directory's own name. Later cwd metadata changes the name only inside a
+strict subdirectory of the start directory. Returning to the start directory,
+its parent or another tree preserves the last name. The private session file
+stores the start directory across restarts. Older name-only hooks still work
+with their earlier update behavior. cwd is hex encoded on the authenticated
+control socket, so spaces and newlines cannot split the metadata request.
+
+An untitled Claude or Codex session with a known JSONL path can recover a
+`title~=` from its first eligible user message, even if herdcat missed the
+submission. Claude accepts non-meta user string content or a text block,
+excluding tool results. Codex accepts its existing event-message or response-item
+user records. A helper process reads at most the first 256 KiB, with complete
+lines bounded to 4096 bytes and a one-second deadline. It uses the existing
+home-confined, same-UID, no-symlink file opener. A session attempts recovery once
+per lifetime; a missing, unsupported or empty record does not cause event-driven
+retries. The normalized first line is at most 96 UTF-8 bytes; commands starting
+with `/` are skipped. A later explicit title replaces the temporary one.
+Titles and prompts stay in memory and the private mode-0600 session file;
+neither is logged, including in debug mode.
+
+When a child's ancestry is broken by backgrounding or reparenting, the hook
+also sends the inherited `CLAUDE_PID` (its own environment first, then a bounded
+read of the actual agent's environment). Normal ancestry takes precedence.
+The daemon accepts the fallback only if it names another currently tracked
+Claude session's process. A self PID, an unknown PID or a tracked non-Claude
+PID is ignored. Claude is the only adapter declaring an owner environment
+variable; no equivalents are guessed for other agents. Children keep their
+own process watches while sharing the parent's sign and alert behavior.

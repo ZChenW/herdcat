@@ -172,7 +172,28 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
   snprintf(input.menu_font, sizeof(input.menu_font), "%s", face);
   if (menu)
     font_dir = 0;
-  signs_frame(&lanes[index].model, &input, frame);
+  lane_t *lane = &lanes[index];
+  sign_input_t signature = input;
+  signature.sessions = NULL;
+  signature.now_ms = 0;
+  // A settled frame or a future phase deadline cannot change just because
+  // another pointer packet woke the event loop. Hit tests still use the live
+  // geometry so crossing a plate, pad or card edge invalidates this input.
+  bool before_deadline =
+      !lane->frame.animating || lane->frame.next_frame_ms > now_ms ||
+      (lane->frame.next_frame_ms == 0 && lane->waiting_frame);
+  if (lane->cached && before_deadline &&
+      lane->cached_text_key == text_layout_key() &&
+      !memcmp(&signature, &lane->cached_input, sizeof(signature)) &&
+      !memcmp(shown, lane->cached_sessions, input.count * sizeof(*shown))) {
+    *frame = lane->frame;
+    return;
+  }
+  signs_frame(&lane->model, &input, frame);
+  lane->cached_text_key = text_layout_key();
+  lane->cached_input = signature;
+  memcpy(lane->cached_sessions, shown, input.count * sizeof(*shown));
+  lane->cached = true;
 }
 static bool same_ink(const sign_frame_t *a, const sign_frame_t *b) {
   if (a->shape_count != b->shape_count || a->text_count != b->text_count ||
@@ -345,7 +366,8 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
   lane->presented = true;
   box_t current = covered(&lane->frame, cat_x, drawn, cat_w, cat_h);
   box_t damage = lane->has_prev ? unite(lane->prev, current) : current;
-  bool full_rate = lane->frame.animating && lane->frame.next_frame_ms == 0;
+  bool full_rate = lane->frame.animating && lane->frame.next_frame_ms == 0 &&
+                   !lane->waiting_frame;
   bool due = lane->frame.animating && lane->frame.next_frame_ms > 0 &&
              lane->frame.next_frame_ms <= now_ms;
   out.redraw = changed || full || full_rate || due;
@@ -432,6 +454,10 @@ int overlay_signs_regions(size_t index, const config_t *config, int cat_x,
                                           frame->pad.w, frame->pad.h};
   }
   return count;
+}
+void overlay_signs_frame_wait(size_t index, bool waiting) {
+  if (index < MAX_OUTPUTS)
+    lanes[index].waiting_frame = waiting;
 }
 bool overlay_signs_pointer(size_t index, double x, double y) {
   if (index >= MAX_OUTPUTS)
@@ -584,6 +610,7 @@ void overlay_signs_sync_focus(uint64_t key) {
 void overlay_signs_fail(size_t index, uint64_t key, int64_t now_ms) {
   if (index >= MAX_OUTPUTS)
     return;
+  lanes[index].cached = false;
   signs_focus_failed(&lanes[index].model, key, now_ms);
 }
 void overlay_signs_arm_focus(size_t index, uint64_t key) {
@@ -597,7 +624,7 @@ void overlay_signs_note_focus(focus_result_t result, int64_t now_ms) {
   if (!focus_armed || result == FOCUS_PENDING)
     return;
   if (result == FOCUS_NOT_FOUND || result == FOCUS_UNAVAILABLE)
-    signs_focus_failed(&lanes[focus_index].model, focus_key, now_ms);
+    overlay_signs_fail(focus_index, focus_key, now_ms);
   focus_armed = false;
 }
 void overlay_signs_on_expand(void (*fn)(void)) {

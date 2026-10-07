@@ -79,7 +79,8 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
             requests = [
                 f'ev claude {state} e430d22bdbbe8583 {os.getpid()}',
                 'sid e430d22bdbbe8583 test',
-                'name e430d22bdbbe8583 项目 with spaces']
+                'cwd e430d22bdbbe8583 '
+                + '/tmp/项目 with spaces'.encode().hex() + ' 项目 with spaces']
             if hook == 'UserPromptSubmit':
                 requests.append('ask e430d22bdbbe8583 synthetic first')
             invoke(json.dumps(payload).encode(), requests)

@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 static struct wl_resource *test_pointer, *test_seat;
+static unsigned motion_count;
 
 static void pointer_destroyed(struct wl_resource *resource) {
   if (test_pointer == resource)
@@ -66,9 +67,20 @@ int fixture_command(int fd, uint32_t mask, void *data) {
   (void)data;
   char line[128] = {0}, name[32], action[32];
   int dx, dy, x, y, button;
-  ssize_t bytes = read(fd, line, sizeof(line) - 1);
-  assert(bytes > 0);
-  if (!strncmp(line, "step", 4)) {
+  // The 1000 Hz scenario may put several complete commands in one pipe read.
+  // Consume exactly one line so no motion is discarded or merged here.
+  size_t used = 0;
+  while (used < sizeof(line) - 1) {
+    ssize_t bytes = read(fd, line + used, 1);
+    assert(bytes == 1);
+    if (line[used++] == '\n')
+      break;
+  }
+  assert(used && line[used - 1] == '\n');
+  if (!strncmp(line, "motion-stats", 12)) {
+    printf("motion-count %u\n", motion_count);
+    fflush(stdout);
+  } else if (!strncmp(line, "step", 4)) {
     step(NULL);
   } else if (sscanf(line, "out %31s", name) == 1) {
     for (size_t i = 0; i < 2; i++) {
@@ -81,6 +93,20 @@ int fixture_command(int fd, uint32_t mask, void *data) {
     }
   } else if (!strncmp(line, "capabilities", 12)) {
     wl_seat_send_capabilities(test_seat, WL_SEAT_CAPABILITY_POINTER);
+  } else if (sscanf(line, "hover %31s %d %d", name, &x, &y) == 3 ||
+             sscanf(line, "motion %31s %d %d", name, &x, &y) == 3) {
+    struct monitor *monitor = monitor_named(name);
+    assert(monitor && monitor->surface && test_pointer);
+    if (line[0] == 'h')
+      wl_pointer_send_enter(test_pointer, wl_display_next_serial(server),
+                            monitor->surface->resource, wl_fixed_from_int(x),
+                            wl_fixed_from_int(y));
+    else {
+      motion_count++;
+      wl_pointer_send_motion(test_pointer, 0, wl_fixed_from_int(x),
+                             wl_fixed_from_int(y));
+    }
+    wl_pointer_send_frame(test_pointer);
   } else if (sscanf(line, "tap %31s %d %d %d", name, &x, &y, &button) == 4 ||
              sscanf(line, "panel %31s %d %d %d", name, &x, &y, &button) == 4) {
     struct monitor *monitor = monitor_named(name);

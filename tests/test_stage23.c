@@ -119,7 +119,9 @@ static void boards(void) {
       in.cat_x = 210;
       in.surface_width = 900;
       signs_frame(&model, &in, &frame);
-      TEST_ASSERT(frame.hits[0].w == POST_BOARD_MAX);
+      // The target also covers where a displaced board rests.
+      TEST_ASSERT(frame.hits[0].w >= POST_BOARD_MAX &&
+                  frame.hits[0].w <= POST_BOARD_MAX + 6);
       in.animations = SIGN_ANIM_FULL;
       in.now_ms += 16;
       in.cat_x = direction ? -70 : 130;

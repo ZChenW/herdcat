@@ -51,6 +51,8 @@ int __wrap_control_request(const char *request) {
     paths++;
     return transcript_watch_command(request, 1000);
   }
+  if (!strncmp(request, "cwd ", 4))
+    return agent_sessions_cwd_command(request);
   if (!strncmp(request, "name ", 5)) {
     unsigned long long key;
     int end = 0;
@@ -217,13 +219,12 @@ static void child_test(const char *agent) {
               !strstr(captured, "SYNTHETIC_PROMPT") &&
               !strstr(captured, "later prompt") &&
               !strstr(captured, "final prompt"));
-  if (!strcmp(agent, "opencode") || !strcmp(agent, "claude") ||
-      !strcmp(agent, "codex") || !strcmp(agent, "copilot") ||
-      !strcmp(agent, "cursor"))
-    TEST_ASSERT(strstr(captured, "<redacted>"));
+  TEST_ASSERT(!strstr(captured, "ttl ") && !strstr(captured, "ask "));
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+  if (argc > 1 && !strcmp(argv[1], "--transcript-prompt"))
+    return agent_prompt_main(argc, argv);
   TEST_ASSERT(mkdtemp(home) && setenv("HOME", home, 1) == 0);
   TEST_ASSERT(setenv("XDG_RUNTIME_DIR", home, 1) == 0);
   unsetenv("GROK_HOME");
@@ -275,6 +276,6 @@ int main(void) {
     TEST_ASSERT(rmdir(path) == 0);
   }
   TEST_ASSERT(rmdir(home) == 0);
-  puts("synthetic hook title chains and redacted diagnostics passed");
+  puts("synthetic hook title chains and private diagnostics passed");
   return 0;
 }

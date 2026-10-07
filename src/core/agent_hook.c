@@ -3,6 +3,7 @@
 #include "core/agent_title.h"
 #include "core/control.h"
 #include "platform/agent_terminal.h"
+#include "utils/path_wire.h"
 #include "utils/utf8.h"
 
 #include <dirent.h>
@@ -296,6 +297,47 @@ pid_t agent_hook_front_process(const char *root, const char *comm,
   return found;
 }
 
+static pid_t owner_number(const char *text) {
+  if (!text || !*text || strspn(text, "0123456789") != strlen(text))
+    return 0;
+  errno = 0;
+  unsigned long n = strtoul(text, NULL, 10);
+  return !errno && n > 1 && n <= 4194304 ? (pid_t)n : 0;
+}
+pid_t agent_hook_owner_pid(const char *root, pid_t pid) {
+  for (size_t i = 0; i < agent_adapter_count(); i++) {
+    const char *name = agent_adapter_at(i)->owner_pid_env;
+    if (!name)
+      continue;
+    const char *value = getenv(name);
+    // A present but invalid value must not be repaired from another source.
+    if (value)
+      return owner_number(value);
+    if (!root || pid <= 1)
+      continue;
+    char path[4096], data[65536];
+    int n = snprintf(path, sizeof(path), "%s/%jd/environ", root, (intmax_t)pid);
+    if (n < 0 || (size_t)n >= sizeof(path))
+      continue;
+    int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0)
+      continue;
+    ssize_t got = read(fd, data, sizeof(data));
+    close(fd);
+    for (size_t at = 0; got > 0 && at < (size_t)got;) {
+      char *end = memchr(data + at, 0, (size_t)got - at);
+      if (!end)
+        break;
+      size_t size = (size_t)(end - data - at), length = strlen(name);
+      if (size > length && !memcmp(data + at, name, length) &&
+          data[at + length] == '=')
+        return owner_number(data + at + length + 1);
+      at += size + 1;
+    }
+  }
+  return 0;
+}
+
 static pid_t agent_parent(void) {
   pid_t pid = getppid();
   static const char *const SHELLS[] = {"sh",   "bash", "zsh",    "dash",
@@ -436,10 +478,15 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
                                        "end",  "interrupt", "fail"};
   snprintf(request, sizeof(request), "ev %s %s %016" PRIx64 " %jd", agent,
            EVENTS[event], agent_hook_key(agent, &scanner), (intmax_t)pid);
-  if (candidate > 1 && candidate != pid) {
+  pid_t owner = agent_hook_owner_pid("/proc", candidate);
+  if (candidate > 1 && (candidate != pid || owner > 1)) {
     size_t used = strlen(request);
     snprintf(request + used, sizeof(request) - used, " %jd %d",
              (intmax_t)candidate, metadata ? 1 : 0);
+    if (owner > 1) {
+      used = strlen(request);
+      snprintf(request + used, sizeof(request) - used, " %jd", (intmax_t)owner);
+    }
   }
   const char *debug = getenv("HERDCAT_HOOK_DEBUG");
   if (debug && strcmp(debug, "1") == 0) {
@@ -481,13 +528,14 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
         control_request(message);
       }
     }
-    char name[41];
-    if (agent_hook_name(&scanner, name)) {
-      snprintf(request, sizeof(request), "name %016" PRIx64 " %s",
-               agent_hook_key(agent, &scanner), name);
-      if (debug && !strcmp(debug, "1"))
-        fprintf(stderr, "%s\n", request);
-      control_request(request);
+    char name[41], cwd[AGENT_CWD_MAX + 1], encoded[AGENT_CWD_MAX * 2 + 1];
+    if (agent_hook_name(&scanner, name) &&
+        decode_path(scanner.cwd, cwd, sizeof(cwd))) {
+      char message[576];
+      path_hex(cwd, encoded);
+      snprintf(message, sizeof(message), "cwd %016" PRIx64 " %s %s",
+               agent_hook_key(agent, &scanner), encoded, name);
+      control_request(message);
     }
   }
   if (!sent) {
@@ -496,9 +544,6 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
       char message[AGENT_TITLE_MAX + 22];
       snprintf(message, sizeof(message), "ttl %016" PRIx64 " %s",
                agent_hook_key(agent, &scanner), title);
-      if (debug && !strcmp(debug, "1"))
-        fprintf(stderr, "ttl %016" PRIx64 " <redacted>\n",
-                agent_hook_key(agent, &scanner));
       control_request(message);
     }
     char prompt[AGENT_TITLE_MAX + 1];
@@ -506,9 +551,6 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
       char message[AGENT_TITLE_MAX + 22];
       snprintf(message, sizeof(message), "ask %016" PRIx64 " %s",
                agent_hook_key(agent, &scanner), prompt);
-      if (debug && !strcmp(debug, "1"))
-        fprintf(stderr, "ask %016" PRIx64 " <redacted>\n",
-                agent_hook_key(agent, &scanner));
       control_request(message);
     }
   }

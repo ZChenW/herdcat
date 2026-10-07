@@ -13,6 +13,7 @@
 
 #define AGENT_SESSIONS_MAX 32
 #define AGENT_NAME_MAX     8
+#define AGENT_CWD_MAX      255
 
 typedef enum {
   AGENT_EVENT_IDLE = 0,
@@ -58,6 +59,9 @@ int agent_sessions_id_command(const char *request);
 void agent_sessions_refresh_title(uint64_t key);
 bool agent_sessions_title(pid_t pid, char *out, size_t capacity);
 int agent_sessions_set_name(uint64_t key, const char *name);
+int agent_sessions_cwd_command(const char *request);
+int agent_sessions_set_cwd_name(uint64_t key, const char *cwd,
+                                const char *name);
 // A second id from a process that already has a row takes the row over once
 // it carries a name, a session record path or a start event.
 void agent_sessions_adopt(uint64_t key);
@@ -78,6 +82,14 @@ int agent_sessions_select(const agent_session_view_t *input, size_t count,
 bool agent_event_request(const char *request, uint64_t *key, char agent[9],
                          agent_event_t *event, pid_t *pid, pid_t *candidate,
                          bool *metadata);
+bool agent_event_owner_request(const char *request, uint64_t *key,
+                               char agent[9], agent_event_t *event, pid_t *pid,
+                               pid_t *candidate, bool *metadata, pid_t *owner);
+int agent_sessions_apply_owned(uint64_t key, const char *agent,
+                               agent_event_t event, pid_t pid, pid_t candidate,
+                               bool metadata, pid_t owner,
+                               const char *proc_root, int64_t now_ms,
+                               int done_timeout_s);
 int agent_event_parse(const char *name, agent_event_t *out);
 void agent_sessions_reset(void);
 void agent_sessions_interrupt(uint64_t key, int64_t now_ms);
@@ -140,13 +152,14 @@ pid_t agent_sessions_pid(uint64_t key);
 int agent_sessions_pids(pid_t *pids, size_t capacity);
 
 typedef struct {
-  uint64_t key;
+  uint64_t key, order;
   char agent[AGENT_NAME_MAX + 1];
   char name[48];
   char title[AGENT_TITLE_MAX + 1];
   bool title_temporary;
   char session_id[AGENT_SESSION_ID_MAX + 1];
   char transcript[AGENT_TRANSCRIPT_PATH_MAX + 1];
+  char start_cwd[AGENT_CWD_MAX + 1];
   agent_state_t state;
   pid_t pid;
   int64_t updated_ms;
@@ -156,6 +169,10 @@ typedef struct {
 // Bumps when a persisted field changes. Watch flags do not count.
 uint64_t agent_sessions_generation(void);
 int agent_sessions_set_transcript(uint64_t key, const char *path);
+// Claim one untitled transcript once; child and already-attempted rows skip.
+bool agent_sessions_next_prompt(agent_session_record_t *record);
+void agent_sessions_recovered_prompt(uint64_t key, uint64_t order,
+                                     const char *prompt);
 // Creation order. Returns how many were written.
 int agent_sessions_export(agent_session_record_t *out, size_t capacity);
 // working/waiting are stored as idle. A dead pid is the caller's decision.

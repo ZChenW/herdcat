@@ -70,13 +70,13 @@ int main(int argc, char **argv) {
     char agent[9];
     agent_event_t event;
     uint64_t key;
-    pid_t pid, candidate;
+    pid_t pid, candidate, owner;
     bool metadata;
     n = agent_sessions_pids(before, AGENT_SESSIONS_MAX);
-    if (agent_event_request(request, &key, agent, &event, &pid, &candidate,
-                            &metadata)) {
-      if (!agent_sessions_apply_process(key, agent, event, pid, candidate,
-                                        metadata, argv[1], now_ms(), 1)) {
+    if (agent_event_owner_request(request, &key, agent, &event, &pid,
+                                  &candidate, &metadata, &owner)) {
+      if (!agent_sessions_apply_owned(key, agent, event, pid, candidate,
+                                      metadata, owner, argv[1], now_ms(), 1)) {
         strcpy(response, "ok");
       }
     } else if (!strncmp(request, "name ", 5)) {
