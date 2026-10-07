@@ -453,6 +453,7 @@ compositor-test-build:
 
 .PHONY: test-runtime
 test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent_children_fixture
+	python3 scripts/test_sway_runtime.py
 	python3 scripts/test_surface_tiers_runtime.py
 	python3 scripts/test_subagent_badge_runtime.py
 	python3 scripts/test_subagent_visibility_runtime.py
@@ -472,6 +473,20 @@ test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent
 	python3 scripts/test_drag_runtime.py --sign-style off
 	python3 scripts/test_font_panel_runtime.py
 	python3 scripts/test_below_runtime.py
+
+# A real xdg-shell client for headless Sway; no terminal emulator is needed.
+.PHONY: sway-runtime-build
+sway-runtime-build: $(BUILDDIR)/sway_toplevel_fixture
+
+$(BUILDDIR)/sway-fixture/xdg-shell-client.h: protocols/xdg-shell.xml
+	mkdir -p $(BUILDDIR)/sway-fixture
+	wayland-scanner client-header $< $@
+
+$(BUILDDIR)/sway_toplevel_fixture: tests/sway_toplevel_fixture.c protocols/xdg-shell-protocol.c $(BUILDDIR)/sway-fixture/xdg-shell-client.h
+	mkdir -p $(BUILDDIR)
+	$(CC) -std=c2x -g -Wall -Wextra -Wpedantic -I$(BUILDDIR)/sway-fixture \
+	  tests/sway_toplevel_fixture.c protocols/xdg-shell-protocol.c \
+	  -o $@ $$(pkg-config --cflags --libs wayland-client)
 
 $(BUILDDIR)/agent_children_fixture: tests/agent_children_fixture.c $(TEST_LIB)
 	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_LIB) \

@@ -523,6 +523,14 @@ client/activewindow jobs, or Sway native-endian i3 IPC with subscription/tree
 requests. These backends are unverified on real compositors. The existing
 hyprland.c fullscreen fallback stays independent and unchanged.
 
+The headless Sway acceptance script uses real xdg-toplevel clients and Sway IPC;
+execution is pending outside the implementation sandbox. `runtime_sessions.c`
+reports the selected backend and stream readiness in status, and appends Sway
+session con_id/seen diagnostics from the existing focus map. It stores no new
+session metadata and adds no event source or polling deadline. Layer submission
+is checked with Sway debug logs and a Wayland frame callback roundtrip because
+Sway's output/tree IPC does not list layer surfaces. See `docs/compositors.md`.
+
 `core/runtime_sessions.c` holds the moved session/terminal/focus coordination;
 its private runtime_internal.h shares existing application state with main.
 `platform/command_job.c` holds the moved spawn/deadline/reaping mechanism.

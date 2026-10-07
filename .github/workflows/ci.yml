@@ -54,7 +54,7 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm --needed base-devel git wayland \
-            wayland-protocols freetype2 fontconfig python \
+            wayland-protocols freetype2 fontconfig python sway \
             noto-fonts noto-fonts-cjk ttf-dejavu ttf-liberation
 
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -63,7 +63,7 @@ jobs:
         run: |
           useradd -m tester
           chown -R tester .
-          su tester -c 'XDG_RUNTIME_DIR=$(mktemp -d) make test-runtime'
+          su tester -c 'HERDCAT_REQUIRE_SWAY=1 XDG_RUNTIME_DIR=$(mktemp -d) make test-runtime'
 
   nix:
     runs-on: ubuntu-latest

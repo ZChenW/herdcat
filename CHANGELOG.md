@@ -12,6 +12,11 @@ All notable changes to this project will be documented in this file.
   and pauses during hover, menus, font browsing and dragging. Cat and typing
   desk positions stay fixed, including at fractional scales. Signs-off and
   translucent output-wide bars retain their existing geometry.
+- The experimental Sway backend is now exercised against a real headless
+  Sway in CI: layer surface, window discovery, focus events, focusing a
+  session's window, window close and the opt-in switch. It stays opt-in
+  (`compositor_experimental=1`). Under Sway, `herdcat --sessions` adds a
+  `sway-session` line per session with its `con_id`.
 
 ## [0.3.0] - 2026-10-07
 

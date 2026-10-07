@@ -8,6 +8,7 @@
 #include "platform/agent_discover.h"
 #include "platform/agent_terminal.h"
 #include "platform/agent_watch.h"
+#include "platform/compositor.h"
 #include "platform/focus.h"
 #include "platform/focus_current.h"
 #include "platform/focus_watch.h"
@@ -20,6 +21,7 @@
 static bool hidden, paused;
 
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdatomic.h>
@@ -234,6 +236,41 @@ static int agent_command(const char *request) {
   return agent_apply(key, agent, event, pid, candidate, metadata, owner);
 }
 
+// Keep compositor IDs out of the persisted session model. These diagnostics
+// reflect the Sway stream's live map, including removal and opt-in gating.
+static void sway_session_diagnostics(char *response, size_t capacity) {
+  if (compositor_selected() != &COMPOSITOR_SWAY || !capacity) {
+    return;
+  }
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  focus_window_t windows[FOCUS_WATCH_WINDOW_MAX];
+  size_t n = focus_watch_windows(windows, FOCUS_WATCH_WINDOW_MAX);
+  uint64_t keys[AGENT_SESSIONS_MAX];
+  int seen =
+      focus_watch_focused_keys(views, (size_t)count, keys, AGENT_SESSIONS_MAX);
+  size_t used = strlen(response);
+  for (int i = 0; i < count && used < capacity - 1; i++) {
+    uint64_t window = 0;
+    if (!views[i].parent && focus_watch_available()) {
+      focus_terminal_window(views[i].pid, &views[i].terminal, views[i].name,
+                            windows, n, &window);
+    }
+    bool watching = false;
+    for (int j = 0; j < seen; j++) {
+      watching = watching || keys[j] == views[i].key;
+    }
+    int written = snprintf(
+        response + used, capacity - used,
+        "sway-session %08" PRIx32 " con_id=%" PRIu64 " seen=%s\n",
+        (uint32_t)(views[i].key >> 32U), window, watching ? "yes" : "no");
+    if (written < 0 || (size_t)written >= capacity - used) {
+      break;
+    }
+    used += (size_t)written;
+  }
+}
+
 static int focus_command(const char *key) {
   size_t length = strlen(key);
   if ((length != 8 && length != 16) ||
@@ -365,19 +402,22 @@ int command(const char *request, char *response, size_t capacity) {
     if (agent_sessions_format(response, capacity, monotonic_ms()) == 0) {
       snprintf(response, capacity, "No agent sessions");
     }
+    sway_session_diagnostics(response, capacity);
     return 0;
   } else if (strcmp(request, "status") == 0) {
+    const compositor_ops_t *backend = compositor_selected();
     const char *input = input_status_name(
         input_child_is_alive(), input_device_count(), input_denied_count());
     int length = snprintf(
         response, capacity,
         "running pid=%ld hidden=%s paused=%s input=%s input-helper=%s "
         "devices=%u denied=%u "
-        "config=%s agent=%s sessions=%d\n%s",
+        "config=%s agent=%s sessions=%d compositor=%s focus-watch=%s\n%s",
         (long)getpid(), (int)hidden ? "yes" : "no", (int)paused ? "yes" : "no",
         input, input_mode_name(), input_device_count(), input_denied_count(),
         config_path, agent_state_name(animation_get_agent_state()),
-        agent_sessions_count(), input_mode_hint());
+        agent_sessions_count(), backend ? backend->name : "unavailable",
+        focus_watch_available() ? "ready" : "unavailable", input_mode_hint());
     if (strcmp(input, "denied") == 0 && length > 0 &&
         (size_t)length < capacity) {
       snprintf(response + length, capacity - (size_t)length,
