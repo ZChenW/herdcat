@@ -75,6 +75,14 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
                 result[(parts[1], parts[2])] = tuple(map(int, parts[3:]))
         return result
 
+    def cat_regions():
+        result = {}
+        for line in text().splitlines():
+            parts = line.split()
+            if parts[:1] == ['snapshot']:
+                result[parts[1]] = tuple(map(int, parts[7:11]))
+        return result
+
     def check_anchor(output, card, top, output_size, below=False):
         wait_settled(placements, ready=lambda p: (output, 'herdcat-font-panel') in p,
                      description=f'{output} panel anchors',
@@ -98,13 +106,14 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
         assert abs(panel[3] - x) <= 1, (main, panel, card, x)
         assert abs(panel[0] - y) <= 1, (main, panel, card, y)
 
-    def card_region(output, cat, below=False):
+    def card_region(output, below=False):
         # A right click on the cat first shows the hover area around the cat,
         # then the card above it. Taking the first changed region clicked the
         # cat instead of the font name whenever the hover frame was sampled.
         def visible_card():
             rect = regions().get(output)
-            return (bool(rect) and rect != cat and
+            cat = cat_regions().get(output)
+            return (bool(rect) and bool(cat) and rect != cat and
                     (rect[1] >= cat[1] + cat[3] - 2 if below else
                      rect[1] + rect[3] <= cat[1] + 2))
         wait_for(visible_card)
@@ -116,15 +125,18 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
     def click(output, rect, button):
         send(f'tap {output} {rect[0]} {rect[1]} {button}')
 
+    def click_cat(output):
+        cat = cat_regions()[output]
+        click(output, (cat[0] + cat[2] // 2, cat[1] + cat[3] // 2), 273)
+
     try:
         wait_for(lambda: (root / 'wayland-test').exists())
         app = start()
         wait_for(lambda: len(regions()) == 2 and all(v[2] for v in regions().values()))
         wait_settled(regions, ready=lambda p: len(p) == 2 and all(v[2] for v in p.values()),
                      diagnostics=lambda: text()[-5000:])
-        cat = regions()['TEST-1']
-        click('TEST-1', (cat[0] + cat[2] // 2, cat[1] + cat[3] // 2), 273)
-        card = card_region('TEST-1', cat)
+        click_cat('TEST-1')
+        card = card_region('TEST-1')
         name = name_center(card)
         click('TEST-1', name, 272)
         wait_for(lambda: 'overlay TEST-1 herdcat-font-panel' in text())
@@ -142,13 +154,12 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
         # The card steps aside while the panel is open, so there is no font
         # name to click again. A right click on the cat closes the menu and
         # the panel with it.
-        middle = (cat[0] + cat[2] // 2, cat[1] + cat[3] // 2)
-        click('TEST-1', middle, 273)
+        click_cat('TEST-1')
         wait_for(lambda: 'gone herdcat-font-panel' in text())
         wait_settled(regions, diagnostics=lambda: text()[-5000:])
 
-        click('TEST-1', middle, 273)
-        name = name_center(card_region('TEST-1', cat))
+        click_cat('TEST-1')
+        name = name_center(card_region('TEST-1'))
         click('TEST-1', name, 272)
         wait_for(lambda: text().count('overlay TEST-1 herdcat-font-panel') >= 2)
         command('hide')
@@ -158,9 +169,8 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
 
         wait_settled(regions, ready=lambda p: p.get('TEST-2', (0, 0, 0, 0))[2],
                      diagnostics=lambda: text()[-5000:])
-        cat = regions()['TEST-2']
-        click('TEST-2', (cat[0] + cat[2] // 2, cat[1] + cat[3] // 2), 273)
-        card = card_region('TEST-2', cat, below=True)
+        click_cat('TEST-2')
+        card = card_region('TEST-2', below=True)
         name = name_center(card, below=True)
         click('TEST-2', name, 272)
         wait_for(lambda: 'overlay TEST-2 herdcat-font-panel' in text())

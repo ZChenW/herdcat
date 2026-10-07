@@ -57,7 +57,7 @@ overlay_t *pointer_overlay;
 static bool dragging, drag_moved;
 static double pointer_x, pointer_y, origin_x, origin_y;
 static int origin_cat_x, origin_margin, origin_margin_x;
-static int origin_margin_surface, origin_cat_y;
+static int origin_margin_surface, origin_cat_y, origin_height;
 static void drag_follow(overlay_t *overlay);
 static struct wl_callback *drag_frame;
 
@@ -68,6 +68,14 @@ void cursor_shape(uint32_t shape) {
     last_cursor_serial = pointer_serial;
     last_cursor_shape = shape;
   }
+}
+
+void overlay_pointer_rebase(overlay_t *overlay, int dx, int dy) {
+  if (pointer_overlay == overlay && !dragging) {
+    pointer_x += dx;
+    pointer_y += dy;
+  }
+  overlay_signs_rebase((size_t)(overlay - overlays), dx, dy);
 }
 
 void finish_drag(void) {
@@ -93,11 +101,13 @@ void finish_drag(void) {
     pointer_x += origin_margin_x - pointer_overlay->margin_x;
   if (dragging && pointer_overlay &&
       (pointer_overlay->orientation == SIGN_BELOW ||
-       pointer_overlay->cat_y != origin_cat_y)) {
+       pointer_overlay->cat_y != origin_cat_y ||
+       pointer_overlay->height != origin_height)) {
     // Rebase pointer coordinates after a new vertical placement during grab.
     bool top = pointer_overlay->config.overlay_position == POSITION_TOP;
     pointer_y += top ? origin_margin_surface - pointer_overlay->margin_y
-                     : pointer_overlay->margin_y - origin_margin_surface;
+                     : pointer_overlay->margin_y - origin_margin_surface +
+                           pointer_overlay->height - origin_height;
   }
   dragging = drag_moved = false;
   cursor_shape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB);
@@ -124,8 +134,10 @@ static void drag_follow(overlay_t *overlay) {
               overlay->height <= overlay->output_height
           ? (overlay->config.overlay_position == POSITION_TOP
                  ? overlay->config.cat_height
-                 : overlay->height - overlay_signs_resting_y(&overlay->config,
-                                                             overlay->height))
+                 : overlay_signs_height(&overlay->config) -
+                       overlay_signs_resting_y(
+                           &overlay->config,
+                           overlay_signs_height(&overlay->config)))
           : overlay->height,
       &x, &y);
   if (x == overlay->output_x && y == overlay->position_y) {
@@ -264,6 +276,7 @@ static void pointer_button(void *data, struct wl_pointer *object,
     origin_y = pointer_y;
     origin_cat_x = pointer_overlay->cat_x;
     origin_cat_y = pointer_overlay->cat_y;
+    origin_height = pointer_overlay->height;
     origin_margin_x = pointer_overlay->margin_x;
     origin_margin = pointer_overlay->position_y;
     origin_margin_surface = pointer_overlay->margin_y;

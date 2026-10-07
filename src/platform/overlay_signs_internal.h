@@ -18,6 +18,8 @@ typedef struct {
   int resting_y;
   int surface_width;
   bool placed;
+  bool capacity_managed;
+  int capacity;
   sign_frame_t frame;
   overlay_signs_step_t last;
   box_t prev;

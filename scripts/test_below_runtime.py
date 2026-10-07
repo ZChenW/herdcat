@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check committed cat/sign placement across orientation changes in isolation."""
 import os
+import socket
 from pathlib import Path
 import subprocess
 import tempfile
@@ -28,7 +29,7 @@ def run(style, theme, top, sign_max):
             'disable_fullscreen_hide=1\nhotplug_scan_interval=0\n'
             f'overlay_position={"top" if top else "bottom"}\n'
             f'sign_style={style}\nsign_theme={theme}\nsign_animations=off\n'
-            f'sign_max={sign_max}\n')
+            f'sign_max={sign_max}\nsign_idle=always\nagent_stale_timeout=0\n')
         log = root / 'server.log'
         with log.open('w') as server_file, (root / 'app.log').open('w') as app_file:
             server = subprocess.Popen([FIXTURE], env=env, stdin=subprocess.PIPE,
@@ -69,7 +70,7 @@ def run(style, theme, top, sign_max):
                 origin = record[0] if top else 600 - record[1] - record[4]
                 assert 0 <= origin <= 600 - record[4], record
                 assert record[7:9] == (72, 40), record
-                assert record[4] == 50 + clearance, record
+                assert record[4] == 50 + clearance + 3, record
                 design_extent = 820 if style == 'post' else 652
                 width = (40 * design_extent + 109) // 110
                 # TEST-1 initially uses 150/120 scaling: align its surface
@@ -78,7 +79,7 @@ def run(style, theme, top, sign_max):
 
             def drag(dy, expected):
                 # Enter a cat directly so the sign pad cannot become the drag
-                # target; the fixture's drag uses its last input rectangle.
+                # target; the fixture's drag uses the cat input rectangle.
                 send('out TEST-1')
                 settled()
                 before = len(snapshots())
@@ -98,7 +99,17 @@ def run(style, theme, top, sign_max):
                 wait_for(lambda: (root / 'wayland-test').exists())
                 app = subprocess.Popen([BINARY, '-c', str(config)], env=env,
                                        stdout=app_file, stderr=app_file)
-                wait_for(lambda: snapshot() and snapshot()[7] > 0)
+                wait_for(lambda: (root / 'herdcat.sock').exists())
+                # Keep this suite's full configured clearance checks; the new
+                # surface-tier matrix checks the smaller committed surfaces.
+                for key in range(1, sign_max + 1):
+                    with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
+                        control.settimeout(3)
+                        control.connect(str(root / 'herdcat.sock'))
+                        control.sendall(f'ev claude working {key:016x} 0'.encode())
+                        assert control.recv(512).startswith(b'0 ')
+                wait_for(lambda: snapshot() and snapshot()[7] > 0 and
+                         snapshot()[4] == 50 + clearance + 3)
                 start = settled()
                 check_bounds(start)
                 # Both initial anchors and a very large drag reach y=0.

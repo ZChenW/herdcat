@@ -20,6 +20,14 @@ def wait_for(condition, seconds=4):
                       diagnostics=lambda: (root / "compositor.log").read_text()[-4000:] + (root / "app.log").read_text()[-2000:])
 
 
+def assert_buffer_sizes(text):
+    # Transparent surfaces follow content tiers; a visible bar spans outputs.
+    assert "commit TEST-1 90x70" in text
+    assert "commit TEST-1 300x149" in text and "commit TEST-1 357x179" in text
+    assert "commit TEST-2 216x140" in text and "commit TEST-2 712x314" in text
+    assert "TEST-1 960x243" in text and "TEST-2 2048x324" in text
+
+
 with tempfile.TemporaryDirectory(prefix="herdcat-integration-") as directory:
     root = Path(directory)
     env = runtime_env(XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
@@ -189,9 +197,7 @@ with tempfile.TemporaryDirectory(prefix="herdcat-integration-") as directory:
         # A transparent overlay is only as wide as the cat and its signs, at
         # each output's scale. The reloaded config has the default visible
         # bar, which still spans the output.
-        assert "TEST-1 300x188" in text and "TEST-1 357x225" in text
-        assert "TEST-2 712x404" in text
-        assert "TEST-1 960x243" in text and "TEST-2 2048x324" in text
+        assert_buffer_sizes(text)
         assert "visible TEST-1 0" in text and "visible TEST-2 0" in text
         assert "visible TEST-1 1" in text
         assert text.count("overlay TEST-2") >= 2

@@ -197,11 +197,32 @@ static void commit(struct wl_client *client, struct wl_resource *resource) {
   (void)client;
   struct test_surface *surface = wl_resource_get_user_data(resource);
   if (surface->layer && surface->configure_pending) {
+    // Exercise a compositor's final size constraint on only one output.
+    if (getenv("HERDCAT_TEST_CLAMP_HEIGHT") &&
+        surface->monitor == &monitors[0] && surface->height > 200) {
+      printf("clamp-height %s %u 200\n", surface->monitor->name,
+             surface->height);
+      surface->height = 200;
+    }
     zwlr_layer_surface_v1_send_configure(
         surface->layer, wl_display_next_serial(server),
         surface->width ? surface->width : (uint32_t)surface->monitor->width,
         surface->height ? surface->height : 50);
+    if (getenv("HERDCAT_TEST_SURFACE_TIERS")) {
+      struct timespec now;
+      assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+      printf("tier-configure %s %.9f %u %u\n", surface->monitor->name,
+             (double)now.tv_sec + (double)now.tv_nsec / 1e9, surface->width,
+             surface->height);
+      fflush(stdout);
+    }
     surface->configure_pending = false;
+  }
+  if (getenv("HERDCAT_TEST_SURFACE_TIERS") && surface->monitor &&
+      !surface->buffer && !strcmp(surface->ns, "herdcat-overlay")) {
+    printf("tier-size-only %s %d %d %d\n", surface->monitor->name,
+           surface->margin_top, surface->margin_bottom, surface->margin_left);
+    fflush(stdout);
   }
   if (drag_mode && surface->monitor) {
     printf("sign-input %s %d %d %d %d\n", surface->monitor->name,
@@ -233,6 +254,33 @@ static void commit(struct wl_client *client, struct wl_resource *resource) {
     bool visible = false;
     for (size_t i = 0; i < count; i++)
       visible |= pixels[i] != 0;
+    if (getenv("HERDCAT_TEST_SURFACE_TIERS") &&
+        !strcmp(surface->ns, "herdcat-overlay")) {
+      int w = wl_shm_buffer_get_width(buffer);
+      int h = wl_shm_buffer_get_height(buffer);
+      int stride = wl_shm_buffer_get_stride(buffer) / 4;
+      int min_x = w, min_y = h, max_x = -1, max_y = -1;
+      for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++)
+          if (pixels[y * stride + x] >> 24) {
+            if (x < min_x)
+              min_x = x;
+            if (y < min_y)
+              min_y = y;
+            if (x > max_x)
+              max_x = x;
+            if (y > max_y)
+              max_y = y;
+          }
+      struct timespec now;
+      assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+      printf("tier-submit %s %.9f %d %d %d %d %d %d %d %d %d %u %u %d %d %u\n",
+             surface->monitor->name,
+             (double)now.tv_sec + (double)now.tv_nsec / 1e9, w, h, min_x, min_y,
+             max_x, max_y, surface->margin_top, surface->margin_bottom,
+             surface->margin_left, surface->width, surface->height,
+             surface->cat_input.x, surface->cat_input.y, surface->input_count);
+    }
     wl_shm_buffer_end_access(buffer);
     printf("visible %s %d\n", surface->monitor->name, visible);
     printf("commit %s %dx%d\n", surface->monitor->name,
@@ -486,7 +534,9 @@ static void get_scale(struct wl_client *client, struct wl_resource *resource,
       break;
     }
   wp_fractional_scale_v1_send_preferred_scale(
-      scale, measure_mode                                ? 120
+      scale, getenv("HERDCAT_TEST_TIER_SCALE")
+                 ? (uint32_t)atoi(getenv("HERDCAT_TEST_TIER_SCALE"))
+             : measure_mode                              ? 120
              : !strcmp(surface->monitor->name, "TEST-1") ? 150
                                                          : 240);
 }

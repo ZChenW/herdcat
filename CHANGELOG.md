@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Transparent sign surfaces now allocate buffers for the current board count:
+  none, up to five, or the configured maximum. Growth waits for compositor
+  configure and new buffers before entry; shrink waits ten seconds after exit
+  and pauses during hover, menus, font browsing and dragging. Cat and typing
+  desk positions stay fixed, including at fractional scales. Signs-off and
+  translucent output-wide bars retain their existing geometry.
+
 ## [0.3.0] - 2026-10-07
 
 ### Added

@@ -3,6 +3,7 @@
 import argparse
 import math
 import os
+import socket
 from pathlib import Path
 import subprocess
 import tempfile
@@ -33,6 +34,13 @@ def surface_width(cat_height, output_width=800, scale=150):
     return width + (output_width - width) % step
 
 
+def vertical_travel(before, after, before_cat, after_cat, dy, top, output_height):
+    def output_y(placed, cat):
+        origin = placed[0] if top else output_height - placed[2] - placed[5]
+        return origin + cat[1]
+    return output_y(after, after_cat) - output_y(before, before_cat) == dy
+
+
 
 def wait_for(condition, seconds=6):
     return wait_until(condition, seconds, description='test_drag_runtime.py condition',
@@ -48,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
             'hotplug_scan_interval=0\nmonitor=TEST-1,TEST-2\noverlay_opacity=0\noverlay_position=bottom\n'
             'disable_fullscreen_hide=1\ncat_x_offset=0\ncat_y_offset=0\n'
             '[monitor:TEST-2]\noverlay_position=top\n[global]\n')
-    base += f'sign_style={style}\n'
+    base += f'sign_style={style}\nsign_idle=always\nagent_stale_timeout=0\n'
     config.write_text(base)
     position = root / 'herdcat/position'
     server_log = root / 'server.log'
@@ -60,8 +68,18 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
     app = None
 
     def start():
-        return subprocess.Popen([binary, '-c', str(config), '-w'], env=env,
-                                stdout=app_file, stderr=app_file)
+        process = subprocess.Popen([binary, '-c', str(config), '-w'], env=env,
+                                   stdout=app_file, stderr=app_file)
+        wait_for(lambda: (root / 'herdcat.sock').exists())
+        # This existing drag suite exercises configured-capacity geometry.
+        # Stage 33's zero/small tiers have a separate runtime matrix.
+        for key in range(1, 11):
+            with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
+                control.settimeout(3)
+                control.connect(str(root / 'herdcat.sock'))
+                control.sendall(f'ev claude working {key:016x} 0'.encode())
+                assert control.recv(512).startswith(b'0 ')
+        return process
 
     def command(name):
         subprocess.run([binary, '--' + name], env=env, check=True,
@@ -90,8 +108,9 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         result = {}
         for line in server_log.read_text().splitlines():
             parts = line.split()
-            if parts and parts[0] == 'input':
-                result[parts[1]] = tuple(map(int, parts[2:]))
+            if parts and parts[0] == 'snapshot':
+                # The first committed rectangle belongs to the cat.
+                result[parts[1]] = tuple(map(int, parts[7:11]))
         return result
 
     def regions():
@@ -120,19 +139,24 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         settled()
         start_x = regions()['TEST-1'][0]
         second_x = regions()['TEST-2'][0]
+        initial_places, initial_cats = placements(), local_regions()
         send('drag TEST-1 0 0')
         settled()
         assert not position.exists(), 'click must not save a position'
         send('drag TEST-1 20 -40')
         wait_for(lambda: position_is('TEST-1', (start_x + 20, 40)))
         # The margin now travels with the next buffer commit, not ahead of it.
-        wait_for(lambda: 'margin TEST-1 0 40' in server_log.read_text())
+        wait_for(lambda: vertical_travel(
+            initial_places['TEST-1'], placements()['TEST-1'],
+            initial_cats['TEST-1'], local_regions()['TEST-1'], -40, False, 600))
         settled()
         assert placements()['TEST-1'][3] > 0
         send('drag TEST-2 -30 45')
         wait_for(lambda: position_is('TEST-2', (second_x - 30, 45)))
         assert position_is('TEST-1', (start_x + 20, 40))
-        wait_for(lambda: f"margin TEST-2 {45 if style == 'off' else 42} 0" in server_log.read_text())
+        wait_for(lambda: vertical_travel(
+            initial_places['TEST-2'], placements()['TEST-2'],
+            initial_cats['TEST-2'], local_regions()['TEST-2'], 45, True, 768))
         saved = records()
         app.terminate()
         assert app.wait(timeout=3) == 0
@@ -184,9 +208,13 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         wait_for(lambda: abs(regions()['TEST-1'][0] - 284) <= 1)
         settled()
         assert abs(local_regions()['TEST-1'][0] - (surface_width(40, 640, 180) - 72) // 2) <= 1, (placements(), local_regions())
-        wait_for(lambda: 'margin TEST-1 0 0' in server_log.read_text())
+        wait_for(lambda: vertical_travel(
+            initial_places['TEST-1'], placements()['TEST-1'],
+            initial_cats['TEST-1'], local_regions()['TEST-1'], 0, False, 600))
         assert abs(placements()['TEST-1'][3] - (284 - (surface_width(40, 640, 180) - 72) // 2)) <= 1, placements()
-        wait_for(lambda: 'margin TEST-2 0 0' in server_log.read_text())
+        wait_for(lambda: vertical_travel(
+            initial_places['TEST-2'], placements()['TEST-2'],
+            initial_cats['TEST-2'], local_regions()['TEST-2'], 0, True, 768))
         app.terminate()
         assert app.wait(timeout=3) == 0
         assert 'ERROR: AddressSanitizer' not in app_log.read_text()

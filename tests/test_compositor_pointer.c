@@ -120,8 +120,9 @@ int fixture_command(int fd, uint32_t mask, void *data) {
       if (!strcmp(name, monitors[i].name))
         surface = monitors[i].surface;
     assert(surface && test_pointer);
-    int x = surface->input.x + surface->input.width / 2;
-    int y = surface->input.y + surface->input.height / 2;
+    // Drag the cat even when the overlay now has visible sign regions.
+    int x = surface->cat_input.x + surface->cat_input.width / 2;
+    int y = surface->cat_input.y + surface->cat_input.height / 2;
     uint32_t serial = wl_display_next_serial(server);
     wl_pointer_send_enter(test_pointer, serial, surface->resource,
                           wl_fixed_from_int(x), wl_fixed_from_int(y));

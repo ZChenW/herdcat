@@ -4,6 +4,7 @@
 #include "graphics/signs.h"
 #include "platform/outputs.h"
 #include "platform/shm_buffer.h"
+#include "platform/surface_tiers.h"
 #include "platform/wayland.h"
 
 typedef struct {
@@ -18,6 +19,9 @@ typedef struct {
   shm_buffer_t *buffers[2];
   void *animation;
   uint32_t scale;
+  surface_tiers_t tiers;
+  int requested_width, requested_height;
+  bool await_configure;
   int width, height, physical_width, physical_height;
   // output_x is persisted; cat_x is only used inside the surface.
   int output_x, cat_x, margin_x, margin_y, output_height;
@@ -46,6 +50,7 @@ bool overlay_hidden(const overlay_t *overlay);
 void set_margin(overlay_t *overlay);
 void cursor_shape(uint32_t shape);
 void finish_drag(void);
+void overlay_pointer_rebase(overlay_t *overlay, int dx, int dy);
 void setup_cursor(void);
 void release_seat(void);
 

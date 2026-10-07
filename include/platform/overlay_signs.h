@@ -24,6 +24,8 @@ typedef struct {
 // be reported together with frame.
 typedef struct {
   int timeout_ms;
+  int required_capacity;
+  bool shrink_blocked;
   bool frame;
   bool redraw;
   bool damage_full;
@@ -49,6 +51,10 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
                                         bool invisible, int64_t now_ms);
 overlay_signs_step_t overlay_signs_last(size_t index);
 void overlay_signs_width(size_t index, int surface_width);
+// Runtime enables gating only after its buffers are ready. -1 disables it.
+void overlay_signs_capacity(size_t index, int capacity);
+// Preserve the pointer over the same output-space object after a resize.
+void overlay_signs_rebase(size_t index, int dx, int dy);
 const sign_frame_t *overlay_signs_frame(size_t index);
 
 int overlay_signs_regions(size_t index, const config_t *config, int cat_x,
@@ -82,6 +88,7 @@ void overlay_signs_fail(size_t index, uint64_t key, int64_t now_ms);
 void overlay_signs_arm_focus(size_t index, uint64_t key);
 void overlay_signs_note_focus(focus_result_t result, int64_t now_ms);
 void overlay_signs_cleanup(void);
+void overlay_signs_output_gone(size_t index);
 // Called once when a cat's signs open. NULL does nothing.
 void overlay_signs_on_expand(void (*fn)(void));
 // Menu choices. NULL skips that callback. font is the family, empty for the

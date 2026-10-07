@@ -70,7 +70,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-sign-rows-runtime-') as directo
                 wire(f'ev claude working {i:016x} 0')
             initial = settled()
             for monitor in ('TEST-1', 'TEST-2'):
-                assert initial[('snapshot', monitor)][4] == 393, initial
+                assert initial[('snapshot', monitor)][4] == 401, initial
                 assert 11 <= initial[('input-count', monitor)][0] <= 12, initial
             for style in ('fan', 'post'):
                 for maximum in (5, 6, 7, 10):
@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-sign-rows-runtime-') as directo
                                  else 180 + 33 * (maximum - 5))
                     for monitor in ('TEST-1', 'TEST-2'):
                         record = state[('snapshot', monitor)]
-                        assert record[4] == 120 + clearance, state
+                        assert record[4] == 120 + clearance + 8, state
                         # Cat + visible plates, and optionally the hover pad.
                         count = state[('input-count', monitor)][0]
                         assert maximum + 1 <= count <= maximum + 2, state

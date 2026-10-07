@@ -337,7 +337,20 @@ $(BUILDDIR)/test_%: tests/test_%.c $(TEST_LIB)
 	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_LIB) \
 	  -o $@ $(TEST_LDFLAGS) $(TEST_WRAPS)
 
+# Geometry integration tests reach the actual overlay/font-panel modules.
+$(addprefix $(BUILDDIR)/,test_surface_tiers test_surface_tier_pixels): \
+$(BUILDDIR)/%: tests/%.c $(TEST_LIB)
+	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_LIB) \
+	  $(C_PROTOCOL_SRC) -o $@ $(TEST_LDFLAGS) -lwayland-client
+
 # Dedicated link rules for tests with their own platform fakes.
+$(BUILDDIR)/test_overlay_configure: tests/test_overlay_configure.c \
+  src/platform/wayland.c $(TEST_LIB)
+	$(CC) $(TEST_CFLAGS) -ffunction-sections -fdata-sections -MMD -MP \
+	  -MF $@.d $< $(TEST_LIB) $(C_PROTOCOL_SRC) -o $@ $(TEST_LDFLAGS) \
+	  -lwayland-client -Wl,--gc-sections \
+	  -Wl,--wrap=wl_proxy_get_version -Wl,--wrap=wl_proxy_marshal_flags
+
 $(BUILDDIR)/test_hyprland: tests/test_hyprland.c $(TEST_REDRAW_LIB)
 	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_REDRAW_LIB) \
 	  -o $@ $(TEST_LDFLAGS)
@@ -402,6 +415,9 @@ test: $(TEST_BINARIES) $(TARGET) $(BUILDDIR)/herdcat-input
 	echo "--- test_runtime_helpers.py ---"; \
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_runtime_helpers.py || \
 		failures=$$((failures + 1)); \
+	echo "--- test_surface_tier_runtime_geometry.py ---"; \
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_surface_tier_runtime_geometry.py || \
+		failures=$$((failures + 1)); \
 	echo "--- test_setup.py ---"; \
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_setup.py || \
 		failures=$$((failures + 1)); \
@@ -437,6 +453,7 @@ compositor-test-build:
 
 .PHONY: test-runtime
 test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent_children_fixture
+	python3 scripts/test_surface_tiers_runtime.py
 	python3 scripts/test_subagent_badge_runtime.py
 	python3 scripts/test_subagent_visibility_runtime.py
 	python3 scripts/test_pointer_hover_runtime.py

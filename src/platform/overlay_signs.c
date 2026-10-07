@@ -3,6 +3,7 @@
 
 #include "config/sign_options.h"
 #include "core/agent_sessions.h"
+#include "core/agent_sign_state.h"
 #include "graphics/sign_names.h"
 #include "graphics/sign_palette.h"
 #include "graphics/text.h"
@@ -11,6 +12,7 @@
 #include "platform/focus_current.h"
 #include "platform/focus_watch.h"
 #include "platform/font_panel.h"
+#include "platform/surface_tiers.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -134,7 +136,10 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
       .cat_x = cat_x,
       .cat_y = cat_y,
       .cat_height = config->cat_height,
-      .surface_height = surface_h,
+      .surface_height = lanes[index].capacity_managed
+                            ? surface_tier_model_height(
+                                  config, lanes[index].orientation, surface_h)
+                            : surface_h,
       .typing = desk_on && !menu,
       .desk_snap = snap || (menu && desk_on),
       .desk_offset = config->sign_desk_offset,
@@ -340,6 +345,28 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
     menu_tap = 0;
     menu_tap_at = now_ms + 220;
   }
+  agent_session_view_t all[AGENT_SESSIONS_MAX], shown[SIGN_MAX_VISIBLE];
+  int count = agent_sessions_snapshot(all, AGENT_SESSIONS_MAX);
+  int selected = count > 0 ? agent_sessions_select(all, (size_t)count, shown,
+                                                   (size_t)local.sign_max)
+                           : 0;
+  int visible = 0;
+  for (int i = 0; i < selected; i++)
+    if (agent_sign_state(&shown[i]) != AGENT_STATE_IDLE ||
+        local.sign_idle == SIGN_IDLE_ALWAYS ||
+        (local.sign_idle == SIGN_IDLE_HOVER && expanded[index]) || browse)
+      visible++;
+  out.required_capacity =
+      surface_tier_capacity(&local, visible, expanded[index] || menu || browse);
+  out.shrink_blocked = expanded[index] || (holding && hold_index == index) ||
+                       (menu_open && menu_index == index) ||
+                       (lane->has_frame && lane->frame.menu_open);
+  // Discovery is synchronous in track_expanded. Re-snapshot above, then hold
+  // the current model until configure AND buffer allocation have completed.
+  if (lane->capacity_managed && out.required_capacity > lane->capacity) {
+    lane->last = out;
+    return out;
+  }
   sign_frame_t next;
   build_frame(index, &local, cat_x, rest, surface_h, now_ms, invisible, menu,
               browse, tap, &next);
@@ -455,6 +482,48 @@ int overlay_signs_regions(size_t index, const config_t *config, int cat_x,
   }
   return count;
 }
+static void rebase_rect(sign_rect_t *rect, int dx, int dy) {
+  rect->x += dx;
+  rect->y += dy;
+}
+void overlay_signs_rebase(size_t index, int dx, int dy) {
+  if (index >= MAX_OUTPUTS)
+    return;
+  lane_t *lane = &lanes[index];
+  if (tracking && track_index == index && !(holding && hold_index == index)) {
+    pointer_x += dx;
+    pointer_y += dy;
+  }
+  lane->box_x += dx;
+  lane->box_y += dy;
+  for (int i = 0; i < lane->frame.hit_count; i++) {
+    lane->frame.hits[i].x += dx;
+    lane->frame.hits[i].y += dy;
+    lane->frame.hits[i].center_x += dx;
+    lane->frame.hits[i].center_y += dy;
+  }
+  rebase_rect(&lane->frame.pad, dx, dy);
+  rebase_rect(&lane->frame.menu_card, dx, dy);
+  rebase_rect(&lane->frame.menu_font, dx, dy);
+  rebase_rect(&lane->frame.menu_font_prev, dx, dy);
+  rebase_rect(&lane->frame.menu_font_next, dx, dy);
+  for (int i = 0; i < 2; i++) {
+    rebase_rect(&lane->frame.menu_style[i], dx, dy);
+    rebase_rect(&lane->frame.menu_lang[i], dx, dy);
+  }
+  for (int i = 0; i < 3; i++)
+    rebase_rect(&lane->frame.menu_theme[i], dx, dy);
+  lane->cached = false;
+}
+
+void overlay_signs_capacity(size_t index, int capacity) {
+  if (index >= MAX_OUTPUTS)
+    return;
+  lanes[index].capacity_managed = capacity >= 0;
+  lanes[index].capacity = capacity;
+  lanes[index].cached = false;
+}
+
 void overlay_signs_frame_wait(size_t index, bool waiting) {
   if (index < MAX_OUTPUTS)
     lanes[index].waiting_frame = waiting;
@@ -629,6 +698,22 @@ void overlay_signs_note_focus(focus_result_t result, int64_t now_ms) {
 }
 void overlay_signs_on_expand(void (*fn)(void)) {
   on_expand = fn;
+}
+
+void overlay_signs_output_gone(size_t index) {
+  if (index >= MAX_OUTPUTS)
+    return;
+  if (menu_open && menu_index == index)
+    menu_close();
+  if (tracking && track_index == index)
+    tracking = false;
+  if (holding && hold_index == index)
+    holding = pressed = false;
+  if (focus_armed && focus_index == index)
+    focus_armed = false;
+  lanes[index] = (lane_t){0};
+  expanded[index] = closing[index] = false;
+  close_at[index] = 0;
 }
 
 void overlay_signs_cleanup(void) {

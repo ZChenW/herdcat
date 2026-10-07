@@ -4,6 +4,7 @@
 #include "platform/drag.h"
 #include "platform/font_panel.h"
 #include "platform/overlay_signs.h"
+#include "platform/surface_tiers.h"
 #include "test_helpers.h"
 
 #include <stdio.h>
@@ -1230,6 +1231,142 @@ static void theme_switch_and_reload(void) {
   begin();
   overlay_signs_on_menu(NULL, NULL, NULL, NULL, NULL);
 }
+static void discover_six(void) {
+  for (uint64_t key = 1; key <= 6; key++) {
+    TEST_ASSERT(agent_sessions_apply(key, "claude", AGENT_EVENT_WORKING, 0, 0,
+                                     100, NULL) == 0);
+    TEST_ASSERT(agent_sessions_apply(key, "claude", AGENT_EVENT_IDLE, 0, 0, 100,
+                                     NULL) == 0);
+    agent_sessions_set_provisional(key);
+  }
+}
+static void tier_discovery_and_blockers(void) {
+  begin();
+  config_t config = config_of(110, 120, 0);
+  config.sign_max = 10;
+  config.sign_idle = SIGN_IDLE_HOVER;
+  config.sign_animations = SIGN_ANIM_OFF;
+  overlay_signs_capacity(0, 0);
+  overlay_signs_place(0, SIGN_ABOVE, 14);
+  overlay_signs_step(0, &config, 0, 198, 128, false, 0);
+  overlay_signs_on_expand(discover_six);
+  overlay_signs_pointer(0, 100, 60);
+  overlay_signs_step_t step =
+      overlay_signs_step(0, &config, 0, 198, 128, false, 100);
+  TEST_ASSERT(step.required_capacity == 10 && step.shrink_blocked);
+  TEST_ASSERT(overlay_signs_frame(0)->hit_count == 0);
+  // Resize changes local coordinates while the pointer stays over the cat.
+  overlay_signs_rebase(0, 300, 337);
+  overlay_signs_place(0, SIGN_ABOVE, 351);
+  overlay_signs_capacity(0, 10);
+  step = overlay_signs_step(0, &config, 300, 198, 465, false, 200);
+  TEST_ASSERT(step.required_capacity == 10 && step.shrink_blocked);
+  TEST_ASSERT(overlay_signs_frame(0)->hit_count == 6);
+  overlay_signs_leave();
+  overlay_signs_step(0, &config, 300, 198, 465, false, 300);
+  step = overlay_signs_step(0, &config, 300, 198, 465, false, 500);
+  TEST_ASSERT(step.required_capacity == 0 && !step.shrink_blocked);
+  overlay_signs_pointer(0, 400, 400);
+  overlay_signs_press(0);
+  overlay_signs_leave();
+  // leave cancels the hold; a live press blocks shrinking even off the cat.
+  overlay_signs_press(0);
+  step = overlay_signs_step(0, &config, 300, 198, 465, false, 600);
+  TEST_ASSERT(step.shrink_blocked);
+  overlay_signs_release(true, NULL, NULL, NULL);
+  overlay_signs_on_expand(NULL);
+  overlay_signs_pointer(0, 400, 400);
+  right_click(400, 400);
+  step = overlay_signs_step(0, &config, 300, 198, 465, false, 700);
+  TEST_ASSERT(step.shrink_blocked);
+  stub_open = true;
+  step = overlay_signs_step(0, &config, 300, 198, 465, false, 800);
+  TEST_ASSERT(step.shrink_blocked);
+  begin();
+}
+static void tier_growth_gate(void) {
+  begin();
+  config_t config = config_of(110, 120, 0);
+  config.sign_max = 10;
+  config.sign_idle = SIGN_IDLE_HOVER;
+  config.sign_animations = SIGN_ANIM_FULL;
+  overlay_signs_capacity(0, 0);
+  overlay_signs_step(0, &config, 20, 198, 128, false, 0);
+  TEST_ASSERT(agent_sessions_apply(1, "claude", AGENT_EVENT_WORKING, 0, 0, 100,
+                                   NULL) == 0);
+  overlay_signs_step_t step =
+      overlay_signs_step(0, &config, 20, 198, 128, false, 100);
+  TEST_ASSERT(step.required_capacity == 5);
+  TEST_ASSERT(overlay_signs_frame(0)->hit_count == 0);
+  overlay_signs_step(0, &config, 20, 198, 128, false, 5000);
+  TEST_ASSERT(overlay_signs_frame(0)->hit_count == 0);
+  overlay_signs_capacity(0, 5);
+  overlay_signs_place(0, SIGN_ABOVE, 186);
+  overlay_signs_step(0, &config, 200, 198, 300, false, 6000);
+  // Entry starts at readiness, not at the session event or size request.
+  TEST_ASSERT(overlay_signs_frame(0)->transitioning);
+  overlay_signs_step(0, &config, 200, 198, 300, false, 6700);
+  TEST_ASSERT(overlay_signs_frame(0)->hit_count == 1);
+  // A second output still has no capacity and must keep its old frame.
+  overlay_signs_capacity(1, 0);
+  step = overlay_signs_step(1, &config, 20, 198, 128, false, 6700);
+  TEST_ASSERT(step.required_capacity == 5);
+  TEST_ASSERT(!overlay_signs_frame(1));
+  overlay_signs_output_gone(0);
+  TEST_ASSERT(!overlay_signs_frame(0));
+  overlay_signs_capacity(0, 0);
+  step = overlay_signs_step(0, &config, 20, 198, 128, false, 6800);
+  TEST_ASSERT(step.required_capacity == 5 && !overlay_signs_frame(0));
+  begin();
+}
+static void zero_tier_menu(void) {
+  const uint32_t scales[] = {120, 240, 150};
+  for (int top = 0; top < 2; top++) {
+    for (size_t s = 0; s < sizeof(scales) / sizeof(*scales); s++) {
+      begin();
+      config_t config = config_of(40, 50, 0);
+      config.sign_style = SIGN_STYLE_FAN;
+      config.sign_max = 10;
+      config.overlay_position = top ? POSITION_TOP : POSITION_BOTTOM;
+      config.sign_animations = SIGN_ANIM_FULL;
+      surface_size_t zero = surface_tier_size(&config, 0, 800, scales[s]);
+      overlay_vertical_t old = surface_tier_vertical(
+          &config, 0, 600, zero.height, false, SIGN_ABOVE, scales[s]);
+      overlay_signs_capacity(0, 0);
+      overlay_signs_width(0, zero.width);
+      overlay_signs_place(0, old.orientation, old.cat_y_in_surface);
+      overlay_signs_step(0, &config, 0, 72, zero.height, false, 1000);
+      right_click(36, old.cat_y_in_surface + 20);
+      overlay_signs_step_t step =
+          overlay_signs_step(0, &config, 0, 72, zero.height, false, 1100);
+      TEST_ASSERT(step.required_capacity == 5);
+      TEST_ASSERT(!overlay_signs_frame(0)->menu_open);
+      surface_size_t small = surface_tier_size(&config, 5, 800, scales[s]);
+      overlay_vertical_t next = surface_tier_vertical(
+          &config, 0, 600, small.height, true, old.orientation, scales[s]);
+      int x = (small.width - 72) / 2;
+      overlay_signs_place(0, next.orientation, next.cat_y_in_surface);
+      overlay_signs_rebase(0, x, next.cat_y_in_surface - old.cat_y_in_surface);
+      overlay_signs_width(0, small.width);
+      overlay_signs_capacity(0, 5);
+      for (int64_t now = 1200; now <= 1900; now += 20)
+        overlay_signs_step(0, &config, x, 72, small.height, false, now);
+      const sign_frame_t *frame = overlay_signs_frame(0);
+      TEST_ASSERT(frame->menu_open && frame->menu_card.w > 0);
+      overlay_signs_rect_t regions[OVERLAY_SIGNS_REGION_LIMIT];
+      int n = overlay_signs_regions(0, &config, x, 72, small.height, regions,
+                                    OVERLAY_SIGNS_REGION_LIMIT);
+      TEST_ASSERT(n >= 2 && regions[0].y == next.cat_y_in_surface);
+      sign_rect_t card = frame->menu_card;
+      TEST_ASSERT(top ? card.y >= regions[0].y + regions[0].h - 2
+                      : card.y + card.h <= regions[0].y + 2);
+      click_rect(frame->menu_font);
+      overlay_signs_step(0, &config, x, 72, small.height, false, 2000);
+      TEST_ASSERT(stub_open);
+    }
+  }
+  begin();
+}
 int main(int argc, char **argv) {
   // Focused entry points preserve the same assertions used by make test.
   if (argc == 2) {
@@ -1239,6 +1376,8 @@ int main(int argc, char **argv) {
       font_panel_cancel();
     else if (!strcmp(argv[1], "interleaved-outputs"))
       interleaved_outputs();
+    else if (!strcmp(argv[1], "zero-tier-menu"))
+      zero_tier_menu();
     else {
       fprintf(stderr, "Unknown test: %s\n", argv[1]);
       return EXIT_FAILURE;
@@ -1246,6 +1385,9 @@ int main(int argc, char **argv) {
     return contract_failures ? EXIT_FAILURE : EXIT_SUCCESS;
   }
   TEST_ASSERT(argc == 1);
+  tier_discovery_and_blockers();
+  tier_growth_gate();
+  zero_tier_menu();
   theme_switch_and_reload();
   geometry();
   quiet_pole();

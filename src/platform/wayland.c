@@ -113,6 +113,7 @@ static void teardown(overlay_t *overlay) {
     surface = NULL;
     layer_surface = NULL;
   }
+  overlay_signs_output_gone(index);
   *overlay = (overlay_t){0};
 }
 static void configure(void *data, struct zwlr_layer_surface_v1 *layer,
@@ -122,20 +123,21 @@ static void configure(void *data, struct zwlr_layer_surface_v1 *layer,
   if (width > INT_MAX || height > INT_MAX) {
     return;
   }
-  int w =
-      width ? (int)width
-            : overlay_scaled_width(
-                  overlay_extent(&overlay->config, overlay->config.screen_width)
-                      .width,
-                  overlay->config.screen_width, overlay->scale);
-  int h = height ? (int)height : overlay_signs_height(&overlay->config);
+  int w = width ? (int)width : overlay->requested_width;
+  int h = height ? (int)height : overlay->requested_height;
+  // The compositor's dimensions are final, including constrained outputs.
+  // Allocate at this size before promoting capacity in the event loop.
+  overlay->await_configure = false;
+  int old_cat_x = overlay->cat_x, old_cat_y = overlay->cat_y;
   if (overlay->width != w || overlay->height != h) {
     overlay->width = w;
     overlay->height = h;
     overlay->resize = true;
   }
   clamp_position(overlay);
-  set_margin(overlay);
+  overlay_pointer_rebase(overlay, overlay->cat_x - old_cat_x,
+                         overlay->cat_y - old_cat_y);
+  // Margins and viewport destination join the next painted buffer commit.
   overlay->configured = true;
   overlay->redraw = true;
 }
@@ -180,8 +182,9 @@ static void properties(overlay_t *overlay) {
                 : ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
   zwlr_layer_surface_v1_set_anchor(overlay->layer, anchor);
   set_margin(overlay);
-  zwlr_layer_surface_v1_set_size(overlay->layer, (uint32_t)overlay->width,
-                                 (uint32_t)overlay->height);
+  zwlr_layer_surface_v1_set_size(overlay->layer,
+                                 (uint32_t)overlay->requested_width,
+                                 (uint32_t)overlay->requested_height);
   zwlr_layer_surface_v1_set_exclusive_zone(overlay->layer, -1);
   zwlr_layer_surface_v1_set_keyboard_interactivity(overlay->layer, 0);
 }
@@ -195,10 +198,14 @@ static bool create(overlay_t *overlay, output_ref_t *ref) {
                        ? (uint32_t)ref->wl_scale * 120
                        : 120;
   overlay->output_height = ref->screen_height;
-  overlay->width = overlay_scaled_width(
-      overlay_extent(&overlay->config, ref->screen_width).width,
-      ref->screen_width, overlay->scale);
-  overlay->height = overlay_signs_height(&overlay->config);
+  overlay->tiers.capacity = surface_tier_capacity(&overlay->config, 0, false);
+  surface_size_t size =
+      surface_tier_size(&overlay->config, overlay->tiers.capacity,
+                        ref->screen_width, overlay->scale);
+  overlay->width = overlay->requested_width = size.width;
+  overlay->height = overlay->requested_height = size.height;
+  overlay->await_configure = true;
+  overlay_signs_capacity((size_t)(overlay - overlays), overlay->tiers.capacity);
   int position = drag_position_load(overlay->name, &overlay->output_x,
                                     &overlay->position_y);
   overlay->has_position = position == 0;
@@ -234,6 +241,29 @@ static bool create(overlay_t *overlay, output_ref_t *ref) {
   overlay->redraw = true;
   wl_surface_commit(overlay->surface);
   return true;
+}
+static void request_size(overlay_t *overlay, int capacity) {
+  surface_size_t size = surface_tier_size(
+      &overlay->config, capacity, overlay->config.screen_width, overlay->scale);
+  overlay->requested_width = size.width;
+  overlay->requested_height = size.height;
+  if (size.width == overlay->width && size.height == overlay->height) {
+    surface_tier_ready(&overlay->tiers);
+    overlay_signs_capacity((size_t)(overlay - overlays),
+                           overlay->tiers.capacity);
+    return;
+  }
+  overlay->await_configure = true;
+  uint32_t anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
+  anchor |= overlay->config.overlay_position == POSITION_TOP
+                ? ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP
+                : ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+  zwlr_layer_surface_v1_set_anchor(overlay->layer, anchor);
+  zwlr_layer_surface_v1_set_size(overlay->layer, (uint32_t)size.width,
+                                 (uint32_t)size.height);
+  // Keep the attached buffer and committed margins. Submit new margins,
+  // viewport, pixels and input together only after configure + allocation.
+  wl_surface_commit(overlay->surface);
 }
 static bool selected(output_ref_t *ref, bool first) {
   if (global_config->output_name && global_config->num_output_names <= 1) {
@@ -278,13 +308,6 @@ static void reconcile(void) {
       create(overlay, ref);
       continue;
     }
-    int total = overlay_signs_height(&effective);
-    bool size_changed =
-        (total != overlay->height ||
-         effective.screen_width != overlay->config.screen_width ||
-         overlay_scaled_width(
-             overlay_extent(&effective, ref->screen_width).width,
-             ref->screen_width, overlay->scale) != overlay->width) != 0;
     overlay->config = effective;
     if (!overlay->fractional) {
       uint32_t scale = ref->wl_scale > 0 && ref->wl_scale <= INT_MAX / 120
@@ -295,19 +318,20 @@ static void reconcile(void) {
         overlay->resize = true;
       }
     }
-    int next_width = overlay_scaled_width(
-        overlay_extent(&effective, ref->screen_width).width, ref->screen_width,
-        overlay->scale);
-    if (size_changed || next_width != overlay->width) {
-      overlay->width = overlay_scaled_width(
-          overlay_extent(&effective, ref->screen_width).width,
-          ref->screen_width, overlay->scale);
-      overlay->height = total;
-      overlay->resize = true;
-    }
+    int capacity = overlay->tiers.pending ? overlay->tiers.requested
+                                          : overlay->tiers.capacity;
+    if (effective.sign_style == SIGN_STYLE_OFF ||
+        effective.overlay_opacity > 0 || capacity > effective.sign_max)
+      capacity = effective.sign_max;
+    overlay->tiers.requested = capacity;
+    overlay->tiers.pending = true;
+    overlay->tiers.shrink_at = 0;
+    request_size(overlay, capacity);
     overlay->output_height = ref->screen_height;
     clamp_position(overlay);
-    properties(overlay);
+    // Configure will submit changed dimensions with the new buffer.
+    if (!overlay->await_configure)
+      properties(overlay);
     overlay->damage_all = true;
     overlay->redraw = true;
     // Presentation commits the new placement with its pixels and input.
@@ -332,12 +356,6 @@ static bool resize_buffers(overlay_t *overlay) {
   overlay->physical_width = width;
   overlay->physical_height = height;
   overlay->pending_damage = (pixel_rect_t){0};
-  if (overlay->viewport) {
-    wl_surface_set_buffer_scale(overlay->surface, 1);
-    wp_viewport_set_destination(overlay->viewport, overlay->width,
-                                overlay->height);
-  } else
-    wl_surface_set_buffer_scale(overlay->surface, (int)(overlay->scale / 120));
   overlay->resize = false;
   overlay->damage_all = true;
   return true;
@@ -516,8 +534,14 @@ herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
         continue;
       }
       activate(overlay);
+      if (overlay->await_configure || !overlay->configured)
+        continue;
       if (overlay->resize && !resize_buffers(overlay)) {
         return HERDCAT_ERROR_MEMORY;
+      }
+      if (overlay->tiers.pending) {
+        surface_tier_ready(&overlay->tiers);
+        overlay_signs_capacity(i, overlay->tiers.capacity);
       }
       int cat_h = scale_size_120(overlay->config.cat_height, overlay->scale);
       int64_t cat_w = scale_size_120(cat_width(overlay), overlay->scale);
@@ -541,6 +565,28 @@ herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
       overlay_signs_step_t sign_step = overlay_signs_step(
           i, &overlay->config, overlay->cat_x, cat_width(overlay),
           overlay->height, concealed, sign_now);
+      const sign_frame_t *sign_frame = overlay_signs_frame(i);
+      int request = surface_tier_update(
+          &overlay->tiers, sign_step.required_capacity,
+          sign_step.shrink_blocked, sign_frame && sign_frame->transitioning,
+          sign_now);
+      if (request >= 0) {
+        request_size(overlay, request);
+        overlay->damage_all = true;
+        overlay->redraw = true;
+        if (overlay->await_configure)
+          continue;
+        // Equal geometry can still promote capacity. Rebuild at readiness.
+        timeout = 0;
+        continue;
+      }
+      if (overlay->tiers.shrink_at > sign_now) {
+        int64_t wait = overlay->tiers.shrink_at - sign_now;
+        if (wait > INT_MAX)
+          wait = INT_MAX;
+        if (timeout < 0 || wait < timeout)
+          timeout = (int)wait;
+      }
       if (sign_step.redraw) {
         overlay->redraw = true;
       }

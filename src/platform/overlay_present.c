@@ -246,6 +246,13 @@ void draw_bar(void) {
                      SIGN_DRAW_OVER, clip);
     }
   }
+  if (overlay->viewport) {
+    wl_surface_set_buffer_scale(overlay->surface, 1);
+    wp_viewport_set_destination(overlay->viewport, overlay->width,
+                                overlay->height);
+  } else {
+    wl_surface_set_buffer_scale(overlay->surface, (int)(overlay->scale / 120));
+  }
   set_margin(overlay);
   update_input_region(overlay, invisible);
   buffer->busy = true;

@@ -92,6 +92,37 @@ overlays continue. Configuration reload reconciles
 selection without restarting the process. Configure events determine actual
 surface dimensions.
 
+Transparent sign overlays use three capacities owned by each output:
+zero boards, up to five boards, and the configured `sign_max` for more than
+five. `platform/surface_tiers.c` selects dimensions and owns the 10-second
+shrink deadline. Closed idle sessions do not require sign clearance; opening
+hover (including synchronous process discovery), the switch card or browsing
+fonts reserves at least the five-board capacity. Signs-off and translucent
+output-wide bars keep their original dimensions. Transparent tiers reserve
+8 design pixels only below for desk return and fractional pixel phase; the
+existing placement already reserves the desk lift. The below-sign model
+retains its old clearance budget inside this padding.
+
+Growth requests a layer size without detaching the current buffer. The lane
+holds its current sign model until configure is received and both replacement
+SHM buffers are allocated. Compositor configure dimensions are final, even
+when smaller than requested: constrained outputs keep drawing with the
+previous clipping behavior. The first new entry frame, margins, viewport and
+input region then commit together. Busy old buffers retain the existing
+release lifetime. Shrinking starts only after model transitions finish and
+waits 10 seconds; growth, expanded hover, pointer grabs, the menu and font
+panel cancel the countdown. The countdown joins the shared poll deadline,
+with no recurring idle wake or added descriptor. A new output starts with its
+own lane readiness gate; one output's configure cannot admit another's signs.
+
+Saved cat positions and orientation thresholds are evaluated against the
+configured maximum, independently of the current tier. A smaller surface
+translates its cat and desk coordinates by the inverse origin change. Vertical
+translations retain the full surface's physical-pixel phase at fractional
+scales; horizontal origins continue to use the existing grid alignment.
+Pointer hit geometry is rebased with the surface, while implicit drag-grab
+coordinates remain relative to the surface at press.
+
 ### Animation and fullscreen visibility
 
 `graphics/animation.c` shares parsed embedded SVGs and the rasterizer, while
