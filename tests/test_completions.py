@@ -9,6 +9,12 @@ import unittest
 ROOT = Path(__file__).resolve().parent.parent
 
 
+# Any build will do: CI only has the debug one when the tests run.
+BINARY = next((ROOT / 'build' / kind / 'herdcat'
+               for kind in ('release', 'debug', '')
+               if (ROOT / 'build' / kind / 'herdcat').is_file()),
+              ROOT / 'build/release/herdcat')
+
 class CompletionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -36,7 +42,7 @@ class CompletionTests(unittest.TestCase):
 
     def test_all_help_options_and_setup_targets(self):
         help_text = subprocess.check_output(
-            [ROOT / 'build/herdcat', '--help'], text=True)
+            [BINARY, '--help'], text=True)
         options = set(re.findall(r'(?<!\w)--?[a-z][a-z-]*', help_text))
         for shell, path in self.files.items():
             with self.subTest(shell=shell):
