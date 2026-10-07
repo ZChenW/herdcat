@@ -1,7 +1,7 @@
 # herdcat
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/ZChenW/herdcat/releases)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/ZChenW/herdcat/releases)
 
 A desktop cat for Wayland that herds your coding agents: it types along with you and holds up a sign for every agent session.
 
@@ -101,7 +101,7 @@ overlay_position=bottom
 # keyboard_name=YOUR KEYBOARD NAME
 
 # Session signs
-# sign_style=fan          # fan or post
+# sign_style=fan          # fan, post or off
 # sign_theme=light        # light, auto (XDG portal), or dark
 # sign_language=auto      # auto, en or zh
 

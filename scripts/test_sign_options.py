@@ -42,9 +42,11 @@ def wire(text, ok=True):
     return out
 def geometry():
     latest = {}
-    for line in (r / 'server.log').read_text().splitlines():
+    text = (r / 'server.log').read_text()
+    # The fixture may be in the middle of writing its last line.
+    for line in text[:text.rfind('\n') + 1].splitlines():
         fields = line.split()
-        if fields and fields[0] in ('placement', 'input'):
+        if len(fields) > 2 and fields[0] in ('placement', 'input'):
             key = (fields[0], fields[1], fields[2] if fields[0] == 'placement' else '')
             latest[key] = tuple(fields[2:])
     return latest

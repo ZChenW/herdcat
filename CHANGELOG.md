@@ -4,68 +4,62 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-06
+
 ### Added
-
-- **Ten session signs** - `sign_max=1..10`, default 10. Fans above five use
-  an unchanged front row and an 88% back row on longer rods; back shapes stay
-  behind every front shape during hover and motion. State priority chooses
-  the front five, with animated row changes. Posts continue to ten rows;
-  clearance follows the configured limit and limits up to five keep old pixels.
-
-- **Typing desk distance** - `sign_desk_offset=-6..24` adjusts the distance
-  from the cat in scaled logical pixels, supports hot reload on every output,
-  and preserves existing pixels at the default 0.
-
-- **Child agents** - Agents launched by a tracked agent share its sign. Fan
-  labels expand as `Claude + Codex` (including repeated types and bounded
-  summaries); post boards show `Claude +2`. Children remain in `--sessions`
-  with `parent=`, use pidfd exit tracking, and raise no independent alerts.
 
 - **`herdcat setup`** - Connects the installed agents, tmux and kitty with one
   command. Shows the changes first, backs up every file, can be repeated and
   undone with `--remove`. Needs Python 3.
+- **Session titles** - A sign shows its project and the title the agent gave
+  the session; until there is one, the first prompt stands in, also for a
+  session that began before the cat did. `sign_name`, `sign_name_extra`,
+  `sign_title_length` and a free `sign_nameplate` template choose what the
+  nameplate says.
+- **Ten signs in two rows** - `sign_max` goes to 10, the new default. Up to
+  five signs look as before; the rest stand in a back row on longer sticks,
+  always drawn behind the front row. Sessions that need attention take the
+  front row. The signpost continues to ten rows.
+- **Agents started by agents** - An agent launched by another agent joins its
+  sign instead of raising its own: the label reads `Claude + Codex`, signpost
+  boards show `Claude +2`. Detached children of Claude Code are recognised
+  too. They stay visible in `herdcat --sessions` with `parent=`.
 - **Dark theme** - `sign_theme=light|dark|auto`, also on a new row of the
   switch card. `auto` follows the desktop's colour scheme through the XDG
   settings portal.
 - **More terminals** - Clicking a sign reaches the pane in tmux and WezTerm,
   not only in kitty, and picks the right window in Ghostty and other
-  terminals that run several windows in one process.
+  terminals that run several windows in one process. A session in a detached
+  tmux is dimmed and says so.
 - **Signs below the cat** - The cat can be dragged to the top of the screen;
   with no room above, the signs hang below it.
+- **Typing desk distance** - `sign_desk_offset` moves the desk away from the
+  cat or closer.
 - **Compositor interface** - niri sits behind a small interface. Hyprland and
   Sway backends exist but are experimental, off by default and untested on a
   real compositor (`compositor_experimental=1`).
 
 ### Changed
 
-- **Sign layout** - Center labels using the resolved primary font's cap height.
-  Expanded post boards now fit their contents between 150 and 340 design
-  pixels, narrowing to available space at output edges. Text measurements and
-  cap-height metrics are cached, including font, weight, size and scale.
-
-- **Session names** - Default to the directory followed by the session title
-  (`sign_name=project`, `sign_name_extra=inline`). Post boards also show the
-  extra when it fits. Missing titles omit the supplement; duplicate
-  names no longer trigger automatic title selection or numbering.
-
-- The overlay surface is only as wide as the cat and its signs instead of the
-  whole output: about 1.5 MB (fan) or 1.9 MB (post) of buffers instead of 6 MB on a
+- **Label centring** - Text is centred on the font's cap height, so CJK and
+  serif faces no longer sit below the middle of pills and tracks.
+- **Signpost boards** fit their content, between 150 and 340 pixels wide at
+  the design size, instead of a fixed width.
+- **Names** - The default nameplate is the project followed by the session
+  title. A sign's name follows the agent only into subdirectories of where
+  the session started, so it no longer flips back when the agent steps out.
+- **Smaller surface** - The overlay is only as wide as the cat and its signs
+  instead of the whole output: about 2 MB of buffers instead of 6 MB on a
   2560 pixel output.
+- The moon on the theme row is filled, like the other icons.
 
 ### Fixed
 
-- **Stable project names** - Remember each session's first cwd across restarts;
-  subsequent cwd updates rename signs only inside strict subdirectories.
-- **Missed initial prompts** - Recover a temporary first-user-message title
-  for untitled Claude and Codex sessions from a known transcript, using a
-  bounded asynchronous helper and no title/prompt logging.
-- **Pointer motion work** - Reuse unchanged settled sign models and deduplicate
-  cursor-shape requests. Add a 1000-motion regression and isolated 1000 Hz sample.
-- **Detached child agents** - Validate inherited `CLAUDE_PID` against tracked
-  Claude sessions when normal ancestry no longer reaches their parent.
-
+- **Hover loop on the signpost** - A board slid out from under a pointer
+  resting on its pole-side edge, then back, forever, redrawing at full rate.
 - **Font panel memory** - Closing the panel releases the faces it loaded for
   previews. A cat that had shown it once stayed near 45 MB instead of 10.
+- The typing desk keeps clear of signs that hang below the cat.
 
 ## [0.1.0] - 2026-10-05
 
