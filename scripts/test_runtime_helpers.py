@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Readiness policy tests with a simulated clock; no sockets or compositor."""
 import os
+from pathlib import Path
+import json
+import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import runtime_test_helpers as helpers
 
@@ -61,6 +64,69 @@ class WaitTests(unittest.TestCase):
         self.assertNotIn('KITTY_PID', env)
         self.assertNotIn('HERDCAT_TEST_DRAG', env)
         self.assertEqual(env['NIRI_SOCKET'], '/fixture')
+
+
+class HyprlandSafetyTests(unittest.TestCase):
+    def test_default_does_not_probe_or_launch_desktop(self):
+        import test_hyprland_runtime as hypr
+        with patch.dict(os.environ, {}, clear=True), \
+                patch.object(hypr, 'host_display') as display, \
+                patch.object(hypr.HyprlandTest, 'execute') as execute:
+            self.assertEqual(hypr.main(), 0)
+        display.assert_not_called()
+        execute.assert_not_called()
+
+    def test_env_whitelist(self):
+        import test_hyprland_runtime as hypr
+        with patch.dict(os.environ, {'NIRI_SOCKET': '/host',
+                                     'WAYLAND_DISPLAY': 'host-display',
+                                     'WAYLAND_SOCKET': '7', 'SWAYSOCK': '/host',
+                                     'DBUS_SESSION_BUS_ADDRESS': '/host'}):
+            env = hypr.isolated_env(Path('/tmp/fixture'))
+        self.assertEqual(env['HOME'], '/tmp/fixture')
+        self.assertEqual(env['XDG_RUNTIME_DIR'], '/tmp/fixture')
+        for key in ('NIRI_SOCKET', 'WAYLAND_DISPLAY', 'WAYLAND_SOCKET',
+                    'SWAYSOCK', 'HYPRLAND_INSTANCE_SIGNATURE',
+                    'DBUS_SESSION_BUS_ADDRESS'):
+            self.assertNotIn(key, env)
+
+    def test_budget_refuses_sixteenth_launch_before_spawn(self):
+        import test_hyprland_runtime as hypr
+        with tempfile.TemporaryDirectory(prefix='hc-budget-', dir='/tmp') as tmp:
+            directory = Path(tmp)
+            test = hypr.HyprlandTest(directory, Path('/host'), None)
+            test.ledger = directory / 'ledger.json'
+            test.ledger.write_text(json.dumps([{}] * 15))
+            test.spawn = Mock()
+            with patch.dict(os.environ, {'HERDCAT_HYPRLAND_BUDGET': '15'}):
+                with self.assertRaisesRegex(AssertionError, 'budget exhausted'):
+                    test.start_nested()
+            test.spawn.assert_not_called()
+
+    def test_watchdogs_and_host_display_scope(self):
+        import test_hyprland_runtime as hypr
+        with tempfile.TemporaryDirectory(prefix='hc-budget-', dir='/tmp') as tmp:
+            directory = Path(tmp)
+            test = hypr.HyprlandTest(directory, Path('/host/display'), None)
+            test.ledger = directory / 'ledger.json'
+            process = Mock(pid=123)
+            process.poll.return_value = None
+            test.spawn = Mock(return_value=process)
+            with patch.object(hypr.threading, 'Timer') as timer, \
+                    patch.object(hypr.resource, 'setrlimit'):
+                test.start_nested()
+            self.assertEqual([call.args[0] for call in timer.call_args_list], [35, 38])
+            env = test.spawn.call_args.kwargs['env']
+            self.assertEqual(env['WAYLAND_DISPLAY'], '/host/display')
+            self.assertNotIn('WAYLAND_DISPLAY', test.env)
+            self.assertEqual(env['SEATD_SOCK'], str(directory/'no-seat.sock'))
+            self.assertEqual(env['AQ_DRM_DEVICES'], str(directory/'no-gpu'))
+            self.assertEqual(len(json.loads(test.ledger.read_text())), 1)
+            test.stop_nested()
+            process.send_signal.assert_called_once_with(hypr.signal.SIGTERM)
+            process.poll.return_value = 0
+            test.stop_nested(hypr.signal.SIGKILL)
+            process.send_signal.assert_called_once()
 
 
 if __name__ == '__main__':

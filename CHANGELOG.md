@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Clicking a sign focuses its window on Hyprland 0.56 with a Lua
+  configuration. That setup rejects the old `hyprctl dispatch focuswindow`
+  form; herdcat now retries with the Lua dispatcher when Hyprland says so.
+  Found by running the Hyprland backend against a real Hyprland for the first
+  time (nested in niri; six of seven checks pass, the frame reply does not
+  arrive there).
 - Claude and Grok quiet-output cancellation detection now samples every second
   throughout working turns, keeping the normal 2–3 second response for long
   turns too. The unused terminal-title cancellation classifier was removed;
@@ -51,8 +57,9 @@ All notable changes to this project will be documented in this file.
 - The experimental Sway backend is now exercised against a real headless
   Sway in CI: layer surface, window discovery, focus events, focusing a
   session's window, window close and the opt-in switch. It stays opt-in
-  (`compositor_experimental=1`). Under Sway, `herdcat --sessions` adds a
-  `sway-session` line per session with its `con_id`.
+  (`compositor_experimental=1`). Under Sway and Hyprland, `herdcat
+  --sessions` adds a `window-session` line per session with the window it
+  was matched to.
 
 ## [0.3.0] - 2026-10-07
 

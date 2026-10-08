@@ -21,6 +21,7 @@ static int64_t now_ms(void) {
 enum {
   JOB_WINDOWS = 0,
   JOB_NIRI,
+  JOB_HYPR_LUA,
   JOB_KITTY,
   JOB_TMUX_SESSION,
   JOB_TMUX_CLIENTS,
@@ -337,6 +338,24 @@ static void job_completed(int done) {
     return;
   }
   if (done < 0) {
+    // Lua-configured Hyprland explicitly rejects the legacy dispatcher.
+    // Retry once with a typed selector, sharing the original job deadline.
+    if (job_kind == JOB_NIRI && compositor_selected() == &COMPOSITOR_HYPRLAND &&
+        job.exited && WIFEXITED(job.status) && WEXITSTATUS(job.status) != 0 &&
+        strstr(job.buffer,
+               "dispatch in lua is a shorthand for hl.dispatch(...)")) {
+      int64_t deadline = job.deadline;
+      char text[80];
+      int n = snprintf(text, sizeof(text),
+                       "hl.dsp.focus({window=\"address:0x%" PRIx64 "\"})",
+                       terminal.window);
+      const char *args[] = {"hyprctl", "dispatch", text, NULL};
+      if (now_ms() < deadline && n > 0 && (size_t)n < sizeof(text) &&
+          start_kind(JOB_HYPR_LUA, args)) {
+        job.deadline = deadline;
+        return;
+      }
+    }
     if (job_kind == JOB_WEZ_CURRENT && current_note)
       current_note(target_pid, current_window, terminal.socket, NULL, 0);
     finish(FOCUS_UNAVAILABLE);
@@ -438,7 +457,7 @@ static void job_completed(int done) {
     finish(FOCUS_SUCCESS);
     return;
   }
-  if (job_kind == JOB_NIRI) {
+  if (job_kind == JOB_NIRI || job_kind == JOB_HYPR_LUA) {
     if (terminal.kind == TERMINAL_WEZTERM) {
       terminal.current_known = true;
       terminal.current_pane = terminal.pane;

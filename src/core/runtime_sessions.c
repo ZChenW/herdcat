@@ -237,9 +237,11 @@ static int agent_command(const char *request) {
 }
 
 // Keep compositor IDs out of the persisted session model. These diagnostics
-// reflect the Sway stream's live map, including removal and opt-in gating.
-static void sway_session_diagnostics(char *response, size_t capacity) {
-  if (compositor_selected() != &COMPOSITOR_SWAY || !capacity) {
+// reflect the experimental compositor's live map, including removal and opt-in
+// gating.
+static void window_session_diagnostics(char *response, size_t capacity) {
+  const compositor_ops_t *ops = compositor_selected();
+  if ((ops != &COMPOSITOR_SWAY && ops != &COMPOSITOR_HYPRLAND) || !capacity) {
     return;
   }
   agent_session_view_t views[AGENT_SESSIONS_MAX];
@@ -262,7 +264,7 @@ static void sway_session_diagnostics(char *response, size_t capacity) {
     }
     int written = snprintf(
         response + used, capacity - used,
-        "sway-session %08" PRIx32 " con_id=%" PRIu64 " seen=%s\n",
+        "window-session %08" PRIx32 " window=%" PRIu64 " seen=%s\n",
         (uint32_t)(views[i].key >> 32U), window, watching ? "yes" : "no");
     if (written < 0 || (size_t)written >= capacity - used) {
       break;
@@ -402,7 +404,7 @@ int command(const char *request, char *response, size_t capacity) {
     if (agent_sessions_format(response, capacity, monotonic_ms()) == 0) {
       snprintf(response, capacity, "No agent sessions");
     }
-    sway_session_diagnostics(response, capacity);
+    window_session_diagnostics(response, capacity);
     return 0;
   } else if (strcmp(request, "status") == 0) {
     const compositor_ops_t *backend = compositor_selected();

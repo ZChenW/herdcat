@@ -456,6 +456,7 @@ compositor-test-build:
 .PHONY: test-runtime
 test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent_children_fixture
 	python3 scripts/test_sway_runtime.py
+	python3 scripts/test_hyprland_runtime.py
 	python3 scripts/test_surface_tiers_runtime.py
 	python3 scripts/test_subagent_badge_runtime.py
 	python3 scripts/test_subagent_visibility_runtime.py

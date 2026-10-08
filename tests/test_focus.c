@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "platform/compositor.h"
 #include "platform/focus.h"
 #include "test_helpers.h"
 
@@ -11,7 +12,9 @@ static int parse(const char *s, focus_window_t *out) {
   return focus_parse_windows(s, strlen(s), out, 8);
 }
 int main(int argc, char **argv) {
-  if (argc == 2) {
+  if (argc == 2 || argc == 3) {
+    if (argc == 3 && !strcmp(argv[2], "hyprland"))
+      compositor_configure(true);
     if (focus_session_window((pid_t)atoi(argv[1])) < 0)
       return 2;
     TEST_ASSERT(focus_session_window((pid_t)atoi(argv[1])) < 0);

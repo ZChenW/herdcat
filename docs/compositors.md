@@ -7,9 +7,11 @@ no focus subprocess or event connection is attempted for it by default. No
 advertised compositor leaves signs available, but focus, typing-desk tracking
 and read acknowledgements unavailable.
 
-Hyprland: **无 GPU 无头验证受阻，未在真实合成器验证** (2026-10-07,
-Hyprland 0.56.2 / Aquamarine 0.15.1: no DRM/GBM allocator without a GPU;
-local GPU nesting also blocked by an xdg-shell version mismatch). Sway:
+Hyprland: **本机嵌套于 niri 26.04 的 IPC 验证通过，图层呈现验证失败**
+(2026-10-07, Hyprland 0.56.2 / Aquamarine 0.15.1). niri rejects the outer
+surface's buffer before its initial configure acknowledgement. The six IPC
+checks pass, but the overlay frame callback does not return; full nested
+acceptance remains incomplete. CI does not cover Hyprland. Sway:
 **已在无头 Sway 1.12 上验证** (2026-10-07, headless/pixman).
 All seven Sway real-compositor runtime assertions passed. Both experimental
 backends remain opt-in. Unit fixtures additionally check payloads, argv and gating.
@@ -19,10 +21,14 @@ terminal ancestry/selection and all previous niri test expectations are retained
 | Backend | Initial windows | Events | Window focus |
 |---|---|---|---|
 | niri | `niri msg -j windows` for clicks; EventStream initial list for tracking | `"EventStream"` on NIRI_SOCKET | `niri msg action focus-window --id ID` |
-| Hyprland (experimental) | `hyprctl -j clients` then `hyprctl -j activewindow` | `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock` | `hyprctl dispatch focuswindow address:0xHEX` |
+| Hyprland (experimental) | `hyprctl -j clients` then `hyprctl -j activewindow` | `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock` | `hyprctl dispatch focuswindow address:0xHEX`; Lua syntax fallback on its explicit rejection |
 | Sway (experimental) | IPC GET_TREE; `swaymsg -r -t get_tree` for clicks | IPC SUBSCRIBE `["window"]` | `swaymsg -r '[con_id=ID] focus'` |
 
-Commands use separate argv entries, never a shell. Identifiers become checked
+Commands use separate argv entries, never a shell. Lua-configured Hyprland
+0.56.2 explicitly rejects legacy dispatch syntax. Only that diagnostic permits
+one retry using `hyprctl dispatch 'hl.dsp.focus({window="address:0xHEX"})'`,
+with the same original deadline. Legacy configs keep their existing command;
+unrelated errors and a failed Lua retry remain failures. Identifiers become checked
 integers before command construction. The stream adapter normalizes focus,
 window addition/change/removal, PID and title into the existing bounded map.
 Titles remain truncated private metadata; they are neither logged nor saved by
@@ -77,13 +83,44 @@ then aborted before creating a Hyprland Wayland socket. Seat access was
 blocked using a nonexistent private seatd socket; neither compositor used a
 host display socket. No system library or compositor was patched.
 
-Consequently, Hyprland's seven real-compositor acceptance assertions remain
-unverified, and CI has no Hyprland runtime job. The experimental default remains
-zero, and existing Sway diagnostics retain their format. This is the blocked
-initialization outcome permitted by stages 41.2 and 41.3, not a successful
-backend test. No nested Hyprland test was added to `make test-runtime`.
-See [the report](performance/hyprland-headless-report.md) for exact versions,
-source references, commands, repeated attempts and verification results.
+Those device-free and private-Sway attempts remain blocked. The subsequent
+niri attempt below validates the IPC backend, but not layer presentation. The
+experimental default remains zero. See [the report](performance/hyprland-headless-report.md)
+for versions, evidence, commands and limitations.
+
+## Opt-in nested Hyprland runtime acceptance
+
+`HERDCAT_HYPRLAND_NESTED=1 python3 scripts/test_hyprland_runtime.py` opens one
+Hyprland window in the current Wayland desktop. Without that explicit variable,
+including in `make test-runtime` and CI, it prints SKIP. Missing system
+`/usr/bin/Hyprland`, `hyprctl`, or the host Wayland socket also skips. An enabled
+test with available prerequisites fails on startup or assertion errors.
+
+The host socket's absolute path is given only to Hyprland. All other clients,
+herdcat commands and IPC use the test's private short mode-0700 `/tmp` runtime
+and isolated HOME/XDG directories. No niri command is issued. XWayland, desktop
+integration, crash reports, seat access and DRM device enumeration are disabled.
+The test reuses the Sway xdg-toplevel fixture and layer roundtrip criterion.
+An independent watchdog sends TERM to the Hyprland PID at 35 seconds and KILL
+at 38; normal cleanup immediately terminates/reaps that PID. A locked `/tmp`
+ledger, keyed by worktree path, reserves at most 15 launches across invocations.
+Exhausting that budget fails before spawning. Optional `--evidence-dir` saves
+private logs and launch records inside this worktree or `/tmp` after cleanup.
+
+Against niri 26.04 / Hyprland 0.56.2, backend selection, PID-to-address mapping,
+focus/unread acknowledgement, `--focus`, close/pidfd removal, experimental
+reloading and clean shutdown pass. Configure/ack and buffer commits for the
+herdcat layer occur, but its frame callback never returns. The outer connection
+reports `must ack the initial configure before attaching buffer`, while
+Hyprland keeps answering private IPC. The test retains that presentation
+failure and collects the independent IPC checks during the same launch; its
+exit remains nonzero. It does not substitute IPC success for rendering.
+
+Real pointer clicks, typing input/desk rendering, multiple outputs, physical
+Hyprland sessions, XWayland, title changes and compositor restart are uncovered.
+The window budget permits brief verification, not a long-term stability claim.
+No system compositor/library was patched. Full nested acceptance requires
+resolving the external presentation failure and rerunning this strict test.
 
 ## Headless Sway runtime acceptance
 
@@ -113,9 +150,10 @@ infer successful presentation from an outgoing commit alone. This is the
 observability adjustment to stage 34's proposed IPC-only layer assertion.
 
 `--status` reports `compositor=Sway (experimental) focus-watch=ready` when the
-subscription and initial tree are ready. With Sway selected, `--sessions` adds
-`sway-session KEY8 con_id=ID seen=yes|no` lines from the live focus map; zero
-means no matching live window. These IDs are never persisted. The existing
+subscription and initial tree are ready. With Sway or Hyprland selected, `--sessions` adds
+`window-session KEY8 window=ID seen=yes|no` lines from the live focus map; zero
+means no matching live window. Sway uses decimal con_ids; Hyprland uses
+the decimal value of its hexadecimal address. These IDs are never persisted. The existing
 session rows retain their `unread` flag, used as the focus acknowledgement check.
 
 All seven assertions passed against the installed **sway version 1.12** using

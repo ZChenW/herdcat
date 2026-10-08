@@ -168,7 +168,7 @@ class SwayTest:
                      if row.startswith('claude ' + key[:8] + ' ')), '')
 
     def mapped(self, key, window, seen):
-        return (f'sway-session {key[:8]} con_id={window} seen={seen}'
+        return (f'window-session {key[:8]} window={window} seen={seen}'
                 in self.cli('--sessions').splitlines())
 
     def focus(self, window, key, other_key, other_window):
@@ -296,7 +296,7 @@ class SwayTest:
         self.cli('--reload')
         self.check('compositor=unavailable focus-watch=unavailable' in
                    self.cli('--status'), 'disabled opt-in still selects a backend')
-        self.check('sway-session' not in self.cli('--sessions'),
+        self.check('window-session' not in self.cli('--sessions'),
                    'disabled opt-in still exposes Sway tracking')
         rejected = self.run([str(BINARY), '--focus', KEYS[0]], required=False)
         self.check(rejected.returncode != 0, 'disabled opt-in accepts focus')
