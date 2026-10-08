@@ -97,8 +97,13 @@ retracts both fan rows. The typing desk, switch card and font panel keep their
 existing layout. Surface height follows the current allocation tier. Above/below
 thresholds use that tier's capacity: zero and up to five reserve
 `min(5, sign_max)` boards; the larger tier reserves `sign_max`. A 110px cat with
-one-line names therefore flips below at 180px from the output top in the small
-tier, and at 273px (fan) or 345px (post) in the ten-board tier. Returning above
+default-size names therefore flips below at 114px (fan) or 171px (post) in
+the small tier, and at 190px (fan) or 329px (post) in the ten-board tier.
+These measured budgets include two-line fan tags, hover growth, badges,
+unread dots and entry overshoot plus 8 design pixels. Larger fan text adds
+only its extra line-box height. Surface heights retain their previous
+180 / 273 / 345 clearance budgets, separately from the flip threshold.
+Returning above
 requires another 24 logical pixels. Growth rechecks direction after configure
 and buffer allocation, before the sixth board enters. Shrink waits the existing
 ten seconds and applies the same return hysteresis. Dragging uses this same
@@ -106,6 +111,18 @@ threshold and blocks shrinking. Saved positions and edge clamping continue to
 use the configured maximum. See the
 [sign rows report](performance/sign-rows-report.md) and
 [rendered examples](design/two-rows/README.md).
+
+Transparent overlays use a smaller resting surface while visible signs are
+closed. At cat height 110, up to five signs use 214×212 logical pixels for
+the fan or 214×308 for posts; six through ten use 214×284 or 214×473.
+Expanded surfaces retain the previous widths of 652/820. Waiting fan tags,
+waiting/error post names, pointer entry, dragging, the switch card and font
+browsing require expanded space. Unread dots keep the existing closed layout
+unless hovered. Growth waits for configure and replacement buffers before
+painting names; the first hover frame can take one extra configure round trip.
+After names close and motion settles, shrinking waits ten seconds. New
+activity cancels that deadline, keeping repeated pointer visits from causing
+resize oscillation. Cat and typing-desk output coordinates stay fixed.
 
 ## Terminal support
 
@@ -173,6 +190,14 @@ sign. Mux window mappings learned from a current-pane reply keep inactive panes
 in their system window even when their titles differ.
 
 ## Switch card
+
+The card chooses its side independently of the signs. When it does not fit
+above the cat but fits below, it opens below while the signs retain their
+orientation. The surface grows downward before painting the first card frame;
+closing keeps that space until the existing delayed shrink. If neither side
+fits, the previous card direction is retained. The font panel anchors to the
+actual card, including a card below above-facing signs. It retains that opening
+output-space anchor while the card retracts or the main surface changes size.
 
 Right-click the cat or a sign. The signs step down and the cat holds up a
 card with four rows. Nothing on it is labelled; each row shows its choices

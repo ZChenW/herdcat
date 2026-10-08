@@ -338,7 +338,7 @@ $(BUILDDIR)/test_%: tests/test_%.c $(TEST_LIB)
 	  -o $@ $(TEST_LDFLAGS) $(TEST_WRAPS)
 
 # Geometry integration tests reach the actual overlay/font-panel modules.
-$(addprefix $(BUILDDIR)/,test_surface_tiers test_surface_tier_pixels): \
+$(addprefix $(BUILDDIR)/,test_surface_tiers test_surface_tier_pixels test_sign_reach test_surface_rest test_surface_rest_pixels): \
 $(BUILDDIR)/%: tests/%.c $(TEST_LIB)
 	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_LIB) \
 	  $(C_PROTOCOL_SRC) -o $@ $(TEST_LDFLAGS) -lwayland-client

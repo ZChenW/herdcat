@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Open and destroy the font panel on the isolated compositor fixture."""
 import os
+import socket
 from pathlib import Path
 import subprocess
 import tempfile
@@ -142,9 +143,12 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
         wait_for(lambda: 'overlay TEST-1 herdcat-font-panel' in text())
         wait_for(lambda: 'commit TEST-1' in text().rsplit('herdcat-font-panel', 1)[-1])
         check_anchor('TEST-1', card, False, (800, 600))
-        # The panel follows the card while it eases in; sample once it rests.
+        # Hiding the card must not move the panel's opening output anchor.
         wait_settled(placements, description='font panel placement',
                      diagnostics=lambda: text()[-5000:])
+        opened = [tuple(map(int, line.split()[3:])) for line in text().splitlines()
+                  if line.startswith('placement TEST-1 herdcat-font-panel ')]
+        assert opened and all(p == opened[0] for p in opened), opened
         panel_x = placements()[('TEST-1', 'herdcat-font-panel')][3]
         send('step')  # Narrower output and new fractional scale while browsing.
         wait_for(lambda: 'phase 1' in text())
@@ -158,12 +162,46 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
         wait_for(lambda: 'gone herdcat-font-panel' in text())
         wait_settled(regions, diagnostics=lambda: text()[-5000:])
 
+        # The signs still face above at y=50 (40px cat), but the card
+        # needs 66px above. Its independent below anchor must be honored.
+        main = placements()[('TEST-1', 'herdcat-overlay')]
+        original_cat_y = 600 - main[2] - main[5] + cat_regions()['TEST-1'][1]
+        send(f'drag TEST-1 0 {50 - original_cat_y}')
+        wait_settled(placements, diagnostics=lambda: text()[-5000:])
+        send('out TEST-1')
+        wait_settled(regions, diagnostics=lambda: text()[-5000:])
+        assert cat_regions()['TEST-1'][1] > 3  # signs remain above
+        click_cat('TEST-1')
+        card = card_region('TEST-1', below=True)
+        click('TEST-1', name_center(card, below=True), 272)
+        wait_for(lambda: text().count('overlay TEST-1 herdcat-font-panel') >= 2)
+        check_anchor('TEST-1', card, False, (640, 600), below=True)
+        anchor_before = placements()[('TEST-1', 'herdcat-font-panel')]
+        for key in range(1, 7):
+            with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
+                control.connect(str(root / 'herdcat.sock'))
+                control.sendall(f'ev claude working {key:016x} 0'.encode())
+                assert control.recv(512).startswith(b'0 ')
+        wait_for(lambda: placements()[('TEST-1', 'herdcat-overlay')][5] == 219)
+        wait_settled(placements, diagnostics=lambda: text()[-5000:])
+        assert placements()[('TEST-1', 'herdcat-font-panel')] == anchor_before
+        for key in range(1, 7):
+            with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
+                control.connect(str(root / 'herdcat.sock'))
+                control.sendall(f'ev claude end {key:016x} 0'.encode())
+                assert control.recv(512).startswith(b'0 ')
+        click_cat('TEST-1')
+        wait_for(lambda: text().count('gone herdcat-font-panel') >= 2)
+        wait_settled(regions, diagnostics=lambda: text()[-5000:])
+        send(f'drag TEST-1 0 {original_cat_y - 50}')
+        wait_settled(placements, diagnostics=lambda: text()[-5000:])
+
         click_cat('TEST-1')
         name = name_center(card_region('TEST-1'))
         click('TEST-1', name, 272)
-        wait_for(lambda: text().count('overlay TEST-1 herdcat-font-panel') >= 2)
+        wait_for(lambda: text().count('overlay TEST-1 herdcat-font-panel') >= 3)
         command('hide')
-        wait_for(lambda: text().count('gone herdcat-font-panel') >= 2)
+        wait_for(lambda: text().count('gone herdcat-font-panel') >= 3)
         command('show')
         wait_for(lambda: regions().get('TEST-2', (0, 0, 0, 0))[2])
 
@@ -177,7 +215,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
         check_anchor('TEST-2', card, True, (1024, 768), below=True)
         send('step')
         wait_for(lambda: 'phase 2' in text())
-        wait_for(lambda: text().count('gone herdcat-font-panel') >= 3)
+        wait_for(lambda: text().count('gone herdcat-font-panel') >= 4)
         wait_settled(regions, diagnostics=lambda: text()[-5000:])
         app.terminate()
         assert app.wait(timeout=3) == 0
@@ -197,6 +235,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-font-panel-') as directory:
                     process.wait(timeout=3)
                 except subprocess.TimeoutExpired:
                     process.kill()
+                    process.wait(timeout=3)
         server.stdin.close()
         server_file.close()
         app_file.close()

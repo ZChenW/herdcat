@@ -1,11 +1,11 @@
 #include "platform/overlay_vertical.h"
 
 #include "config/config.h"
-#include "config/sign_name_geometry.h"
 #include "config/sign_options.h"
 #include "graphics/signs.h"
 
 #include <limits.h>
+#include <math.h>
 #include <stdint.h>
 
 static int bounded(int64_t value, int high) {
@@ -20,8 +20,13 @@ sign_orientation_t overlay_orientation(const config_t *config, int cat_y,
       output_height < surface_height)
     return SIGN_ABOVE;
   int clearance =
-      sign_clearance(config->sign_style, config->cat_height, config->sign_max) +
-      sign_name_clearance(config);
+      sign_reach(config->sign_style, config->cat_height, config->sign_max);
+  // sign_reach includes a two-line tag at the default 13px face. Larger
+  // configured text adds only its extra line-box height, never card space.
+  if (config->sign_style == SIGN_STYLE_FAN && config->sign_font_size > 13)
+    clearance +=
+        (int)ceil((13 + 11.5) * 1.2 * (config->sign_font_size / 13.0 - 1) *
+                  config->cat_height / 110.0);
   int64_t threshold = clearance;
   if (has_history && previous == SIGN_BELOW)
     threshold += 24;
@@ -29,6 +34,18 @@ sign_orientation_t overlay_orientation(const config_t *config, int cat_y,
       (int64_t)cat_y + config->cat_height + clearance > output_height)
     return SIGN_ABOVE;
   return SIGN_BELOW;
+}
+sign_orientation_t overlay_card_orientation(const config_t *config, int cat_y,
+                                            int output_height,
+                                            sign_orientation_t signs) {
+  if (!config || signs == SIGN_BELOW)
+    return signs;
+  // Includes the card's 174px offset, pop overshoot and damage outset.
+  int64_t space = ((int64_t)config->cat_height * 180 + 109) / 110;
+  return cat_y < space &&
+                 (int64_t)cat_y + config->cat_height + space <= output_height
+             ? SIGN_BELOW
+             : signs;
 }
 overlay_vertical_t overlay_place_vertical(const config_t *config,
                                           int position_y, int output_height,

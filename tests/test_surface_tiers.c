@@ -118,9 +118,8 @@ static void tier_thresholds(void) {
       config.sign_max = maximum;
       for (size_t n = 0; n < sizeof(counts) / sizeof(*counts); n++) {
         int capacity = surface_tier_capacity(&config, counts[n], false);
-        int threshold = capacity <= 5             ? 180
-                        : style == SIGN_STYLE_FAN ? 273
-                                                  : 345;
+        int threshold = style == SIGN_STYLE_FAN ? (capacity <= 5 ? 114 : 190)
+                                                : (capacity <= 5 ? 171 : 329);
         surface_size_t size = surface_tier_size(&config, capacity, 1920, 120);
         config.overlay_position = POSITION_TOP;
         overlay_vertical_t down =
@@ -153,15 +152,15 @@ static void tier_flip(void) {
   surface_tiers_t tiers = {.capacity = 5};
   surface_size_t small = surface_tier_size(&config, 5, 1920, 120);
   surface_size_t large = surface_tier_size(&config, 10, 1920, 120);
-  overlay_vertical_t p = surface_tier_vertical(&config, 220, 1080, small.height,
+  overlay_vertical_t p = surface_tier_vertical(&config, 160, 1080, small.height,
                                                true, SIGN_ABOVE, 120, 5);
-  TEST_ASSERT(p.orientation == SIGN_ABOVE && p.position_y == 220);
+  TEST_ASSERT(p.orientation == SIGN_ABOVE && p.position_y == 160);
   TEST_ASSERT(surface_tier_update(&tiers, 10, false, false, 100) == 10);
   TEST_ASSERT(tiers.capacity == 5);  // no sixth entry until buffers are ready
   surface_tier_ready(&tiers);
-  p = surface_tier_vertical(&config, 220, 1080, large.height, true,
+  p = surface_tier_vertical(&config, 160, 1080, large.height, true,
                             p.orientation, 120, tiers.capacity);
-  TEST_ASSERT(p.orientation == SIGN_BELOW && p.position_y == 220);
+  TEST_ASSERT(p.orientation == SIGN_BELOW && p.position_y == 160);
   // During a grab, shrink is blocked and the orientation threshold is stable.
   TEST_ASSERT(surface_tier_update(&tiers, 5, true, false, 200) == -1);
   TEST_ASSERT(tiers.capacity == 10 && !tiers.shrink_at);
@@ -169,11 +168,11 @@ static void tier_flip(void) {
   TEST_ASSERT(surface_tier_update(&tiers, 5, false, false, 10299) == -1);
   TEST_ASSERT(surface_tier_update(&tiers, 5, false, false, 10300) == 5);
   surface_tier_ready(&tiers);
-  p = surface_tier_vertical(&config, 220, 1080, small.height, true,
+  p = surface_tier_vertical(&config, 160, 1080, small.height, true,
                             p.orientation, 120, tiers.capacity);
-  TEST_ASSERT(p.orientation == SIGN_ABOVE && p.position_y == 220);
+  TEST_ASSERT(p.orientation == SIGN_ABOVE && p.position_y == 160);
   // Shrinking below the return boundary still stays below.
-  p = surface_tier_vertical(&config, 203, 1080, small.height, true, SIGN_BELOW,
+  p = surface_tier_vertical(&config, 137, 1080, small.height, true, SIGN_BELOW,
                             120, 5);
   TEST_ASSERT(p.orientation == SIGN_BELOW);
 }
@@ -193,7 +192,15 @@ static void placement(void) {
           overlay_vertical_t old =
               surface_tier_vertical(&config, position, 1080, full.height, false,
                                     SIGN_ABOVE, scales[s], 10);
-          for (int tier = 0; tier <= 10; tier += 5) {
+          const int tiers[] = {0,
+                               5,
+                               10,
+                               5 | SURFACE_TIER_CARD_BELOW,
+                               10 | SURFACE_TIER_CARD_BELOW,
+                               5 | SURFACE_TIER_REST,
+                               10 | SURFACE_TIER_REST};
+          for (size_t t = 0; t < sizeof(tiers) / sizeof(*tiers); t++) {
+            int tier = tiers[t];
             surface_size_t small =
                 surface_tier_size(&config, tier, 2560, scales[s]);
             overlay_vertical_t next =
@@ -201,9 +208,9 @@ static void placement(void) {
                                       false, SIGN_ABOVE, scales[s], tier);
             TEST_ASSERT(old.cat_y_in_output == next.cat_y_in_output);
             TEST_ASSERT(next.position_y == position);
-            int threshold = tier <= 5                 ? 180
-                            : style == SIGN_STYLE_FAN ? 273
-                                                      : 345;
+            int threshold = style == SIGN_STYLE_FAN
+                                ? (surface_tier_boards(tier) <= 5 ? 114 : 190)
+                                : (surface_tier_boards(tier) <= 5 ? 171 : 329);
             TEST_ASSERT(next.orientation ==
                         (target >= threshold || target + 110 + threshold > 1080
                              ? SIGN_ABOVE

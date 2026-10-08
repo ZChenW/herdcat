@@ -199,6 +199,8 @@ typedef struct {
   // menu_font_hot fills the name while the pointer is on it or the panel
   // is open.
   bool menu, menu_post, menu_english;
+  // Independently reflect the switch card when signs remain above.
+  bool menu_below;
   unsigned menu_tap;
   int menu_font_dir, menu_arrow;
   bool menu_font_hot;
@@ -217,6 +219,11 @@ static inline double sign_tag_height(const sign_text_t *text) {
 void signs_focus_failed(signs_t *model, uint64_t key, int64_t now_ms);
 // Logical pixels the surface needs above the cat's top. Zero when off.
 int sign_clearance(sign_style_t style, int cat_height, int sign_max);
+// Ink reach, including two-line tags and transition overshoot, plus 8px.
+int sign_reach(sign_style_t style, int cat_height, int capacity);
+// The same non-hover name predicate is shared by layout and allocation.
+bool sign_name_persistent(sign_style_t style,
+                          const agent_session_view_t *session);
 // Nearest plate within a row; front plates win intersections with the back.
 bool signs_hit(const sign_frame_t *frame, double x, double y, sign_hit_t *hit);
 

@@ -334,13 +334,14 @@ static void post_and_clearance(void) {
     TEST_ASSERT(post == (max <= 5 ? 180 : 180 + 33 * (max - 5)));
     config_t config = {
         .sign_style = SIGN_STYLE_FAN, .cat_height = 110, .sign_max = max};
-    TEST_ASSERT(overlay_orientation(&config, fan - 1, 1080, fan + 114, false,
+    int reach = sign_reach(SIGN_STYLE_FAN, 110, max);
+    TEST_ASSERT(overlay_orientation(&config, reach - 1, 1080, fan + 114, false,
                                     SIGN_ABOVE) == SIGN_BELOW);
-    TEST_ASSERT(overlay_orientation(&config, fan, 1080, fan + 114, false,
+    TEST_ASSERT(overlay_orientation(&config, reach, 1080, fan + 114, false,
                                     SIGN_BELOW) == SIGN_ABOVE);
-    TEST_ASSERT(overlay_orientation(&config, fan + 23, 1080, fan + 114, true,
+    TEST_ASSERT(overlay_orientation(&config, reach + 23, 1080, fan + 114, true,
                                     SIGN_BELOW) == SIGN_BELOW);
-    TEST_ASSERT(overlay_orientation(&config, fan + 24, 1080, fan + 114, true,
+    TEST_ASSERT(overlay_orientation(&config, reach + 24, 1080, fan + 114, true,
                                     SIGN_BELOW) == SIGN_ABOVE);
   }
   // Animation overshoot stays within configured clearance, both directions.

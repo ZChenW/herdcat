@@ -64,9 +64,7 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
                  show_session(in, agent_sign_state(&slot->session)) &&
                  !(in->typing && in->typing_key == slot->session.key);
   // Waiting and error say what they are without being hovered.
-  bool expanded = in->open ||
-                  agent_sign_state(&slot->session) == AGENT_STATE_WAITING ||
-                  agent_sign_state(&slot->session) == AGENT_STATE_ERROR;
+  bool expanded = in->open || sign_name_persistent(in->style, &slot->session);
   sign_text_t label = {0};
   if (visible || slot->opacity.target > 0)
     board_label(slot, in, &label);

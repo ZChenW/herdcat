@@ -29,6 +29,9 @@ void clamp_position(overlay_t *overlay) {
   overlay->cat_y = vertical.cat_y_in_surface;
   overlay->orientation = vertical.orientation;
   overlay->has_orientation = true;
+  overlay_signs_output_geometry((size_t)(overlay - overlays),
+                                vertical.cat_y_in_output,
+                                overlay->output_height);
   overlay_signs_place((size_t)(overlay - overlays), overlay->orientation,
                       overlay->cat_y);
   overlay_placement_t place =

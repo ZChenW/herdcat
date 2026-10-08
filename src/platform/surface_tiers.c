@@ -10,6 +10,33 @@
 #include <limits.h>
 #include <stdint.h>
 
+int surface_tier_boards(int tier) {
+  return tier & SURFACE_TIER_CAPACITY_MASK;
+}
+int surface_tier_reserve(int current, int desired) {
+  int boards = surface_tier_boards(desired);
+  int old = surface_tier_boards(current);
+  if (boards > old && old > 0) {
+    // Preserve expanded/downward space across a board-capacity promotion.
+    if (!(current & SURFACE_TIER_REST))
+      desired &= ~SURFACE_TIER_REST;
+    desired |= current & SURFACE_TIER_CARD_BELOW;
+  }
+  bool opening = boards > 0 && !(desired & SURFACE_TIER_REST) &&
+                 (current & SURFACE_TIER_REST);
+  bool card = (desired & SURFACE_TIER_CARD_BELOW) &&
+              !(current & SURFACE_TIER_CARD_BELOW);
+  if ((opening || card) && old > boards)
+    desired = (desired & ~SURFACE_TIER_CAPACITY_MASK) | old;
+  return desired;
+}
+bool surface_tier_needs_growth(int current, int desired) {
+  return surface_tier_boards(desired) > surface_tier_boards(current) ||
+         (surface_tier_boards(desired) > 0 && (current & SURFACE_TIER_REST) &&
+          !(desired & SURFACE_TIER_REST)) ||
+         ((desired & SURFACE_TIER_CARD_BELOW) &&
+          !(current & SURFACE_TIER_CARD_BELOW));
+}
 static bool enabled(const config_t *config) {
   return config != NULL && config->sign_style != SIGN_STYLE_OFF &&
          config->overlay_opacity == 0;
@@ -37,13 +64,19 @@ int surface_tier_capacity(const config_t *config, int count, bool expanded) {
   }
   return maximum < 5 ? maximum : 5;
 }
+int surface_tier_select(const config_t *config, int count, bool needs_names) {
+  int capacity = surface_tier_capacity(config, count, needs_names);
+  return enabled(config) && capacity && !needs_names
+             ? capacity | SURFACE_TIER_REST
+             : capacity;
+}
 surface_size_t surface_tier_size(const config_t *config, int capacity,
                                  int output_width, uint32_t scale) {
   if (!config)
     return (surface_size_t){0};
   config_t local = *config;
   if (enabled(config))
-    local.sign_max = capacity;
+    local.sign_max = surface_tier_boards(capacity);
   int height = overlay_signs_height(&local);
   int width = overlay_extent(&local, output_width).width;
   if (enabled(config) && capacity == 0) {
@@ -58,10 +91,29 @@ surface_size_t surface_tier_size(const config_t *config, int capacity,
     local.sign_style = SIGN_STYLE_OFF;
     width = overlay_extent(&local, output_width).width;
   }
+  if (enabled(config) && (capacity & SURFACE_TIER_REST)) {
+    // Closed plates, rods, badge/dot, error pop and entry overshoot. Post's
+    // pole still sets the old height; its collapsed boards only save width.
+    local.sign_nameplate[0] = 0;
+    local.sign_name_extra = SIGN_EXTRA_OFF;
+    height = overlay_signs_height(&local);
+    if (local.sign_style == SIGN_STYLE_FAN) {
+      int design = local.sign_max > 5 ? 134 : 62;
+      int reach =
+          (int)(((int64_t)local.cat_height * (design + 22) + 109) / 110);
+      height -=
+          sign_clearance(local.sign_style, local.cat_height, local.sign_max);
+      height += reach;
+    }
+    int compact = (int)(((int64_t)local.cat_height * 214 + 109) / 110);
+    width = compact < output_width ? compact : output_width;
+  }
   // The existing cat placement already reserves the 8px desk lift. Only
   // returning desk ink and fractional pixel phase need only a lower tail.
   int padding = tail_padding(config);
   height = height > INT_MAX - padding ? INT_MAX : height + padding;
+  if (enabled(config) && (capacity & SURFACE_TIER_CARD_BELOW))
+    height += sign_clearance(SIGN_STYLE_FAN, config->cat_height, 5);
   return (surface_size_t){overlay_scaled_width(width, output_width, scale),
                           height};
 }
@@ -69,9 +121,11 @@ int surface_tier_update(surface_tiers_t *state, int desired, bool blocked,
                         bool transitioning, int64_t now_ms) {
   if (state->pending)
     return -1;
-  if (desired >= state->capacity || blocked || transitioning) {
+  desired = surface_tier_reserve(state->capacity, desired);
+  bool growth = surface_tier_needs_growth(state->capacity, desired);
+  if (desired == state->capacity || growth || blocked || transitioning) {
     state->shrink_at = 0;
-    if (desired <= state->capacity)
+    if (!growth)
       return -1;
   } else {
     if (!state->shrink_at || state->shrink_capacity != desired) {
@@ -104,9 +158,9 @@ overlay_vertical_t surface_tier_vertical(const config_t *config, int position_y,
   int full_height = overlay_signs_height(config);
   config_t placement = *config;
   if (enabled(config))
-    placement.sign_max = capacity > 5           ? config->sign_max
-                         : config->sign_max < 5 ? config->sign_max
-                                                : 5;
+    placement.sign_max = surface_tier_boards(capacity) > 5 ? config->sign_max
+                         : config->sign_max < 5            ? config->sign_max
+                                                           : 5;
   overlay_vertical_t reference = overlay_place_vertical(
       &placement, position_y, output_height, full_height,
       overlay_signs_resting_y(config, full_height), has_history, previous);
@@ -115,6 +169,10 @@ overlay_vertical_t surface_tier_vertical(const config_t *config, int position_y,
   // Saved displacement and pixel phase retain the configured maximum.
   int above_y =
       overlay_signs_resting_y(config, surface_height) - tail_padding(config);
+  if ((capacity & SURFACE_TIER_REST) && config->sign_style == SIGN_STYLE_FAN)
+    above_y -= (int)(((int64_t)config->cat_height * 22 + 109) / 110);
+  if (capacity & SURFACE_TIER_CARD_BELOW)
+    above_y -= sign_clearance(SIGN_STYLE_FAN, config->cat_height, 5);
   int lift = (int)(((int64_t)config->cat_height * 8 + 109) / 110);
   int local = reference.orientation == SIGN_BELOW ? lift : above_y;
   int limit =

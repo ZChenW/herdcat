@@ -92,13 +92,21 @@ overlays continue. Configuration reload reconciles
 selection without restarting the process. Configure events determine actual
 surface dimensions.
 
-Transparent sign overlays use three capacities owned by each output:
-zero boards, up to five boards, and the configured `sign_max` for more than
-five. `platform/surface_tiers.c` selects dimensions and owns the 10-second
-shrink deadline. Closed idle sessions do not require sign clearance; opening
-hover (including synchronous process discovery), the switch card or browsing
-fonts reserves at least the five-board capacity. Signs-off and translucent
-output-wide bars keep their original dimensions. Transparent tiers reserve
+Transparent sign overlays retain three board capacities per output: zero,
+up to five, and the configured `sign_max` above five. Each nonzero capacity
+has resting and expanded allocations. Resting space holds closed plates,
+rods, badges, dots and their entry motion, together with the cat and desk.
+`platform/surface_tiers.c` selects dimensions and owns the 10-second shrink
+deadline. Layout and allocation share `sign_name_persistent()`: waiting fan
+tags and waiting/error post names require expanded space. Unread completion
+alone retains the existing closed layout. Pointer entry, grabs, the switch
+card and font browsing also require expanded space. Opening hover (including
+synchronous process discovery), the card or fonts reserves at least the
+five-board capacity. An independently downward card adds a further allocation
+flag. Growth compares capacity, expansion and card space separately, retaining
+existing space during promotion rather than ordering flag values numerically.
+Signs-off and translucent output-wide bars keep their original dimensions.
+Transparent tiers reserve
 8 design pixels only below for desk return and fractional pixel phase; the
 existing placement already reserves the desk lift. The below-sign model
 retains its old clearance budget inside this padding.
@@ -166,9 +174,19 @@ physical pixel grid for fractional scales. Nonzero overlay opacity retains
 the output-wide background bar.
 
 `platform/overlay_vertical.c` selects above/below signs from the cat's output
-height and current tier clearance, with a 24px return hysteresis. Both the
-upper-edge threshold and lower-edge fit condition use this clearance, including
-any extra name row. Drag motion takes the same placement path; grabs keep the
+height and measured `sign_reach()` for the committed board capacity, with a
+24px return hysteresis. Both the upper-edge threshold and lower-edge fit
+condition use this ink budget, including two-line fan names and larger-font
+line boxes.
+`sign_clearance()` remains the unchanged surface allocation and saved-position
+budget. The switch card chooses its own orientation from output-space room.
+An above-facing lane with a below card requests a tier with an extra 180 design
+pixels below; configure and buffer readiness gate all card pixels and hit areas.
+The font panel retains the reflected card's opening output-space anchor while
+the card retracts or the main surface changes size; output bounds still clamp
+the panel. Closing uses the same delayed
+shrink and inverse origin translation as board-capacity changes. Drag motion
+takes the same placement path; grabs keep the
 current tier from shrinking. `platform/overlay_position.c` maps the
 saved displacement to the surface margins and per-surface cat coordinates.
 Transparent sign overlays clamp the cat rather than the whole surface, and

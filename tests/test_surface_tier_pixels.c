@@ -181,7 +181,7 @@ static void motion_bounds(void) {
             int old_h = overlay_signs_height(&config);
             int base = 1080 - old_h + overlay_signs_resting_y(&config, old_h);
             overlay_vertical_t vertical = surface_tier_vertical(
-                &config, base - (below ? 50 : 450), 1080, size.height, false,
+                &config, base - (below ? 30 : 450), 1080, size.height, false,
                 SIGN_ABOVE, scale,
                 surface_tier_capacity(&config, count, false));
             TEST_ASSERT(vertical.orientation ==

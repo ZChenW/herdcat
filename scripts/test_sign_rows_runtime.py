@@ -53,6 +53,23 @@ with tempfile.TemporaryDirectory(prefix='herdcat-sign-rows-runtime-') as directo
                             description='sign rows committed regions',
                             diagnostics=diagnostics)
 
+    def reserve_expanded(style, height):
+        # This suite checks the full row/card envelope. Enter each output
+        # separately, then leave to check collapsed rows inside that envelope.
+        # Resting allocations and delayed shrink are tested by the tier matrix.
+        for monitor in ('TEST-1', 'TEST-2'):
+            record = records()[('snapshot', monitor)]
+            server.stdin.write(f'hover {monitor} {record[5] + 99} {record[6] + 55}\n')
+            server.stdin.flush()
+            width = 652 if style == 'fan' else 800 if monitor == 'TEST-1' else 820
+            wait_until(lambda: records()[('snapshot', monitor)][3:5] ==
+                       (width, height), 6, diagnostics=diagnostics)
+            server.stdin.write(f'out {monitor}\n')
+            server.stdin.flush()
+            if style == 'post':
+                wait_until(lambda: records()[('sign-input', monitor)][2:] ==
+                           (34, 28), 6, diagnostics=diagnostics)
+
     with server_log.open('w') as server_file, app_log.open('w') as app_file:
         server = subprocess.Popen([fixture], env=env, stdin=subprocess.PIPE,
                                   stdout=server_file, stderr=server_file,
@@ -68,6 +85,8 @@ with tempfile.TemporaryDirectory(prefix='herdcat-sign-rows-runtime-') as directo
             # Default capacity is ten. Creation/display order remains stable.
             for i in range(1, 11):
                 wire(f'ev claude working {i:016x} 0')
+            settled()
+            reserve_expanded('fan', 401)
             initial = settled()
             for monitor in ('TEST-1', 'TEST-2'):
                 assert initial[('snapshot', monitor)][4] == 401, initial
@@ -77,9 +96,11 @@ with tempfile.TemporaryDirectory(prefix='herdcat-sign-rows-runtime-') as directo
                     config.write_text(base + f'sign_style={style}\n'
                                       f'sign_max={maximum}\n')
                     wire('reload')
-                    state = settled()
                     clearance = (180 if maximum <= 5 else 273 if style == 'fan'
                                  else 180 + 33 * (maximum - 5))
+                    settled()
+                    reserve_expanded(style, 120 + clearance + 8)
+                    state = settled()
                     for monitor in ('TEST-1', 'TEST-2'):
                         record = state[('snapshot', monitor)]
                         assert record[4] == 120 + clearance + 8, state

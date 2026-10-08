@@ -15,19 +15,19 @@ static config_t config = {.cat_height = 110,
                           .overlay_position = POSITION_BOTTOM};
 
 static void thresholds(void) {
-  TEST_ASSERT(overlay_orientation(&config, 179, 1080, 294, false, SIGN_ABOVE) ==
+  TEST_ASSERT(overlay_orientation(&config, 113, 1080, 294, false, SIGN_ABOVE) ==
               SIGN_BELOW);
-  TEST_ASSERT(overlay_orientation(&config, 180, 1080, 294, false, SIGN_BELOW) ==
+  TEST_ASSERT(overlay_orientation(&config, 114, 1080, 294, false, SIGN_BELOW) ==
               SIGN_ABOVE);
-  TEST_ASSERT(overlay_orientation(&config, 203, 1080, 294, true, SIGN_BELOW) ==
+  TEST_ASSERT(overlay_orientation(&config, 137, 1080, 294, true, SIGN_BELOW) ==
               SIGN_BELOW);
-  TEST_ASSERT(overlay_orientation(&config, 204, 1080, 294, true, SIGN_BELOW) ==
+  TEST_ASSERT(overlay_orientation(&config, 138, 1080, 294, true, SIGN_BELOW) ==
               SIGN_ABOVE);
-  TEST_ASSERT(overlay_orientation(&config, 180, 1080, 294, true, SIGN_ABOVE) ==
+  TEST_ASSERT(overlay_orientation(&config, 114, 1080, 294, true, SIGN_ABOVE) ==
               SIGN_ABOVE);
   TEST_ASSERT(overlay_orientation(&config, 0, 200, 294, false, SIGN_BELOW) ==
               SIGN_ABOVE);
-  TEST_ASSERT(overlay_orientation(&config, 170, 400, 294, true, SIGN_BELOW) ==
+  TEST_ASSERT(overlay_orientation(&config, 100, 320, 294, true, SIGN_BELOW) ==
               SIGN_ABOVE);
   config.overlay_opacity = 1;
   TEST_ASSERT(overlay_orientation(&config, 0, 1080, 294, false, SIGN_BELOW) ==
@@ -62,7 +62,7 @@ static void placement_and_drag(void) {
       TEST_ASSERT(p.margin_y >= 0 && p.margin_y + 294 <= 1080);
       int origin = top ? p.margin_y : 1080 - 294 - p.margin_y;
       TEST_ASSERT(origin + p.cat_y_in_surface == p.cat_y_in_output);
-      TEST_ASSERT(p.orientation == (travel > 70 ? SIGN_BELOW : SIGN_ABOVE));
+      TEST_ASSERT(p.orientation == (travel > 136 ? SIGN_BELOW : SIGN_ABOVE));
       last = p.cat_y_in_output;
       previous = p.orientation;
       // Repeating the same motion uses the press position, not a delta sum.
@@ -85,7 +85,7 @@ static void placement_and_drag(void) {
           overlay_place_vertical(&config, top ? target : base - target, 1080,
                                  294, 180, true, previous);
       TEST_ASSERT(p.cat_y_in_output == target);
-      TEST_ASSERT(p.orientation == (target < 204 ? SIGN_BELOW : SIGN_ABOVE));
+      TEST_ASSERT(p.orientation == (target < 138 ? SIGN_BELOW : SIGN_ABOVE));
       previous = p.orientation;
     }
     // Old bottom records still put above cats in exactly the same place.

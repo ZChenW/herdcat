@@ -14,6 +14,9 @@ sign_orientation_t overlay_orientation(const config_t *config, int cat_y,
                                        int output_height, int surface_height,
                                        bool has_history,
                                        sign_orientation_t previous);
+sign_orientation_t overlay_card_orientation(const config_t *config, int cat_y,
+                                            int output_height,
+                                            sign_orientation_t signs);
 // position_y retains the existing anchor-relative saved displacement. Bottom
 // records still measure upward from the original resting cat position.
 overlay_vertical_t overlay_place_vertical(const config_t *config,

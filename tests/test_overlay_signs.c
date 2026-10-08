@@ -1290,33 +1290,36 @@ static void tier_growth_gate(void) {
   config.sign_max = 10;
   config.sign_idle = SIGN_IDLE_HOVER;
   config.sign_animations = SIGN_ANIM_FULL;
+  const int resting = 5 | SURFACE_TIER_REST;
   overlay_signs_capacity(0, 0);
   overlay_signs_step(0, &config, 20, 198, 128, false, 0);
   TEST_ASSERT(agent_sessions_apply(1, "claude", AGENT_EVENT_WORKING, 0, 0, 100,
                                    NULL) == 0);
   overlay_signs_step_t step =
       overlay_signs_step(0, &config, 20, 198, 128, false, 100);
-  TEST_ASSERT(step.required_capacity == 5);
+  TEST_ASSERT(step.required_capacity == resting);
   TEST_ASSERT(overlay_signs_frame(0)->hit_count == 0);
   overlay_signs_step(0, &config, 20, 198, 128, false, 5000);
   TEST_ASSERT(overlay_signs_frame(0)->hit_count == 0);
-  overlay_signs_capacity(0, 5);
+  overlay_signs_capacity(0, resting);
+  surface_size_t size = surface_tier_size(&config, resting, 800, 120);
+  overlay_signs_width(0, size.width);
   overlay_signs_place(0, SIGN_ABOVE, 186);
-  overlay_signs_step(0, &config, 200, 198, 300, false, 6000);
+  overlay_signs_step(0, &config, 8, 198, size.height, false, 6000);
   // Entry starts at readiness, not at the session event or size request.
   TEST_ASSERT(overlay_signs_frame(0)->transitioning);
-  overlay_signs_step(0, &config, 200, 198, 300, false, 6700);
+  overlay_signs_step(0, &config, 8, 198, size.height, false, 6700);
   TEST_ASSERT(overlay_signs_frame(0)->hit_count == 1);
   // A second output still has no capacity and must keep its old frame.
   overlay_signs_capacity(1, 0);
   step = overlay_signs_step(1, &config, 20, 198, 128, false, 6700);
-  TEST_ASSERT(step.required_capacity == 5);
+  TEST_ASSERT(step.required_capacity == resting);
   TEST_ASSERT(!overlay_signs_frame(1));
   overlay_signs_output_gone(0);
   TEST_ASSERT(!overlay_signs_frame(0));
   overlay_signs_capacity(0, 0);
   step = overlay_signs_step(0, &config, 20, 198, 128, false, 6800);
-  TEST_ASSERT(step.required_capacity == 5 && !overlay_signs_frame(0));
+  TEST_ASSERT(step.required_capacity == resting && !overlay_signs_frame(0));
   begin();
 }
 static void zero_tier_menu(void) {

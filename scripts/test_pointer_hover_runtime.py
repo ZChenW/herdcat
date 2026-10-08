@@ -20,6 +20,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-pointer-hover-runtime-') as tem
     config = root / 'cat.conf'
     config.write_text('monitor=TEST-1\nkeyboard_device=/dev/input/herdcat-runtime-nonexistent\n'
                       'cat_height=110\noverlay_height=120\noverlay_opacity=0\n'
+                      'overlay_position=top\n'
                       'sign_style=post\nsign_animations=off\nsign_idle=always\n'
                       'agent_interrupt_detect=0\nagent_stale_timeout=0\n'
                       'disable_fullscreen_hide=1\nenable_debug=1\n')
@@ -63,7 +64,14 @@ with tempfile.TemporaryDirectory(prefix='herdcat-pointer-hover-runtime-') as tem
                         for line in server_log.read_text().splitlines()
                         if line.startswith('sign-input TEST-1 ')]
                 return rows[-1] if rows else (0, 0, 0, 0)
+            def snapshot():
+                rows = [tuple(map(int, line.split()[2:]))
+                        for line in server_log.read_text().splitlines()
+                        if line.startswith('snapshot TEST-1 ')]
+                return rows[-1] if rows else None
             wait_until(lambda: plate()[2] > 0, 5)
+            resting_surface = snapshot()
+            assert resting_surface is not None
             x, y, w, h = plate()
             # Collapsed Claude now exposes only the 34x27 fan state face;
             # its half-pixel placement rounds the input height out to 28.
@@ -75,6 +83,17 @@ with tempfile.TemporaryDirectory(prefix='herdcat-pointer-hover-runtime-') as tem
             wait_until(lambda: plate()[2] >= 150, 5)
             # Expanded targets include the 6px gap and the resting edge.
             expanded = plate()
+            expanded_surface = snapshot()
+            # Growth moves the surface origin, while cat/sign output positions
+            # stay fixed. The fixture's later motions use the new surface.
+            assert (resting_surface[2] + resting_surface[5] ==
+                    expanded_surface[2] + expanded_surface[5])
+            assert (resting_surface[0] + resting_surface[6] ==
+                    expanded_surface[0] + expanded_surface[6])
+            dx = expanded_surface[5] - resting_surface[5]
+            dy = expanded_surface[6] - resting_surface[6]
+            rest_x, rest_y = rest_x + dx, rest_y + dy
+            y += dy
             assert expanded[0] <= rest_x < expanded[0] + expanded[2], expanded
             assert expanded[1] <= rest_y + h // 2 < expanded[1] + expanded[3]
             x = rest_x + 5 + 34 + 3

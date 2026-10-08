@@ -5,7 +5,16 @@
 
 #include <stdint.h>
 
-#define SURFACE_TIER_SHRINK_MS 10000
+#define SURFACE_TIER_SHRINK_MS     10000
+#define SURFACE_TIER_REST          16
+#define SURFACE_TIER_CARD_BELOW    32
+#define SURFACE_TIER_CAPACITY_MASK 15
+
+int surface_tier_boards(int tier);
+// reserve retains current space when promoting another dimension/capacity.
+int surface_tier_reserve(int current, int desired);
+bool surface_tier_needs_growth(int current, int desired);
+int surface_tier_select(const config_t *config, int count, bool needs_names);
 
 typedef struct {
   int width, height;

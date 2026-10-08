@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
                                    stdout=app_file, stderr=app_file)
         wait_for(lambda: (root / 'herdcat.sock').exists())
         # This existing drag suite exercises configured-capacity geometry.
-        # Stage 33's zero/small tiers have a separate runtime matrix.
+        # Resting/expanded tiers have a separate runtime matrix.
         for key in range(1, 11):
             with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
                 control.settimeout(3)
@@ -125,6 +125,19 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
                             description='drag placements and input regions',
                             diagnostics=lambda: server_log.read_text()[-5000:])
 
+    def reserve_expanded(cat_height=40):
+        if style == 'off':
+            return
+        for name, output_width, scale in (('TEST-1', 800, 150),
+                                          ('TEST-2', 1024, 240)):
+            wait_for(lambda: local_regions().get(name, (0,) * 4)[2] ==
+                     cat_height * 500 // 277)
+            x, y, w, h = local_regions()[name]
+            send(f'hover {name} {x + w // 2} {y + h // 2}')
+            wait_for(lambda: placements()[name][4] ==
+                     surface_width(cat_height, output_width, scale))
+            send(f'out {name}')
+
     def position_is(name, expected):
         actual = records().get(name)
         return actual is not None and all(abs(a - b) <= 1
@@ -134,6 +147,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         wait_for(lambda: (root / 'wayland-test').exists())
         app = start()
         wait_for(lambda: len(regions()) == 2 and all(v[2] for v in regions().values()))
+        reserve_expanded()
         wait_for(lambda: placements().get('TEST-1', (0,) * 6)[4] ==
                  surface_width(40))
         settled()
@@ -161,6 +175,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         app.terminate()
         assert app.wait(timeout=3) == 0
         app = start()
+        reserve_expanded()
         wait_for(lambda: (root / 'herdcat.sock').exists())
         wait_for(lambda: abs(regions()['TEST-1'][0] - saved['TEST-1'][0]) <= 1)
         assert records() == saved
@@ -179,10 +194,12 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         # Resize and mirror on reload without changing output-space records.
         config.write_text(base + 'cat_height=60\nmirror_x=1\ncat_align=right\n')
         command('reload')
+        reserve_expanded(60)
         wait_for(lambda: placements()['TEST-1'][4] == surface_width(60))
         assert records() == saved
         config.write_text(base)
         command('reload')
+        reserve_expanded()
         wait_for(lambda: placements()['TEST-1'][4] == surface_width(40))
         send('leave TEST-1 10 -10')
         wait_for(lambda: position_is('TEST-1', (start_x + 30, 50)))

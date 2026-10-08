@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 33 acceptance on the isolated compositor; run outside the sandbox.
+"""Surface capacity/resting acceptance on the isolated compositor.
 
 Expected: twelve 'Surface tiers ... passed: 0 -> 1 -> 6 -> 1 -> 0' lines,
 then 'Surface tier runtime matrix passed.' No SKIP or desktop connection.
@@ -68,9 +68,11 @@ def run(style, top, scale, clamped=False):
                     reply = control.recv(4096).decode()
                     assert reply.startswith('0 '), (message, reply)
 
-            def wait_size(height, seconds=8):
+            def wait_size(height, seconds=8, width=None):
                 wait_until(lambda: len(latest()) == 2 and
-                           all(item[10] == height for item in latest().values()),
+                           all(item[10] == height and
+                               (width is None or item[9] == min(width, 800 if name == "TEST-1" else 1024))
+                               for name, item in latest().items()),
                            seconds, description=f'surface height {height}',
                            diagnostics=diagnostics)
 
@@ -87,7 +89,19 @@ def run(style, top, scale, clamped=False):
                 original = latest()
                 for i in range(1, 2):
                     wire(f'ev claude working {i:016x} 0')
+                rest = 212 if style == 'fan' else 308
+                wait_until(lambda: len(latest()) == 2 and
+                           all(item[13] >= 2 for item in latest().values()),
+                           8, diagnostics=diagnostics)
                 if clamped:
+                    for name, item in latest().items():
+                        send(f'hover {name} {item[11] + 99} {item[12] + 55}')
+                        # One seat enters outputs in sequence. Let this lane
+                        # request expansion before moving to the other lane.
+                        wait_until(lambda: latest()[name][9] == 652 and
+                                   latest()[name][10] ==
+                                   (200 if name == 'TEST-1' else 308),
+                                   8, diagnostics=diagnostics)
                     def clamped_ready():
                         items = latest()
                         return (len(items) == 2 and items['TEST-1'][10] == 200
@@ -109,9 +123,33 @@ def run(style, top, scale, clamped=False):
                     assert app.poll() is None
                     print('Clamped TEST-1 accepts height 200 and keeps drawing after reload.')
                     return
-                wait_size(308)
+                wait_size(rest, width=214 if scale == 120 else
+                          214 + (2560 - 214) % (4 if scale == 150 else 1))
+                rest_before = latest()
+                for name, item in rest_before.items():
+                    send(f'hover {name} {item[11] + 99} {item[12] + 55}')
+                    wait_until(lambda: latest()[name][9] == (652 if style == 'fan' else 800 if name == 'TEST-1' else 820),
+                               8, diagnostics=diagnostics)
+                wait_size(308, width=652 if style == 'fan' else 820)
+                for name in rest_before:
+                    send(f'out {name}')
                 wait_until(lambda: all(item[13] >= 2 for item in latest().values()),
                            6, diagnostics=diagnostics)
+                if scale == 150:
+                    # Isolate rest -> hover -> rest at unchanged board count.
+                    closed_at = time.monotonic()
+                    wait_size(rest, 14, width=216)
+                    shrink = [stamp for _, stamp, item in records()
+                              if stamp > closed_at and item[9] == 216]
+                    assert shrink and min(shrink) >= closed_at + 10, shrink
+                    for name, item in latest().items():
+                        send(f'hover {name} {item[11] + 99} {item[12] + 55}')
+                        wait_until(lambda: latest()[name][9] ==
+                                   (652 if style == 'fan' else
+                                    800 if name == 'TEST-1' else 820),
+                                   8, diagnostics=diagnostics)
+                    for name in rest_before:
+                        send(f'out {name}')
                 for i in range(2, 7):
                     wire(f'ev claude working {i:016x} 0')
                 large = 401 if style == 'fan' else 473
@@ -124,16 +162,16 @@ def run(style, top, scale, clamped=False):
                     wire(f'ev claude end {i:016x} 0')
                 time.sleep(9)
                 assert all(item[10] == large for item in latest().values()), latest()
-                wait_size(308, 8)
+                wait_size(rest, 8)
                 smaller = [stamp for _, stamp, item in records()
-                           if stamp > reduced_at and item[10] == 308]
+                           if stamp > reduced_at and item[10] == rest]
                 assert smaller and min(smaller) >= reduced_at + 10, smaller
                 # Cancel a pending shrink by growing again.
                 wire('ev claude end 0000000000000001 0')
                 time.sleep(4)
                 wire('ev claude working 0000000000000001 0')
                 time.sleep(7)
-                assert all(item[10] == 308 for item in latest().values()), latest()
+                assert all(item[10] == rest for item in latest().values()), latest()
                 zero_at = time.monotonic()
                 wire('ev claude end 0000000000000001 0')
                 wait_size(136, 14)
@@ -145,9 +183,25 @@ def run(style, top, scale, clamped=False):
                 # publish a prepared viewport or margin from that tier.
                 for key in range(1, 7):
                     wire(f'ev claude working {key:016x} 0')
-                wait_size(large)
+                wait_size(284 if style == "fan" else 473)
                 wait_until(lambda: all(item[13] >= 7 for item in latest().values()),
                            6, diagnostics=diagnostics)
+                if scale == 150:
+                    for name, item in latest().items():
+                        send(f'hover {name} {item[11] + 99} {item[12] + 55}')
+                        wait_until(lambda: latest()[name][9] ==
+                                   (652 if style == 'fan' else
+                                    800 if name == 'TEST-1' else 820),
+                                   8, diagnostics=diagnostics)
+                    wait_size(large)
+                    closed_at = time.monotonic()
+                    for name in rest_before:
+                        send(f'out {name}')
+                    rest_large = 284 if style == 'fan' else 473
+                    wait_size(rest_large, 14, width=216)
+                    shrink = [stamp for _, stamp, item in records()
+                              if stamp > closed_at and item[9] == 216]
+                    assert shrink and min(shrink) >= closed_at + 10, shrink
                 configured = {}
                 for line in server_log.read_text().splitlines():
                     fields = line.split()

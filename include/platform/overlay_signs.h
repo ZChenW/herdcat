@@ -35,6 +35,7 @@ typedef struct {
 // Update placement before constructing pixels and input for this output.
 void overlay_signs_place(size_t index, sign_orientation_t orientation,
                          int resting_y);
+void overlay_signs_output_geometry(size_t index, int cat_y, int output_height);
 // Unlifted above placement, used to interpret existing position records.
 int overlay_signs_resting_y(const config_t *config, int surface_height);
 int overlay_signs_height(const config_t *config);

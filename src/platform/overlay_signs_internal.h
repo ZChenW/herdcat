@@ -16,6 +16,8 @@ typedef struct {
   sign_style_t style;
   sign_orientation_t orientation;
   int resting_y;
+  int output_cat_y, output_height;
+  bool card_below;
   int surface_width;
   bool placed;
   bool capacity_managed;

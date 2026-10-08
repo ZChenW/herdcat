@@ -10,6 +10,17 @@ All notable changes to this project will be documented in this file.
   throughout working turns, keeping the normal 2–3 second response for long
   turns too. The unused terminal-title cancellation classifier was removed;
   ordinary title display and focus matching are preserved.
+- Closed signs now use a smaller resting surface, reducing transparent SHM
+  allocations for both fan and post styles. Hover, persistent names, dragging,
+  the switch card and fonts reserve expanded space before painting. Shrink
+  retains the existing ten-second delay and cat/desk output coordinates.
+
+- Signs choose their above/below direction from measured sign ink reach rather
+  than switch-card space. The switch card opens below independently when it
+  cannot fit above and can fit below; its font panel retains the card's opening
+  output-space anchor during retraction and main-surface resizing. Surface
+  growth waits for configure and replacement buffers, preserving cat and desk
+  output coordinates. The 24px return hysteresis remains unchanged.
 
 - The truncation ellipsis no longer touches the letter before it: it stands
   as far from the text as its dots stand from each other, and the dots keep

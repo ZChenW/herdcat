@@ -80,6 +80,12 @@ int lane_resting_y(size_t index, const config_t *config, int surface_height) {
              ? lanes[index].resting_y
              : overlay_signs_resting_y(config, surface_height);
 }
+void overlay_signs_output_geometry(size_t index, int cat_y, int output_height) {
+  if (index < MAX_OUTPUTS) {
+    lanes[index].output_cat_y = cat_y;
+    lanes[index].output_height = output_height;
+  }
+}
 void overlay_signs_place(size_t index, sign_orientation_t orientation,
                          int resting_y) {
   if (index >= MAX_OUTPUTS)

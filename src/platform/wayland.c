@@ -325,7 +325,8 @@ static void reconcile(void) {
     int capacity = overlay->tiers.pending ? overlay->tiers.requested
                                           : overlay->tiers.capacity;
     if (effective.sign_style == SIGN_STYLE_OFF ||
-        effective.overlay_opacity > 0 || capacity > effective.sign_max)
+        effective.overlay_opacity > 0 ||
+        surface_tier_boards(capacity) > effective.sign_max)
       capacity = effective.sign_max;
     overlay->tiers.requested = capacity;
     overlay->tiers.pending = true;

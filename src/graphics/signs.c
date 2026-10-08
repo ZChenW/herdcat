@@ -296,6 +296,28 @@ int sign_clearance(sign_style_t style, int cat_height, int sign_max) {
   int64_t value = ((int64_t)cat_height * design + 109) / 110;
   return value > INT_MAX ? INT_MAX : (int)value;
 }
+bool sign_name_persistent(sign_style_t style,
+                          const agent_session_view_t *session) {
+  agent_state_t state = agent_sign_state(session);
+  return state == AGENT_STATE_WAITING ||
+         (style == SIGN_STYLE_POST && state == AGENT_STATE_ERROR);
+}
+int sign_reach(sign_style_t style, int cat_height, int capacity) {
+  // Four-millisecond samples: entry, urgent hover, badge/dot, two-line tag.
+  // Ceil(maximum ink reach + 8 design pixels); surface clearance is separate.
+  static const int post[] = {45, 77, 108, 140, 171, 203, 235, 266, 298, 329};
+  int design = 0;
+  if (style == SIGN_STYLE_FAN)
+    design = capacity > 9 ? 190 : capacity > 5 ? 173 : 114;
+  else if (style == SIGN_STYLE_POST) {
+    int rows = capacity < 1 ? 5 : capacity > 10 ? 10 : capacity;
+    design = post[rows - 1];
+  }
+  if (cat_height <= 0)
+    return 0;
+  int64_t value = ((int64_t)cat_height * design + 109) / 110;
+  return value > INT_MAX ? INT_MAX : (int)value;
+}
 bool signs_hit(const sign_frame_t *frame, double x, double y, sign_hit_t *hit) {
   bool found = false;
   double best = 0;
@@ -405,6 +427,34 @@ static void finish_motion(sign_frame_t *frame, const sign_input_t *in,
   }
   if (in->typing && in->typing_until > in->now_ms)
     wake_at(frame, in->typing_until);
+}
+static void emit_below_card(signs_t *model, const sign_input_t *in,
+                            sign_frame_t *frame, double scale) {
+  sign_frame_t card = {0};
+  emit_menu(model, in, &card, scale);
+  signs_reflect(&card, in->cat_y + in->cat_height / 2);
+  for (int i = 0; i < card.shape_count && frame->shape_count < SIGN_MAX_SHAPES;
+       i++)
+    frame->shapes[frame->shape_count++] = card.shapes[i];
+  for (int i = 0; i < card.text_count && frame->text_count < SIGN_MAX_TEXTS;
+       i++)
+    frame->texts[frame->text_count++] = card.texts[i];
+  frame->menu_open = card.menu_open;
+  frame->menu_card = card.menu_card;
+  memcpy(frame->menu_style, card.menu_style, sizeof(card.menu_style));
+  memcpy(frame->menu_lang, card.menu_lang, sizeof(card.menu_lang));
+  memcpy(frame->menu_theme, card.menu_theme, sizeof(card.menu_theme));
+  frame->menu_style_thumb = card.menu_style_thumb;
+  frame->menu_lang_thumb = card.menu_lang_thumb;
+  frame->menu_theme_thumb = card.menu_theme_thumb;
+  frame->menu_font = card.menu_font;
+  frame->menu_font_prev = card.menu_font_prev;
+  frame->menu_font_next = card.menu_font_next;
+  frame->menu_paw = card.menu_paw;
+  frame->transitioning |= card.transitioning;
+  if (card.bounds_w)
+    include_bounds(frame, card.bounds_x, card.bounds_y, card.bounds_w,
+                   card.bounds_h);
 }
 static void build_frame(signs_t *model, const sign_input_t *in,
                         sign_frame_t *frame, double desk_clear) {
@@ -525,7 +575,10 @@ static void build_frame(signs_t *model, const sign_input_t *in,
     emit_desk(frame, &placed, scale, travel, fade);
   } else {
     emit_desk(frame, &placed, scale, travel, fade);
-    emit_menu(model, &placed, frame, scale);
+    if (in->menu_below)
+      emit_below_card(model, &placed, frame, scale);
+    else
+      emit_menu(model, &placed, frame, scale);
   }
   finish_motion(frame, &placed, fade);
 }

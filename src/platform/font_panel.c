@@ -38,7 +38,8 @@ static char selected_name[128];
 static char choice[128];
 static bool has_choice;
 static size_t owner;
-static int placed_margin, placed_margin_x, card_margin_x;
+static int placed_margin, placed_margin_x;
+static font_panel_box_t opening_card;
 static int panel_scale_120 = 120;
 static int logical_w, logical_h;
 static int origin_x, origin_y;
@@ -307,21 +308,14 @@ static void on_closed(void *data, struct zwlr_layer_surface_v1 *layer) {
 }
 static const struct zwlr_layer_surface_v1_listener LAYER_LISTENER = {
     .configure = on_configure, .closed = on_closed};
-static bool place_of(const config_t *config, font_panel_anchor_t card,
-                     int surface_h, double *x, double *y) {
+static bool place_of(double *x, double *y) {
   if (!output_size(&output_w, &output_h))
     return false;
-  bool top = config->overlay_position == POSITION_TOP;
-  drag_rect_t absolute =
-      overlay_card_rect((drag_rect_t){card.x, card.y, card.w, card.h},
-                        card_margin_x, placed_margin, top, output_h, surface_h);
-  font_panel_box_t card_box = {absolute.x, absolute.y, absolute.width,
-                               absolute.height};
   double scale = panel.scale > 0 ? panel.scale : 1;
   font_panel_size_t size = {font_panel_width(scale),
                             font_panel_height(font_panel_count(&panel), scale)};
   font_panel_size_t screen = {output_w, output_h};
-  font_panel_place(&card_box, &size, &screen, FONT_PANEL_GAP * scale, x, y);
+  font_panel_place(&opening_card, &size, &screen, FONT_PANEL_GAP * scale, x, y);
   return true;
 }
 static void remember_size(double width, double height, double x, double y) {
@@ -420,10 +414,9 @@ static void retarget(const config_t *config) {
   if (strcmp(panel.selected, selected_name) != 0)
     font_panel_set_selected(&panel, selected_name);
 }
-static void refresh_geometry(const config_t *config, font_panel_anchor_t card,
-                             int surface_h) {
+static void refresh_geometry(void) {
   double x = 0, y = 0;
-  if (!place_of(config, card, surface_h, &x, &y))
+  if (!place_of(&x, &y))
     return;
   double scale = panel.scale > 0 ? panel.scale : 1;
   remember_size(font_panel_width(scale),
@@ -560,8 +553,15 @@ void font_panel_surface_sync(size_t index, const config_t *config,
   if (toggle) {
     // The card is hidden while browsing. Retain its opening output-space
     // anchor when the main surface is repositioned by a scale/size change.
-    card_margin_x = placed_margin_x;
     toggle_panel(index, config, now_ms);
+    if (panel.open && output_size(&output_w, &output_h)) {
+      bool top = config->overlay_position == POSITION_TOP;
+      drag_rect_t absolute = overlay_card_rect(
+          (drag_rect_t){card.x, card.y, card.w, card.h}, placed_margin_x,
+          placed_margin, top, output_h, surface_h);
+      opening_card = (font_panel_box_t){absolute.x, absolute.y, absolute.width,
+                                        absolute.height};
+    }
   }
   if (!panel.open || owner != index) {
     if (!panel.open)
@@ -575,7 +575,7 @@ void font_panel_surface_sync(size_t index, const config_t *config,
     need_draw = true;
   }
   retarget(config);
-  refresh_geometry(config, card, surface_h);
+  refresh_geometry();
   if (!panel_surface &&
       (logical_w <= 0 || logical_h <= 0 || !create_surface(config))) {
     font_panel_surface_close();

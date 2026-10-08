@@ -19,6 +19,7 @@
 #include "platform/focus_current.h"
 #include "platform/focus_watch.h"
 #include "platform/font_panel.h"
+#include "platform/overlay_vertical.h"
 #include "platform/surface_tiers.h"
 
 #include <fcntl.h>
@@ -153,6 +154,7 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
       .desk_snap = snap || (menu && desk_on),
       .desk_offset = config->sign_desk_offset,
       .menu = menu,
+      .menu_below = lanes[index].card_below,
       .menu_post = config->sign_style == SIGN_STYLE_POST,
       .menu_english = config_sign_english(config),
       .menu_tap = tap,
@@ -350,6 +352,10 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
     was_browsing = browse;
   }
   bool menu = menu_open && index == menu_index && !browse;
+  if (menu && (!lane->has_frame || !lane->frame.menu_open))
+    lane->card_below = overlay_card_orientation(
+                           &local, lane->output_cat_y, lane->output_height,
+                           lane->orientation) == SIGN_BELOW;
   unsigned tap = 0;
   if (index == menu_index && menu_tap) {
     tap = menu_tap;
@@ -362,19 +368,32 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
                                                    (size_t)local.sign_max)
                            : 0;
   int visible = 0;
+  bool persistent = false;
   for (int i = 0; i < selected; i++)
     if (agent_sign_state(&shown[i]) != AGENT_STATE_IDLE ||
         local.sign_idle == SIGN_IDLE_ALWAYS ||
         (local.sign_idle == SIGN_IDLE_HOVER && expanded[index]) || browse)
       visible++;
-  out.required_capacity =
-      surface_tier_capacity(&local, visible, expanded[index] || menu || browse);
+  for (int i = 0; i < selected; i++)
+    persistent |= sign_name_persistent(local.sign_style, &shown[i]);
+  bool needs_names = expanded[index] || menu || browse || persistent ||
+                     (holding && hold_index == index);
+  out.required_capacity = surface_tier_select(&local, visible, needs_names);
+  if (((menu_open && menu_index == index) ||
+       (lane->has_frame && lane->frame.menu_open)) &&
+      lane->card_below && lane->orientation == SIGN_ABOVE &&
+      local.overlay_opacity == 0)
+    out.required_capacity |= SURFACE_TIER_CARD_BELOW;
+  if (lane->capacity_managed)
+    out.required_capacity =
+        surface_tier_reserve(lane->capacity, out.required_capacity);
   out.shrink_blocked = expanded[index] || (holding && hold_index == index) ||
                        (menu_open && menu_index == index) ||
                        (lane->has_frame && lane->frame.menu_open);
   // Discovery is synchronous in track_expanded. Re-snapshot above, then hold
   // the current model until configure AND buffer allocation have completed.
-  if (lane->capacity_managed && out.required_capacity > lane->capacity) {
+  if (lane->capacity_managed &&
+      surface_tier_needs_growth(lane->capacity, out.required_capacity)) {
     lane->last = out;
     return out;
   }

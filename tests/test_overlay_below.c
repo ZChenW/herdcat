@@ -3,6 +3,7 @@
 #include "core/agent_sessions.h"
 #include "platform/font_panel.h"
 #include "platform/overlay_signs.h"
+#include "platform/surface_tiers.h"
 #include "test_helpers.h"
 
 #include <string.h>
@@ -184,7 +185,56 @@ static void desk_offset_reload(void) {
   large.sign_style = SIGN_STYLE_OFF;
   TEST_ASSERT(overlay_signs_height(&large) == 200);
 }
+static void growth_after_card(void) {
+  overlay_signs_cleanup();
+  agent_sessions_reset();
+  config.sign_max = 10;
+  config.sign_animations = SIGN_ANIM_OFF;
+  overlay_signs_place(0, SIGN_ABOVE, 120);
+  overlay_signs_capacity(0, 5 | SURFACE_TIER_CARD_BELOW);
+  for (uint64_t key = 1; key <= 6; key++)
+    TEST_ASSERT(agent_sessions_apply(key, "claude", AGENT_EVENT_WORKING, 0, 0,
+                                     0, NULL) == 0);
+  overlay_signs_step_t result =
+      overlay_signs_step(0, &config, 100, 198, 488, false, 5000);
+  TEST_ASSERT(result.required_capacity == (10 | SURFACE_TIER_CARD_BELOW));
+  TEST_ASSERT(!overlay_signs_frame(0));  // readiness must precede sixth entry
+  config.sign_max = 5;
+  config.sign_animations = SIGN_ANIM_FULL;
+}
+static void rest_readiness(void) {
+  overlay_signs_cleanup();
+  agent_sessions_reset();
+  config.sign_animations = SIGN_ANIM_OFF;
+  TEST_ASSERT(agent_sessions_apply(1, "claude", AGENT_EVENT_WORKING, 0, 0, 0,
+                                   NULL) == 0);
+  overlay_signs_place(0, SIGN_ABOVE, 68);
+  overlay_signs_capacity(0, 5 | SURFACE_TIER_REST);
+  overlay_signs_step(0, &config, 8, 198, 212, false, 1000);
+  sign_frame_t before = *overlay_signs_frame(0);
+  overlay_signs_pointer(0, 100, 100);
+  overlay_signs_step_t next =
+      overlay_signs_step(0, &config, 8, 198, 212, false, 1100);
+  TEST_ASSERT(next.required_capacity == 5);
+  TEST_ASSERT(memcmp(&before, overlay_signs_frame(0), sizeof(before)) == 0);
+  overlay_signs_capacity(0, 5);
+  overlay_signs_step(0, &config, 8, 198, 308, false, 1200);
+  TEST_ASSERT(overlay_signs_frame(0)->has_pad);
+  overlay_signs_cleanup();
+  overlay_signs_place(0, SIGN_ABOVE, 68);
+  overlay_signs_capacity(0, 5 | SURFACE_TIER_REST);
+  overlay_signs_step(0, &config, 8, 198, 212, false, 1300);
+  before = *overlay_signs_frame(0);
+  TEST_ASSERT(agent_sessions_apply(1, "claude", AGENT_EVENT_WAITING, 0, 0, 0,
+                                   NULL) == 0);
+  next = overlay_signs_step(0, &config, 8, 198, 212, false, 1400);
+  TEST_ASSERT(next.required_capacity == 5);
+  TEST_ASSERT(memcmp(&before, overlay_signs_frame(0), sizeof(before)) == 0);
+  config.sign_animations = SIGN_ANIM_FULL;
+}
 int main(void) {
+  rest_readiness();
+  growth_after_card();
   reset_and_regions();
   desk_at_edge();
   desk_offset_reload();

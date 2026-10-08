@@ -396,7 +396,7 @@ void layout_fan(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
     }
     if (named && in->has_hover && named->session.key == in->hover_key)
       continue;
-    if (agent_sign_state(&slot->session) != AGENT_STATE_WAITING)
+    if (!sign_name_persistent(in->style, &slot->session))
       continue;
     if (!named ||
         agent_sign_since(&slot->session) < named->session.state_since_ms ||
