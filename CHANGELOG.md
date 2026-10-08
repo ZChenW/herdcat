@@ -21,6 +21,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- `herdcat --status` adds a setup reminder for installed integrations that
+  are outdated or not connected. Missing or slow setup tools are skipped.
 - **Less memory** - The transparent surface follows what is on screen instead
   of always holding room for `sign_max` boards. With a 110 pixel cat on a 2x
   output the two buffers take 0.9 MB with no signs (8.2 MB before), 1.5 MB

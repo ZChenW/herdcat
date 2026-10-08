@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import json
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import Mock, patch
 
@@ -64,6 +65,46 @@ class WaitTests(unittest.TestCase):
         self.assertNotIn('KITTY_PID', env)
         self.assertNotIn('HERDCAT_TEST_DRAG', env)
         self.assertEqual(env['NIRI_SOCKET'], '/fixture')
+
+    def test_fixture_timing_is_explicit_and_real_cases_cannot_inherit_it(self):
+        with patch.dict(os.environ, {'HERDCAT_TEST_TIMING': 'fast',
+                                     'WAYLAND_DISPLAY': 'host',
+                                     'WAYLAND_SOCKET': '7',
+                                     'HERDCAT_HYPRLAND_NESTED': '1'}):
+            env = helpers.runtime_env()
+            for key in ('HERDCAT_TEST_TIMING', 'WAYLAND_DISPLAY',
+                        'WAYLAND_SOCKET', 'HERDCAT_HYPRLAND_NESTED'):
+                self.assertTrue(key not in env, key)
+            self.assertEqual(helpers.runtime_timing(real_time=True), (1, {}))
+            self.assertEqual(helpers.runtime_timing(),
+                             (.25, {'HERDCAT_TEST_TIMING': 'fast'}))
+
+    def test_tier_matrix_retains_one_complete_real_duration_case(self):
+        import test_surface_tiers_runtime as tiers
+        with patch.object(tiers, 'run') as run:
+            tiers.main()
+        cases = run.call_args_list
+        self.assertEqual(len(cases), 13)
+        real = [call for call in cases if call.kwargs.get('real_time')]
+        self.assertEqual(len(real), 1)
+        self.assertEqual(real[0].args, ('fan', False, 120))
+        with patch.object(tiers, 'run') as run:
+            tiers.main(real_time=True)
+        self.assertTrue(all(call.kwargs['real_time'] for call in run.call_args_list))
+
+    def test_fast_quiet_cases_overlap_but_real_windows_remain_exclusive(self):
+        result = subprocess.run(['make', '-n', 'test-runtime'],
+                                cwd=Path(__file__).resolve().parent.parent,
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for agent in ('claude', 'grok', 'copilot'):
+            command = f"python3 scripts/test_agent_quiet_runtime.py --agent {agent}"
+            self.assertEqual(result.stdout.count(command), 1)
+            self.assertIn(f"--test '{command}'", result.stdout)
+        self.assertIn("--exclusive 'python3 scripts/test_agent_quiet_runtime.py --real-time'",
+                      result.stdout)
+        self.assertIn("--exclusive 'python3 scripts/test_surface_tiers_runtime.py'",
+                      result.stdout)
 
 
 class HyprlandSafetyTests(unittest.TestCase):

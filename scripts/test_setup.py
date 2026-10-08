@@ -566,6 +566,33 @@ class SetupTests(unittest.TestCase):
         self.run_setup('--dry-run')
         self.assertEqual(snapshot(self.home), before)
 
+    def test_status_hint_is_read_only_and_excludes_uninstalled_agents(self):
+        self.assertEqual(self.run_setup('--status-hint'), b'')
+        self.fixture('claude', 'old')
+        (self.home / '.codex').mkdir()
+        before = snapshot(self.home)
+        self.assertEqual(self.run_setup('--status-hint'),
+                         b'Agent integrations need setup: claude, codex; run herdcat setup.\n')
+        self.assertEqual(snapshot(self.home), before)
+        chinese = self.run_setup('--status-hint', env={**self.env, 'LC_MESSAGES': 'zh_CN.UTF-8'})
+        self.assertIn(b'claude, codex', chinese)
+        self.assertIn('运行 herdcat setup'.encode(), chinese)
+        self.run_setup('claude', 'codex', '--yes')
+        self.assertEqual(self.run_setup('--status-hint'), b'')
+
+    def test_status_hint_uses_current_templates_for_terminal_and_bridge_updates(self):
+        for name in ('tmux', 'kitty'):
+            self.write(self.home / f'.config/{name}/{name}.conf',
+                       (FIXTURES / name / ('old.conf')).read_bytes())
+        for name in ('kimi', 'pi', 'opencode'):
+            self.fixture(name, 'old')
+        before = snapshot(self.home)
+        self.assertEqual(self.run_setup('--status-hint'),
+                         b'Agent integrations need setup: tmux, kitty, kimi, pi, opencode; run herdcat setup.\n')
+        self.assertEqual(snapshot(self.home), before)
+        self.run_setup('tmux', 'kitty', 'kimi', 'pi', 'opencode', '--yes')
+        self.assertEqual(self.run_setup('--status-hint'), b'')
+
     def test_custom_homes(self):
         env = {**self.env, 'CODEX_HOME': str(self.home / 'custom-codex'),
                'KIMI_CODE_HOME': str(self.home / 'custom-kimi'),

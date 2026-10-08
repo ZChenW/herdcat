@@ -6,6 +6,7 @@
 #include "platform/overlay_geometry.h"
 #include "platform/overlay_signs.h"
 #include "platform/overlay_vertical.h"
+#include "utils/test_timing.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -130,9 +131,9 @@ int surface_tier_update(surface_tiers_t *state, int desired, bool blocked,
   } else {
     if (!state->shrink_at || state->shrink_capacity != desired) {
       state->shrink_capacity = desired;
-      state->shrink_at = now_ms > INT64_MAX - SURFACE_TIER_SHRINK_MS
-                             ? INT64_MAX
-                             : now_ms + SURFACE_TIER_SHRINK_MS;
+      int delay = test_timing_ms(SURFACE_TIER_SHRINK_MS, 10);
+      state->shrink_at =
+          now_ms > INT64_MAX - delay ? INT64_MAX : now_ms + delay;
     }
     if (now_ms < state->shrink_at)
       return -1;

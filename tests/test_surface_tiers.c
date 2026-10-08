@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "platform/overlay_signs.h"
 #include "platform/scale.h"
 #include "platform/surface_tiers.h"
@@ -106,6 +107,23 @@ static void timing(void) {
   surface_tier_ready(&b);
   TEST_ASSERT(b.capacity == 5);
   TEST_ASSERT(surface_tier_update(&b, 10, false, false, 102) == 10);
+  // Only the explicit fixture switch changes the delay; invalid values do not.
+  const char *values[] = {"fast", "", "0", "1", "garbage"};
+  for (size_t i = 0; i < sizeof(values) / sizeof(*values); i++) {
+    TEST_ASSERT(setenv("HERDCAT_TEST_TIMING", values[i], 1) == 0);
+    int delay = i == 0 ? 1000 : 10000;
+    surface_tiers_t fast = {.capacity = 10};
+    TEST_ASSERT(surface_tier_update(&fast, 5, false, true, 100) == -1);
+    TEST_ASSERT(fast.shrink_at == 0);
+    TEST_ASSERT(surface_tier_update(&fast, 5, false, false, 200) == -1);
+    TEST_ASSERT(fast.shrink_at == 200 + delay);
+    TEST_ASSERT(surface_tier_update(&fast, 5, false, false, 199 + delay) == -1);
+    TEST_ASSERT(surface_tier_update(&fast, 5, false, false, 200 + delay) == 5);
+    TEST_ASSERT(fast.capacity == 10 && fast.pending);
+    surface_tier_ready(&fast);
+    TEST_ASSERT(fast.capacity == 5 && !fast.pending);
+  }
+  TEST_ASSERT(unsetenv("HERDCAT_TEST_TIMING") == 0);
 }
 static void tier_thresholds(void) {
   TEST_ASSERT(

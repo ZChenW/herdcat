@@ -154,6 +154,12 @@ exit status and termination/reaping on failure. It does not block Wayland.
 
 ## Configuration and control
 
+The `--status` client preserves the control reply and then asks
+`herdcat-setup --status-hint` for a read-only integration summary. The setup
+script retains ownership of installation and template checks. The client
+captures one bounded line, discards failures, and kills/reaps its query PID
+after two seconds. This work never runs in the renderer's event loop.
+
 ### Pointer geometry and saved positions
 
 The first Wayland seat supplies `wl_pointer` events only; no keyboard seat is

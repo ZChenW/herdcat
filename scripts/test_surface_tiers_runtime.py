@@ -4,24 +4,26 @@
 Expected: twelve 'Surface tiers ... passed: 0 -> 1 -> 6 -> 1 -> 0' lines,
 then 'Surface tier runtime matrix passed.' No SKIP or desktop connection.
 """
+import argparse
 from pathlib import Path
 import socket
 import subprocess
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env, wait_until
+from runtime_test_helpers import runtime_env, runtime_timing, wait_until
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def run(style, top, scale, clamped=False):
-    with tempfile.TemporaryDirectory(prefix='herdcat-surface-tiers-') as directory:
+def run(style, top, scale, clamped=False, real_time=False):
+    factor, timing = runtime_timing(real_time, divisor=10)
+    with tempfile.TemporaryDirectory(prefix='ht-', dir='/tmp') as directory:
         root = Path(directory)
         env = runtime_env(XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
                           WAYLAND_DISPLAY='wayland-test', HERDCAT_TEST_DRAG='1',
                           HERDCAT_TEST_SURFACE_TIERS='1',
-                          HERDCAT_TEST_TIER_SCALE=str(scale))
+                          HERDCAT_TEST_TIER_SCALE=str(scale), **timing)
         env.pop('NIRI_SOCKET', None)
         if clamped:
             env['HERDCAT_TEST_CLAMP_HEIGHT'] = '1'
@@ -138,10 +140,10 @@ def run(style, top, scale, clamped=False):
                 if scale == 150:
                     # Isolate rest -> hover -> rest at unchanged board count.
                     closed_at = time.monotonic()
-                    wait_size(rest, 14, width=216)
+                    wait_size(rest, 14 * factor + (.65 if factor < 1 else 0), width=216)
                     shrink = [stamp for _, stamp, item in records()
                               if stamp > closed_at and item[9] == 216]
-                    assert shrink and min(shrink) >= closed_at + 10, shrink
+                    assert shrink and min(shrink) >= closed_at + 10 * factor, shrink
                     for name, item in latest().items():
                         send(f'hover {name} {item[11] + 99} {item[12] + 55}')
                         wait_until(lambda: latest()[name][9] ==
@@ -160,24 +162,26 @@ def run(style, top, scale, clamped=False):
                 reduced_at = time.monotonic()
                 for i in range(2, 7):
                     wire(f'ev claude end {i:016x} 0')
-                time.sleep(9)
+                time.sleep(9 * factor)
                 assert all(item[10] == large for item in latest().values()), latest()
                 wait_size(rest, 8)
                 smaller = [stamp for _, stamp, item in records()
                            if stamp > reduced_at and item[10] == rest]
-                assert smaller and min(smaller) >= reduced_at + 10, smaller
+                assert smaller and min(smaller) >= reduced_at + 10 * factor, smaller
                 # Cancel a pending shrink by growing again.
                 wire('ev claude end 0000000000000001 0')
-                time.sleep(4)
+                time.sleep(4 * factor)
                 wire('ev claude working 0000000000000001 0')
-                time.sleep(7)
+                # Transitions use the original animation clock. Observe past
+                # the cancelled deadline, including its unscaled exit motion.
+                time.sleep(7 * factor + (.65 if factor < 1 else 0))
                 assert all(item[10] == rest for item in latest().values()), latest()
                 zero_at = time.monotonic()
                 wire('ev claude end 0000000000000001 0')
-                wait_size(136, 14)
+                wait_size(136, 14 * factor + (.65 if factor < 1 else 0))
                 zeros = [stamp for _, stamp, item in records()
                          if stamp > zero_at and item[10] == 136]
-                assert zeros and min(zeros) >= zero_at + 10, zeros
+                assert zeros and min(zeros) >= zero_at + 10 * factor, zeros
                 # Grow beyond an in-flight small-tier request before its
                 # first new pixels can be admitted; no size-only commit may
                 # publish a prepared viewport or margin from that tier.
@@ -198,10 +202,10 @@ def run(style, top, scale, clamped=False):
                     for name in rest_before:
                         send(f'out {name}')
                     rest_large = 284 if style == 'fan' else 473
-                    wait_size(rest_large, 14, width=216)
+                    wait_size(rest_large, 14 * factor + (.65 if factor < 1 else 0), width=216)
                     shrink = [stamp for _, stamp, item in records()
                               if stamp > closed_at and item[9] == 216]
-                    assert shrink and min(shrink) >= closed_at + 10, shrink
+                    assert shrink and min(shrink) >= closed_at + 10 * factor, shrink
                 configured = {}
                 for line in server_log.read_text().splitlines():
                     fields = line.split()
@@ -240,7 +244,8 @@ def run(style, top, scale, clamped=False):
                 assert 'AddressSanitizer' not in app_log.read_text()
                 assert 'runtime error:' not in app_log.read_text()
                 print(f'Surface tiers {style} {"top" if top else "bottom"} '
-                      f'{scale}/120 passed: 0 -> 1 -> 6 -> 1 -> 0')
+                      f'{scale}/120 passed: 0 -> 1 -> 6 -> 1 -> 0 '
+                      f'(shrink delay {10 * factor:g}s)')
             finally:
                 for process in (app, server):
                     if process and process.poll() is None:
@@ -253,10 +258,17 @@ def run(style, top, scale, clamped=False):
                 server.stdin.close()
 
 
-if __name__ == '__main__':
-    run('fan', False, 120, clamped=True)
+def main(real_time=False):
+    run('fan', False, 120, clamped=True, real_time=real_time)
     for style in ('fan', 'post'):
         for top in (False, True):
             for scale in (120, 240, 150):
-                run(style, top, scale)
+                run(style, top, scale,
+                    real_time=real_time or (style, top, scale) == ('fan', False, 120))
     print('Surface tier runtime matrix passed.')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--real-time', action='store_true')
+    main(parser.parse_args().real_time)

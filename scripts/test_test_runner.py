@@ -69,7 +69,9 @@ assert resource.getrlimit(resource.RLIMIT_NOFILE)[0] == 1024
 assert resource.getrlimit(resource.RLIMIT_CORE)[0] == 0
 for key in ('WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'NIRI_SOCKET', 'SWAYSOCK',
       'HERDCAT_HYPRLAND_NESTED', 'DBUS_SESSION_BUS_ADDRESS', 'CLAUDE_PID',
-      'CODEX_HOME', 'KIMI_CODE_HOME', 'GROK_HOME', 'COPILOT_HOME'):
+      'CODEX_HOME', 'KIMI_CODE_HOME', 'GROK_HOME', 'COPILOT_HOME',
+      'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR', 'OPENCODE_CONFIG',
+      'OPENCODE_CONFIG_DIR', 'OPENCODE_CONFIG_CONTENT', 'HERDCAT_TEST_TIMING'):
   assert key not in os.environ, key
 assert all(os.environ[key].startswith(str(root)) for key in keys)
 print(json.dumps(str(root)))
@@ -79,6 +81,9 @@ print(json.dumps(str(root)))
          DBUS_SESSION_BUS_ADDRESS='/host',
          CODEX_HOME='/host', KIMI_CODE_HOME='/host',
          GROK_HOME='/host', COPILOT_HOME='/host', TMPDIR='/host')
+    env.update(CLAUDE_CONFIG_DIR='/host', PI_CODING_AGENT_DIR='/host',
+               OPENCODE_CONFIG='/host', OPENCODE_CONFIG_DIR='/host',
+               OPENCODE_CONFIG_CONTENT='private', HERDCAT_TEST_TIMING='fast')
     result = self.run_tests([command, command], env=env)
     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
     paths = [json.loads(line) for line in result.stdout.splitlines()

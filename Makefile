@@ -404,6 +404,7 @@ TEST_PYTHON = tests/test_agy_hook_io.py tests/test_input_helper.py tests/test_th
   tests/test_terminal_commands.py tests/test_kitty_watcher.py \
   scripts/test_measure_scenarios.py scripts/test_runtime_helpers.py \
   scripts/test_surface_tier_runtime_geometry.py scripts/test_setup.py \
+  scripts/test_status_hint.py \
   tests/test_completions.py scripts/test_test_runner.py
 TEST_NODE = $(if $(shell command -v node 2>/dev/null),tests/test_opencode_titles.mjs)
 # No unit suites need serialization: real writes use mkdtemp/mkstemp or
@@ -448,11 +449,11 @@ RUNTIME_PARALLEL = scripts/test_subagent_badge_runtime.py \
   scripts/test_focus_client.py \
   scripts/test_font_panel_runtime.py scripts/test_below_runtime.py
 # Sway/Hyprland invoke make internally and mutate shared build artifacts.
-# Tier matrices assert 10s shrink deadlines; quiet/focus check 1s sampling;
+# Tier/quiet fixtures retain real-duration cases alongside shortened waits;
 # sign options measures idle CPU/wakes.
 # These commands drain the parallel group, then run one at a time.
 RUNTIME_EXCLUSIVE = scripts/test_sway_runtime.py scripts/test_hyprland_runtime.py \
-  scripts/test_surface_tiers_runtime.py scripts/test_agent_quiet_runtime.py \
+  scripts/test_surface_tiers_runtime.py \
   scripts/test_focus_runtime.py scripts/test_sign_options.py
 
 .PHONY: test-runtime
@@ -460,9 +461,9 @@ test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent
 	@python3 scripts/run_tests.py --jobs $(TEST_JOBS) \
 	  $(foreach t,$(RUNTIME_PARALLEL),--test 'python3 $(t)') \
 	  $(foreach style,fan post off,--test 'python3 scripts/test_drag_runtime.py --sign-style $(style)') \
+	  $(foreach agent,claude grok copilot,--test 'python3 scripts/test_agent_quiet_runtime.py --agent $(agent)') \
 	  $(foreach t,$(RUNTIME_EXCLUSIVE),--exclusive 'python3 $(t)') \
-	  --exclusive 'python3 scripts/test_agent_quiet_runtime.py --agent grok' \
-	  --exclusive 'python3 scripts/test_agent_quiet_runtime.py --agent copilot'
+	  --exclusive 'python3 scripts/test_agent_quiet_runtime.py --real-time'
 
 # A real xdg-shell client for headless Sway; no terminal emulator is needed.
 .PHONY: sway-runtime-build

@@ -4,6 +4,7 @@
 #include "core/agent_sessions.h"
 #include "core/agent_state.h"
 #include "platform/agent_output.h"
+#include "utils/test_timing.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -72,6 +73,9 @@ void agent_quiet_sync(bool enabled, int64_t now_ms) {
     agent_quiet_reset();
     return;
   }
+  int window_ms = test_timing_ms(WINDOW_MS, 4);
+  int window_max_ms = test_timing_ms(WINDOW_MAX_MS, 4);
+  uint64_t quiet_bytes = (uint64_t)(QUIET_BYTES * window_ms / WINDOW_MS);
   agent_session_view_t views[AGENT_SESSIONS_MAX];
   int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
   bool retained[AGENT_SESSIONS_MAX] = {false};
@@ -119,25 +123,25 @@ void agent_quiet_sync(bool enabled, int64_t now_ms) {
                                  .event_ms = view->updated_ms,
                                  .sampled_ms = now_ms};
       if (agent_output_wchar(view->pid, &sample->wchar))
-        sample->due_ms = now_ms + WINDOW_MS;
+        sample->due_ms = now_ms + window_ms;
     } else if (sample->due_ms && now_ms >= sample->due_ms) {
       uint64_t wchar;
       if (!agent_output_wchar(view->pid, &wchar)) {
         sample->due_ms = 0;  // Retry only on a new event, never periodically.
       } else {
         int64_t elapsed = now_ms - sample->sampled_ms;
-        bool window = !sample->baseline && elapsed >= WINDOW_MS &&
-                      elapsed <= WINDOW_MAX_MS && wchar >= sample->wchar;
-        bool quiet = window && wchar - sample->wchar < QUIET_BYTES;
+        bool window = !sample->baseline && elapsed >= window_ms &&
+                      elapsed <= window_max_ms && wchar >= sample->wchar;
+        bool quiet = window && wchar - sample->wchar < quiet_bytes;
         sample->quiet = quiet ? sample->quiet + 1 : 0;
-        if (sample->quiet == 2 && now_ms - sample->event_ms >= WINDOW_MS) {
+        if (sample->quiet == 2 && now_ms - sample->event_ms >= window_ms) {
           agent_sessions_interrupt(view->key, now_ms);
           sample->stopped = true;
           sample->due_ms = 0;
           sample->updated_ms = now_ms;
           continue;
         }
-        sample->due_ms = now_ms + WINDOW_MS;
+        sample->due_ms = now_ms + window_ms;
         sample->baseline = false;
         sample->sampled_ms = now_ms;
         sample->wchar = wchar;

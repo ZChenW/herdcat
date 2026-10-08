@@ -100,6 +100,34 @@ static void quiet_contract(const char *agent) {
 
 int main(void) {
   unsigned before;
+  TEST_ASSERT(setenv("HERDCAT_TEST_TIMING", "fast", 1) == 0);
+  start("claude");
+  TEST_ASSERT(agent_quiet_deadline() == 350 && reads == 1);
+  sample(349, 0);
+  TEST_ASSERT(reads == 1 && state() == AGENT_STATE_WORKING);
+  sample(350, 8);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+  sample(600, 8);
+  TEST_ASSERT(state() == AGENT_STATE_IDLE && agent_quiet_deadline() == 0);
+  start("claude");
+  sample(350, 8);
+  sample(600, 8000);
+  sample(850, 8);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+  sample(1100, 8);
+  TEST_ASSERT(state() == AGENT_STATE_IDLE);
+  // Preserve the rate threshold and reject dispatch gaps at scaled timing.
+  start("copilot");
+  sample(350, 64);
+  sample(600, 64);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+  sample(1200, 0);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+  sample(1450, 8);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+  sample(1700, 8);
+  TEST_ASSERT(state() == AGENT_STATE_IDLE);
+  TEST_ASSERT(unsetenv("HERDCAT_TEST_TIMING") == 0);
   const char *quiet_agents[] = {"claude", "grok", "copilot"};
   for (size_t i = 0; i < sizeof(quiet_agents) / sizeof(quiet_agents[0]); i++)
     quiet_contract(quiet_agents[i]);

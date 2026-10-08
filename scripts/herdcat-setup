@@ -668,6 +668,7 @@ def main(argv=None):
     parser.add_argument('agents', nargs='*', metavar='AGENT', help=', '.join(a.name for a in ADAPTERS))
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--status', action='store_true')
+    mode.add_argument('--status-hint', action='store_true', help=argparse.SUPPRESS)
     mode.add_argument('--remove', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--yes', action='store_true')
@@ -682,11 +683,13 @@ def main(argv=None):
         return 1
     selected = [a for a in ADAPTERS if not args.agents or a.name in args.agents]
     work = []
+    needs_setup = []
     failed = False
     for adapter in selected:
         present = installed(adapter)
         if not present and not args.agents and not args.remove:
-            print(adapter.name + ': ' + tr('not installed', '未安装'))
+            if not args.status_hint:
+                print(adapter.name + ': ' + tr('not installed', '未安装'))
             continue
         try:
             changes = prepare(adapter, templates, args.remove)
@@ -699,19 +702,29 @@ def main(argv=None):
             continue
         changed = any(c.before != c.after for c in changes)
         found = any(c.before and c.before != c.baseline for c in changes)
-        if args.status:
+        if args.status or args.status_hint:
             status = tr('connected, outdated', '已接入但过期') if found else tr('not connected', '未接入')
             if not changed:
                 status = tr('connected', '已接入')
             if not present:
                 status = tr('not installed', '未安装')
-            print(f'{adapter.name}: {status}')
+            if args.status_hint:
+                if present and changed:
+                    needs_setup.append(adapter.name)
+            else:
+                print(f'{adapter.name}: {status}')
         elif changed:
             describe(adapter, changes, args.remove)
             work.append((adapter, changes))
         else:
             print(f'{adapter.name}: ' + (tr('already removed', '已移除') if args.remove else
                                           tr('already current', '已是最新')))
+    if args.status_hint:
+        if needs_setup:
+            names = ', '.join(needs_setup)
+            print(tr(f'Agent integrations need setup: {names}; run herdcat setup.',
+                     f'Agent 接入需要更新：{names}；运行 herdcat setup。'))
+        return int(failed)
     if args.status or args.dry_run or not work:
         return int(failed)
     if not args.yes:

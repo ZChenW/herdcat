@@ -13,7 +13,7 @@ import tempfile
 import threading
 import time
 
-from runtime_test_helpers import runtime_env, wait_until
+from runtime_test_helpers import runtime_env, runtime_timing, wait_until
 from measure_scenarios import CONFIG, wire, stop
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,11 +31,14 @@ def resume(*args):
     active = True
 signal.signal(signal.SIGUSR1, pause)
 signal.signal(signal.SIGUSR2, resume)
-interval = .5 if sys.argv[2] == 'copilot' else .05
-bytes_per_write = 300 if sys.argv[2] == 'copilot' else 750
+factor = float(sys.argv[3])
+interval = (.5 if sys.argv[2] == 'copilot' else .05) * factor
+# Keep the same bytes/second as the real-duration fixture when the interval
+# shrinks, so continuous-output assertions retain the same threshold margin.
+bytes_per_write = int((300 if sys.argv[2] == 'copilot' else 750) * factor)
 next_write = time.monotonic()
 while True:
-    if select.select([sys.stdin], [], [], .05)[0]:
+    if select.select([sys.stdin], [], [], .05 * factor)[0]:
         line = sys.stdin.readline()
         if not line:
             break
@@ -59,7 +62,8 @@ while True:
 '''
 
 
-def run(binary, agent, measure, baseline=False):
+def run(binary, agent, measure, baseline=False, real_time=False):
+    factor, timing = runtime_timing(real_time or measure or baseline)
     with tempfile.TemporaryDirectory(prefix='hq-') as directory:
         root = Path(directory)
         transcript = root / 'session.jsonl'
@@ -67,7 +71,7 @@ def run(binary, agent, measure, baseline=False):
         env = runtime_env(HOME=directory, XDG_RUNTIME_DIR=directory,
                           XDG_STATE_HOME=directory, XDG_CONFIG_HOME=directory,
                           XDG_CACHE_HOME=directory, WAYLAND_DISPLAY='wayland-test',
-                          XDG_CURRENT_DESKTOP='test')
+                          XDG_CURRENT_DESKTOP='test', **timing)
         config = root / 'cat.conf'
         config.write_text(CONFIG.replace('sign_animations=full',
                                          'sign_animations=off') if measure else CONFIG)
@@ -107,7 +111,7 @@ def run(binary, agent, measure, baseline=False):
                     assert b'--input-helper' in Path(f'/proc/{helper}/cmdline').read_bytes()
                     os.kill(helper, signal.SIGSTOP)
                 worker = subprocess.Popen([sys.executable, '-u', '-c', WORKER,
-                                           binary, agent], env=env,
+                                           binary, agent, str(factor)], env=env,
                                           stdin=subprocess.PIPE, stdout=slave,
                                           stderr=subprocess.PIPE, text=True)
                 processes.append(worker)
@@ -157,41 +161,41 @@ def run(binary, agent, measure, baseline=False):
                         results[label] = result.stdout
                         assert state('working')
                 else:
-                    until = time.monotonic() + (20 if agent == 'copilot' else 15)
+                    until = time.monotonic() + (20 if agent == 'copilot' else 15) * factor
                     while time.monotonic() < until:
                         assert state('working'), 'continuous output was interrupted'
-                        time.sleep(.15)
+                        time.sleep(.15 * factor)
                 if not measure and not baseline:
                     # Stop long after the last hook.
-                    time.sleep(2.2)
+                    time.sleep(2.2 * factor)
                     os.kill(worker.pid, signal.SIGUSR1)
                     stopped = time.monotonic()
-                    wait_until(lambda: state('idle'), 3,
+                    wait_until(lambda: state('idle'), 3 * factor,
                                description='long-turn cancellation puts sign away')
                     results['long_cancel_latency_seconds'] = time.monotonic() - stopped
                     assert worker.poll() is None
                     os.kill(worker.pid, signal.SIGUSR2)
                     # A cancellation-time burst must delay the quiet streak.
                     hook('UserPromptSubmit')
-                    time.sleep(.5)
+                    time.sleep(.5 * factor)
                     os.kill(worker.pid, signal.SIGUSR1)
                     worker.stdin.write(json.dumps(dict(burst=8000)) + '\n')
                     worker.stdin.flush()
                     assert select.select([worker.stderr], [], [], 4)[0]
                     assert worker.stderr.readline().strip() == 'burst'
                     burst = time.monotonic()
-                    while time.monotonic() - burst < 1.25:
+                    while time.monotonic() - burst < 1.25 * factor:
                         assert state('working'), 'burst did not reset quiet streak'
                         time.sleep(.03)
                     wait_until(lambda: state('idle'),
-                               3 - (time.monotonic() - burst),
+                               3 * factor - (time.monotonic() - burst),
                                description='quiet windows after cancellation burst')
                     results['burst_cancel_latency_seconds'] = time.monotonic() - burst
                     assert worker.poll() is None
                     os.kill(worker.pid, signal.SIGUSR2)
                 # A fresh submission exercises the fast cancellation path.
                 hook('UserPromptSubmit')
-                time.sleep(.5)  # Reviewer's just-submitted cancellation timing.
+                time.sleep(.5 * factor)  # Just-submitted cancellation timing.
                 os.kill(worker.pid, signal.SIGUSR1)
                 stopped = time.monotonic()
                 if baseline:
@@ -200,7 +204,7 @@ def run(binary, agent, measure, baseline=False):
                     results['cancel_latency_seconds'] = 'still working after 3 seconds'
                     hook('Interrupt')
                 else:
-                    wait_until(lambda: state('idle'), 3,
+                    wait_until(lambda: state('idle'), 3 * factor,
                                description='quiet agent puts its sign away')
                     results['cancel_latency_seconds'] = time.monotonic() - stopped
                 assert worker.poll() is None
@@ -223,14 +227,15 @@ def run(binary, agent, measure, baseline=False):
                 assert state('working'), 'a new hook must recover working'
                 hook('PermissionRequest')
                 os.kill(worker.pid, signal.SIGUSR1)
-                time.sleep(3)
+                time.sleep(3 * factor)
                 assert state('waiting')
                 hook('Stop')
-                time.sleep(3)
+                time.sleep(3 * factor)
                 assert state('done')
                 hook('SessionEnd')
                 assert 'No agent sessions' in wire(root, 'sessions')
-                print(json.dumps(dict(agent=agent, results=results)), flush=True)
+                print(json.dumps(dict(agent=agent, window_seconds=factor,
+                                      results=results)), flush=True)
                 wire(root, 'stop')
                 assert app.wait(timeout=3) == 0
                 log.flush()
@@ -255,5 +260,6 @@ if __name__ == '__main__':
                         default='claude')
     parser.add_argument('--measure', action='store_true')
     parser.add_argument('--baseline', action='store_true')
+    parser.add_argument('--real-time', action='store_true')
     args = parser.parse_args()
-    run(args.binary, args.agent, args.measure, args.baseline)
+    run(args.binary, args.agent, args.measure, args.baseline, args.real_time)

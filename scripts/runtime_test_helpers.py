@@ -91,7 +91,9 @@ class HookParent:
 def runtime_env(**overrides):
     """Ignore host terminal/compositor metadata and confine all state to fixtures."""
     env = dict(os.environ)
-    for key in ('NIRI_SOCKET', 'HYPRLAND_INSTANCE_SIGNATURE', 'SWAYSOCK',
+    for key in ('WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'DISPLAY',
+                'NIRI_SOCKET', 'HYPRLAND_INSTANCE_SIGNATURE', 'SWAYSOCK',
+                'HERDCAT_HYPRLAND_NESTED', 'HERDCAT_TEST_TIMING',
                 'KITTY_PID', 'KITTY_WINDOW_ID', 'KITTY_LISTEN_ON', 'TMUX',
                 'TMUX_PANE', 'WEZTERM_PANE', 'WEZTERM_UNIX_SOCKET',
                 'TERM_PROGRAM', 'WAYLAND_DEBUG', 'HERDCAT_HOOK_DEBUG',
@@ -101,6 +103,11 @@ def runtime_env(**overrides):
     env.update(overrides)
     env['PYTHONDONTWRITEBYTECODE'] = '1'
     return env
+
+
+def runtime_timing(real_time=False, divisor=4):
+    """Scale only opted-in fixture deadlines; retain default-duration cases."""
+    return (1, {}) if real_time else (1 / divisor, {'HERDCAT_TEST_TIMING': 'fast'})
 
 
 def wait_until(sample, seconds=6, *, description='fixture condition',

@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env, wait_settled, wait_until
+from runtime_test_helpers import runtime_env, runtime_timing, wait_settled, wait_until
 
 BINARY = str(Path('build/herdcat').resolve())
 FIXTURE = str(Path('build/compositor/server').resolve())
@@ -186,6 +186,7 @@ def run(style, theme, top, sign_max):
 
 def tier_flip(style, top):
     """A sixth board must enter below, after capacity growth, on every commit."""
+    factor, timing = runtime_timing(divisor=10)
     small_clearance = 42 if style == "fan" else 63
     large_clearance = 100 if style == 'fan' else 126
     target = 69 if style == "fan" else 94
@@ -193,7 +194,7 @@ def tier_flip(style, top):
         root = Path(directory)
         env = runtime_env(XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
                           WAYLAND_DISPLAY='wayland-test', HERDCAT_TEST_DRAG='1',
-                          HERDCAT_TEST_SURFACE_TIERS='1')
+                          HERDCAT_TEST_SURFACE_TIERS='1', **timing)
         config = root / 'cat.conf'
         config.write_text(
             'keyboard_device=/dev/input/herdcat-runtime-nonexistent\n'
@@ -275,10 +276,17 @@ def tier_flip(style, top):
                     wire('working', key)
                 wait(lambda: latest()[13] >= 11)
                 settle()
+                reduced_at = time.monotonic()
                 for key in range(6, 11):
                     wire('end', key)
                 rest_height = 84 if style == 'fan' else 119
-                wait(lambda: latest()[10] == rest_height and latest()[9] == 80, 15)
+                wait(lambda: latest()[10] == rest_height and latest()[9] == 80,
+                     15 * factor + .65)
+                shrinks = [float(fields[2]) for line in log.read_text().splitlines()
+                           if (fields := line.split())[:2] == ['tier-submit', 'TEST-1']
+                           and float(fields[2]) > reduced_at
+                           and tuple(map(int, fields[12:14])) == (80, rest_height)]
+                assert shrinks and min(shrinks) >= reduced_at + 10 * factor, shrinks
                 reduced = settle()
                 expected_y = 31 if style == 'fan' else 74
                 assert expected_y <= reduced[12] <= expected_y + 3, reduced

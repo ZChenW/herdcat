@@ -8,6 +8,7 @@
 #include "core/agent_title.h"
 #include "core/control.h"
 #include "core/herdcat.h"
+#include "core/setup_hint.h"
 #include "graphics/animation.h"
 #include "graphics/sign_draw.h"
 #include "graphics/text.h"
@@ -597,6 +598,8 @@ static bool dispatch_client(const cli_options_t *options, int *exit_code) {
     if (result != 0 && !strcmp(options->request, "status")) {
       printf("input-helper=%s: %s\n", input_mode_name(), input_mode_hint());
     }
+    if (!strcmp(options->request, "status"))
+      setup_hint_print();
     *exit_code = result == 0 ? 0 : 1;
   } else {
     if (options->toggle) {
