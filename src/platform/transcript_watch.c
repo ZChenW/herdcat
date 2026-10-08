@@ -35,6 +35,8 @@ typedef struct {
   int fd, wd;
   int64_t submitted_ms;
   off_t offset;
+  dev_t device;
+  ino_t inode;
   size_t used;
   bool active, pending, skipping, failed;
   char line[AGENT_TRANSCRIPT_LINE_MAX + 1];
@@ -132,7 +134,8 @@ static void arm(transcript_t *slot) {
   int wd = inotify_add_watch(
       notify_fd, proc, IN_MODIFY | IN_ATTRIB | IN_DELETE_SELF | IN_MOVE_SELF);
   off_t offset = lseek(fd, 0, SEEK_END);
-  if (wd < 0 || offset < 0) {
+  struct stat st;
+  if (wd < 0 || offset < 0 || fstat(fd, &st) < 0) {
     if (wd >= 0)
       inotify_rm_watch(notify_fd, wd);
     close(fd);
@@ -142,6 +145,8 @@ static void arm(transcript_t *slot) {
   if (offset > 0 && pread(fd, &last, 1, offset - 1) != 1)
     last = 'x';
   slot->offset = offset;
+  slot->device = st.st_dev;
+  slot->inode = st.st_ino;
   slot->skipping = last != '\n';
   slot->used = 0;
   slot->fd = fd;
@@ -202,14 +207,19 @@ void transcript_watch_path(uint64_t key, const char *path, int64_t now_ms) {
     return;
   size_t length = strlen(path);
   if (!strcmp(view->agent, "agy")) {
+    if (length >= 6 && !strcmp(path + length - 6, ".jsonl")) {
+      agent_sessions_set_transcript(key, path);
+      return;  // Recovery uses JSONL; the independent log watch stays intact.
+    }
     if (length < 4 || strcmp(path + length - 4, ".log") ||
         !agent_session_id_valid(view->session_id))
       return;
   } else if (length >= 4 && !strcmp(path + length - 4, ".log"))
     return;
-  agent_sessions_set_transcript(key, path);
-  if (strcmp(view->agent, "agy"))
+  if (strcmp(view->agent, "agy")) {
+    agent_sessions_set_transcript(key, path);
     agent_sessions_refresh_title(key);
+  }
   if (!transcript)
     return;
   transcript_t *slot = NULL;
@@ -235,10 +245,48 @@ void transcript_watch_path(uint64_t key, const char *path, int64_t now_ms) {
   memcpy(slot->path, path, strlen(path) + 1);
   transcript_watch_sync(enabled, now_ms);
 }
+static void agy_confirmation(transcript_t *slot, int64_t now) {
+  agy_confirmation_t event = agent_transcript_agy_confirmation(
+      slot->session_id, slot->line, slot->used);
+  if (event == AGY_CONFIRMATION_NONE)
+    return;
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  const agent_session_view_t *current = NULL;
+  unsigned working = 0;
+  for (int i = 0; i < count; i++) {
+    const agent_session_view_t *view = &views[i];
+    if (view->key == slot->key && view->order == slot->order)
+      current = view;
+    if (view->state != AGENT_STATE_WORKING)
+      continue;
+    for (int j = 0; j < AGENT_SESSIONS_MAX; j++) {
+      const transcript_t *other = &slots[j];
+      if (other->key == view->key && other->order == view->order &&
+          other->device == slot->device && other->inode == slot->inode) {
+        working++;
+        break;
+      }
+    }
+  }
+  if (!current)
+    return;
+  if (event == AGY_CONFIRMATION_WAITING && working == 1 &&
+      current->state == AGENT_STATE_WORKING)
+    agent_sessions_waiting(slot->key, now);
+  else if (event == AGY_CONFIRMATION_ANSWERED &&
+           (current->state == AGENT_STATE_WAITING ||
+            current->state == AGENT_STATE_WORKING))
+    agent_sessions_working(slot->key, now);
+  else if (event == AGY_CONFIRMATION_CANCELLED)
+    agent_sessions_interrupt(slot->key, now);
+}
 static bool feed(transcript_t *slot, const char *data, size_t length,
                  int64_t now) {
   for (size_t i = 0; i < length; i++) {
     if (data[i] == '\n') {
+      if (!slot->skipping && !strcmp(slot->agent, "agy"))
+        agy_confirmation(slot, now);
       bool hit =
           !slot->skipping &&
           (strcmp(slot->agent, "claude") || now - slot->submitted_ms >= 1000) &&

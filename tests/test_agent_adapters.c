@@ -187,6 +187,9 @@ static void test_qwen_agy(void) {
   agent_hook_scan_feed(&scanner, json, strlen(json));
   TEST_ASSERT(agent_hook_scan_finish(&scanner));
   TEST_ASSERT(!strcmp(scanner.session_id, "test-id"));
+  char transcript[AGENT_TRANSCRIPT_PATH_MAX + 1];
+  TEST_ASSERT(agent_hook_transcript(&scanner, transcript));
+  TEST_ASSERT(!strcmp(transcript, "/tmp/ignored.jsonl"));
   char name[41];
   TEST_ASSERT(agent_hook_name(&scanner, name) && !strcmp(name, "project"));
 }

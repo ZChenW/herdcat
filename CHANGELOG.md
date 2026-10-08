@@ -7,10 +7,11 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Qwen Code and Antigravity CLI** - Two more agents, connected by `herdcat
-  setup` like the others. Qwen Code shows every state. Antigravity CLI (`agy`,
-  the successor of Gemini CLI) shows working, done and error; it sends nothing
-  while it asks for approval, so its sign stays on "working" then. A cancelled
-  turn lowers the sign at once for both.
+  setup` like the others. Both show working, waiting for approval, done and
+  error, and lower the sign at once when a turn is cancelled. Antigravity CLI
+  (`agy`, the successor of Gemini CLI) has no hook for approval or cancel;
+  herdcat reads those from the log agy keeps for itself, and the first prompt
+  stands in for the title agy does not give a session.
 
 - **Sway** - Clicking a sign, focus tracking and the typing desk work on Sway
   without the experimental switch. The backend is checked against a real

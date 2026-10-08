@@ -566,6 +566,12 @@ static void send_hook_metadata(const char *agent, const char *event_name,
                  agent_hook_key(agent, scanner), path);
         control_request(message);
       }
+      if (!strcmp(agent, "agy") && agent_hook_transcript(scanner, path)) {
+        char message[AGENT_TRANSCRIPT_PATH_MAX + 23];
+        snprintf(message, sizeof(message), "path %016" PRIx64 " %s",
+                 agent_hook_key(agent, scanner), path);
+        control_request(message);
+      }
     }
     char name[41], cwd[AGENT_CWD_MAX + 1], encoded[AGENT_CWD_MAX * 2 + 1];
     if (agent_hook_name(scanner, name) &&

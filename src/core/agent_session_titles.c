@@ -119,7 +119,8 @@ bool agent_sessions_next_prompt(agent_session_record_t *record) {
     agent_session_t *s = &sessions[i];
     if (!s->used || s->parent_order || s->title[0] || !s->transcript[0] ||
         s->prompt_attempted ||
-        (strcmp(s->agent, "claude") && strcmp(s->agent, "codex")))
+        (strcmp(s->agent, "claude") && strcmp(s->agent, "codex") &&
+         strcmp(s->agent, "agy")))
       continue;
     if (!chosen || s->order < chosen->order)
       chosen = s;

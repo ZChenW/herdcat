@@ -137,6 +137,15 @@ static void begin(const char *agent, const char *path) {
   transcript_watch_path(1, path, now);
   TEST_ASSERT(transcript_watch_count() == 1);
 }
+static agent_state_t session_state(uint64_t key) {
+  agent_session_view_t views[AGENT_SESSIONS_MAX];
+  int count = agent_sessions_snapshot(views, AGENT_SESSIONS_MAX);
+  for (int i = 0; i < count; i++)
+    if (views[i].key == key)
+      return views[i].state;
+  TEST_ASSERT(false);
+  return AGENT_STATE_IDLE;
+}
 static void agy_log(const char *home) {
   char path[256], moved[270];
   snprintf(path, sizeof(path), "%s/cli-test.log", home);
@@ -158,6 +167,131 @@ static void agy_log(const char *home) {
   TEST_ASSERT(transcript_watch_count() == 1);
   drain();
   state(AGENT_STATE_WORKING);  // Historical cancellation is not replayed.
+  const char *surfacing =
+      "I1008 09:07:24.405115 1183 tool_confirmation_manager.go:226] "
+      "Surfacing tool confirmation: \"RunCommand\" at step 4";
+  const char *responding =
+      "I1008 09:07:44.501665 1183 input_loop.go:706] "
+      "Responding to tool confirmation: convID=test-id, stepIdx=4, "
+      "approved=true, sandboxOverride=false, persistGrants=[]\n";
+  append(fd, "I1008 log.go:1] Unknown tool confirmation format\n");
+  drain();
+  state(AGENT_STATE_WORKING);
+  append(fd, surfacing);
+  drain();
+  state(AGENT_STATE_WORKING);
+  append(fd, "\n");
+  drain();
+  state(AGENT_STATE_WAITING);
+  transcript_watch_sync(true, now);
+  TEST_ASSERT(transcript_watch_count() == 1);
+  append(fd, "I1008 server.go:2521] Tool confirmation for conversation "
+             "test-id step 4 (type=*proto.Step_Generic approved=true)\n");
+  append(fd, "I1008 input_loop.go:706] Responding to tool confirmation: "
+             "convID=other-id, stepIdx=4, approved=true\n");
+  append(fd, "I1008 input_loop.go:706] Responding to tool confirmation: "
+             "convID=test-id-extra, stepIdx=4, approved=true\n");
+  append(fd, "I1008 input_loop.go:706] Responding to tool confirmation: "
+             "convID=test-id, stepIdx=4, approved=maybe\n");
+  append(fd, "I1008 server.go:2521] Tool confirmation for conversation "
+             "test-id step 4 (type=*proto.Step_Generic approved=false)\n");
+  append(fd, "I1008 input_loop.go:706] Responding to tool confirmation: "
+             "convID=other-id, stepIdx=4, approved=false\n");
+  append(fd, "I1008 input_loop.go:706] Responding to tool confirmation: "
+             "convID=test-id-extra, stepIdx=4, approved=false\n");
+  append(fd, "I1008 input_loop.go:706] Responding to tool confirmation: "
+             "convID=test-id, stepIdx=4, approved=falsehood\n");
+  drain();
+  state(AGENT_STATE_WAITING);
+  append(fd, responding);
+  drain();
+  state(AGENT_STATE_WORKING);
+  append(fd, surfacing);
+  append(fd, "\n");
+  drain();
+  state(AGENT_STATE_WAITING);
+  TEST_ASSERT(agent_sessions_answer(1, now, 1));
+  state(AGENT_STATE_WORKING);  // A key press is only a tentative answer.
+  append(fd, responding);
+  drain();
+  agent_sessions_expire(now + 1000, 0);
+  state(AGENT_STATE_WORKING);  // The log confirms it, cancelling reversion.
+  append(fd, surfacing);
+  append(fd, "\n");
+  drain();
+  state(AGENT_STATE_WAITING);
+  append(fd, "I1008 input_loop.go:706] Responding to tool confirmation: "
+             "convID=test-id, stepIdx=4, approved=false\n");
+  drain();
+  state(AGENT_STATE_IDLE);
+  transcript_watch_sync(true, now);
+  TEST_ASSERT(transcript_watch_count() == 0);
+  const char *declined =
+      "I1008 input_loop.go:706] Responding to tool confirmation: "
+      "convID=test-id, stepIdx=4, approved=false, sandboxOverride=false, "
+      "persistGrants=[]";
+  for (int tentative = 0; tentative < 2; tentative++) {
+    agent_sessions_apply(1, "agy", AGENT_EVENT_WORKING, 0, now, 5, NULL);
+    transcript_watch_path(1, path, now);
+    if (tentative) {
+      append(fd, surfacing);
+      append(fd, "\n");
+      drain();
+      state(AGENT_STATE_WAITING);
+      TEST_ASSERT(agent_sessions_answer(1, now, 1));
+    }
+    state(AGENT_STATE_WORKING);
+    append(fd, declined);
+    drain();
+    state(AGENT_STATE_WORKING);  // No event before the newline.
+    append(fd, "\n");
+    drain();
+    state(AGENT_STATE_IDLE);
+    agent_sessions_expire(now + 1000, 0);
+    state(AGENT_STATE_IDLE);  // A tentative answer must not revert to waiting.
+    transcript_watch_sync(true, now);
+    TEST_ASSERT(transcript_watch_count() == 0);
+  }
+  agent_sessions_apply(1, "agy", AGENT_EVENT_WORKING, 0, now, 5, NULL);
+  transcript_watch_path(1, path, now);
+  agent_sessions_apply(1, "agy", AGENT_EVENT_DONE, 0, now, 5, NULL);
+  agent_session_view_t view;
+  TEST_ASSERT(agent_sessions_snapshot(&view, 1) == 1 && view.unread);
+  uint64_t generation = agent_sessions_generation();
+  // Read already-queued lines before sync removes the completed watch.
+  append(fd, declined);
+  append(fd, "\n");
+  append(fd, responding);
+  drain();
+  state(AGENT_STATE_DONE);
+  TEST_ASSERT(agent_sessions_snapshot(&view, 1) == 1 && view.unread);
+  TEST_ASSERT(agent_sessions_generation() == generation);
+  transcript_watch_sync(true, now);
+  TEST_ASSERT(transcript_watch_count() == 0);
+  agent_sessions_apply(1, "agy", AGENT_EVENT_WORKING, 0, now, 5, NULL);
+  transcript_watch_path(1, path, now);
+  // Two simultaneous working conversations on one log cannot own a prompt.
+  TEST_ASSERT(
+      !agent_sessions_apply(2, "agy", AGENT_EVENT_WORKING, 0, now, 5, NULL));
+  TEST_ASSERT(!agent_sessions_set_id(2, "other-id"));
+  TEST_ASSERT(!agent_sessions_set_title(2, "fixture"));
+  transcript_watch_path(2, path, now);
+  append(fd, surfacing);
+  append(fd, "\n");
+  drain();
+  TEST_ASSERT(session_state(1) == AGENT_STATE_WORKING);
+  TEST_ASSERT(session_state(2) == AGENT_STATE_WORKING);
+  // Alternate hard-linked names still identify one process log.
+  TEST_ASSERT(link(path, moved) == 0);
+  transcript_watch_path(2, moved, now);
+  append(fd, surfacing);
+  append(fd, "\n");
+  drain();
+  TEST_ASSERT(session_state(1) == AGENT_STATE_WORKING);
+  TEST_ASSERT(session_state(2) == AGENT_STATE_WORKING);
+  TEST_ASSERT(unlink(moved) == 0);
+  agent_sessions_apply(2, "agy", AGENT_EVENT_END, 0, now, 5, NULL);
+  transcript_watch_sync(true, now);
   append(fd, "I1008 log.go:1] Cancelling in-progress response for conversation "
              "other-id\n");
   append(fd, "I1008 log.go:1] Cancelling in-progress response for conversation "
@@ -166,8 +300,19 @@ static void agy_log(const char *home) {
   drain();
   state(AGENT_STATE_WORKING);
   append(fd, marker);
+  // Cancellation is also recognized while a confirmation is waiting.
+  append(fd, "\n");
   drain();
-  state(AGENT_STATE_WORKING);  // A partial line is not an event.
+  state(AGENT_STATE_IDLE);
+  agent_sessions_apply(1, "agy", AGENT_EVENT_WORKING, 0, now, 5, NULL);
+  transcript_watch_path(1, path, now);
+  append(fd, surfacing);
+  append(fd, "\n");
+  drain();
+  state(AGENT_STATE_WAITING);
+  append(fd, marker);
+  drain();
+  state(AGENT_STATE_WAITING);  // A partial line is not an event.
   append(fd, "\n");
   drain();
   state(AGENT_STATE_IDLE);

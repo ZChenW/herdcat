@@ -160,10 +160,7 @@ static bool prompt_space(uint32_t cp) {
          cp == 0x1680 || (cp >= 0x2000 && cp <= 0x200a) || cp == 0x2028 ||
          cp == 0x2029 || cp == 0x202f || cp == 0x205f || cp == 0x3000;
 }
-static bool prompt_text(json_span_t value, char out[AGENT_TITLE_MAX + 1]) {
-  char decoded[AGENT_TRANSCRIPT_LINE_MAX + 1];
-  if (!agent_title_scalar(value, decoded, sizeof(decoded)))
-    return false;
+static bool prompt_decoded(const char *decoded, char out[AGENT_TITLE_MAX + 1]) {
   size_t used = 0;
   bool space = false;
   for (const char *p = decoded; *p;) {
@@ -192,6 +189,31 @@ static bool prompt_text(json_span_t value, char out[AGENT_TITLE_MAX + 1]) {
   out[used] = 0;
   return used && utf8_label_valid(out, AGENT_TITLE_MAX);
 }
+static bool prompt_text(json_span_t value, char out[AGENT_TITLE_MAX + 1]) {
+  char decoded[AGENT_TRANSCRIPT_LINE_MAX + 1];
+  return agent_title_scalar(value, decoded, sizeof(decoded)) &&
+         prompt_decoded(decoded, out);
+}
+static bool agy_prompt(json_span_t content, char out[AGENT_TITLE_MAX + 1]) {
+  char decoded[AGENT_TRANSCRIPT_LINE_MAX + 1];
+  if (!agent_title_scalar(content, decoded, sizeof(decoded)))
+    return false;
+  char *start = strstr(decoded, "<USER_REQUEST>");
+  if (!start)
+    return false;
+  start += strlen("<USER_REQUEST>");
+  char *end = strstr(start, "</USER_REQUEST>");
+  if (!end)
+    return false;
+  *end = 0;
+  return prompt_decoded(start, out);
+}
+static bool agy_user_input(json_span_t doc) {
+  json_span_t type, source;
+  return json_field(doc, "type", &type) && json_equal(type, "USER_INPUT") &&
+         json_field(doc, "source", &source) &&
+         json_equal(source, "USER_EXPLICIT");
+}
 bool agent_prompt_line(const char *agent, const char *line, size_t length,
                        char out[AGENT_TITLE_MAX + 1]) {
   out[0] = 0;
@@ -207,6 +229,9 @@ bool agent_prompt_line(const char *agent, const char *line, size_t length,
         !json_field(message, "role", &role) || !json_equal(role, "user") ||
         !json_field(message, "content", &content))
       return false;
+  } else if (!strcmp(agent, "agy")) {
+    return agy_user_input(doc) && json_field(doc, "content", &content) &&
+           agy_prompt(content, out);
   } else if (!strcmp(agent, "codex")) {
     if (!json_field(doc, "payload", &message))
       return false;
@@ -255,7 +280,13 @@ bool agent_prompt_read(const char *agent, const char *path,
     if (!end)
       break;
     size_t n = (end - head - at);
+    if (!strcmp(agent, "agy") && n > AGENT_TRANSCRIPT_LINE_MAX)
+      break;  // Cannot safely determine if this was the first explicit input.
     found = agent_prompt_line(agent, head + at, n, out);
+    json_span_t doc;
+    if (!strcmp(agent, "agy") && json_document(head + at, n, &doc) &&
+        agy_user_input(doc))
+      break;  // The first explicit input owns the fallback, even if unusable.
     at += n + 1;
   }
   free(head);

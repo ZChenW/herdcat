@@ -513,11 +513,17 @@ one-second post-submission guard reduces literal-prompt false positives. Codex
 requires event_msg with turn_aborted or task_complete plus an error object;
 normal completion is ignored. Antigravity uses the same bounded line/watcher
 pipeline for its per-process log. Hooks discover the unique cli-*.log descriptor
-under HOME in the parent's /proc fd directory; transcriptPath and the latest
-cli.log symlink are ignored. The path handoff follows session-ID metadata,
-letting each watcher match only an entire cancellation line ending in its own
-conversation ID. Logs keep the same secure opening, EOF baseline and fail-closed
-rotation/truncation rules. Qwen uses idle_prompt hooks instead; only an active
+under HOME in the parent's /proc fd directory; the latest cli.log symlink is
+ignored. The log path handoff follows session-ID metadata, letting each watcher
+match an entire cancellation line ending in its own conversation ID. Complete
+Surfacing tool confirmation lines move the sole working session on that log
+inode to waiting; ambiguous ownership is ignored. Responding lines match an
+exact convID and approved boolean: true returns active sessions to working,
+confirming tentative keyboard answers; false uses the idempotent interrupt
+operation to move working/waiting to idle, preserving unread done. Neither a
+later cancellation line nor a hook is needed after refusal. The later server
+confirmation line is ignored. Logs keep the same secure opening, EOF baseline
+and fail-closed rotation/truncation rules. Qwen uses idle_prompt hooks instead; only an active
 Qwen idle_prompt arms a 250 ms allowance for the following StopFailure to enter
 error from idle, consumed by the next applied event. The idempotent session interrupt operation only
 changes working/waiting to idle, preserving unread done and configured timers.
@@ -624,7 +630,7 @@ session records, and accepts later labels only below that start directory.
 Legacy name handoffs retain their semantics; version-1 through version-3 store
 records remain readable. No path or title metadata is logged.
 
-Untitled Claude/Codex transcript recovery is serialized through one short-lived
+Untitled Claude/Codex/Antigravity transcript recovery is serialized through one short-lived
 `posix_spawn` of `/proc/self/exe --transcript-prompt`. The unprivileged child
 uses the same safe opener and reads only the first 256 KiB, parses complete
 4096-byte JSONL records, and returns at most 96 bytes through a private pipe.
@@ -632,6 +638,12 @@ The pipe joins agent_watch's existing epoll; its one-second command deadline
 joins runtime timeouts. Session creation order guards late replies. There is
 no worker thread, periodic retry or added outer poll descriptor. Recovery is
 independent of interruption detection and session working/waiting state.
+For Antigravity, the separate transcriptPath JSONL handoff is stored for this
+worker without resetting the log watch. The first USER_INPUT/USER_EXPLICIT
+record owns the fallback; only its USER_REQUEST block is formatted using the
+existing prompt rules. An unusable first input or an overlong record fails closed rather than
+substituting a later input. Log paths stay in watcher slots, independently
+of the persisted JSONL recovery path.
 
 The optional final ev field carries an inherited owner PID. Ordinary ancestry
 wins; otherwise an exact other tracked Claude PID can own the child's real

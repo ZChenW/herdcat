@@ -27,6 +27,11 @@ with tempfile.TemporaryDirectory(prefix='hc-qa-') as directory:
     agy_log = root / '.gemini/antigravity-cli/log/cli-test.log'
     agy_log.parent.mkdir(parents=True)
     agy_log.write_text('historical log\n')
+    transcript = root / 'transcript.jsonl'
+    transcript.write_text(json.dumps(dict(type='USER_INPUT', source='USER_EXPLICIT',
+        content='<USER_REQUEST>\nfirst lakes question\n</USER_REQUEST>\n<OTHER>PRIVATE-TAIL</OTHER>'))
+        + '\n' + json.dumps(dict(type='USER_INPUT', source='USER_EXPLICIT',
+        content='<USER_REQUEST>second question</USER_REQUEST>')) + '\n')
     # A newer instance's "latest" link must never select its log.
     other = agy_log.with_name('cli-other.log')
     other.write_text('')
@@ -55,10 +60,23 @@ with tempfile.TemporaryDirectory(prefix='hc-qa-') as directory:
         qwen.invoke('qwen', dict(hook_event_name=event, session_id='qwen-test',
                                 cwd='/tmp/project', **extra))
 
-    def aevent(event, **extra):
-        agy.invoke('agy', dict(conversationId='test-id',
+    def aevent(event, conversation='test-id', **extra):
+        agy.invoke('agy', dict(conversationId=conversation,
                               workspacePaths=['/tmp/project', '/tmp/other'],
-                              transcriptPath=str(root / 'unused.jsonl'), **extra), event)
+                              transcriptPath=str(transcript), **extra), event)
+
+    def log_line(message, newline=True):
+        with agy_log.open('a') as stream:
+            stream.write('I1008 09:07:24.405115 1183 log.go:1] ' + message
+                         + ('\n' if newline else ''))
+
+    def surface(newline=True):
+        log_line('Surfacing tool confirmation: "RunCommand" at step 4', newline)
+
+    def respond(conversation='test-id', approved='true', newline=True):
+        log_line(f'Responding to tool confirmation: convID={conversation}, '
+                 f'stepIdx=4, approved={approved}, sandboxOverride=false, persistGrants=[]',
+                 newline)
 
     def cancel(path=agy_log, conversation='test-id', newline=True):
         with path.open('a') as stream:
@@ -108,12 +126,72 @@ with tempfile.TemporaryDirectory(prefix='hc-qa-') as directory:
         aevent('PreInvocation', invocationNum=0)
         assert state('working')
         assert f'pid={agy.process.pid}' in wire('sessions')
+        wait(lambda: 'title~=first lakes question' in wire('sessions'))
+        assert 'second question' not in wire('sessions')
+        assert 'PRIVATE-TAIL' not in wire('sessions')
+        timings = []
+        for approved in ('true', 'false', 'true'):
+            aevent('PreToolUse')
+            surface(newline=False)
+            time.sleep(.1)
+            assert state('working')
+            started = time.monotonic()
+            with agy_log.open('a') as stream:
+                stream.write('\n')
+            wait(lambda: state('waiting'))
+            timings.append(time.monotonic() - started)
+            log_line('Tool confirmation for conversation test-id step 4 '
+                     '(type=*proto.Step_Generic approved=true)')
+            respond('other-id')
+            respond('test-id-extra')
+            respond('other-id', approved='false')
+            respond('test-id-extra', approved='false')
+            respond(approved='falsehood')
+            respond(approved='maybe')
+            time.sleep(.1)
+            assert state('waiting')
+            respond(approved=approved, newline=False)
+            time.sleep(.1)
+            assert state('waiting')
+            with agy_log.open('a') as stream:
+                stream.write('\n')
+            wait(lambda: state('idle' if approved == 'false' else 'working'))
+            if approved == 'false':
+                log_line('Tool confirmation for conversation test-id step 4 '
+                         '(type=*proto.Step_Generic approved=false)')
+                time.sleep(.1)
+                assert state('idle')  # No cancellation line or follow-up hook.
+                assert f'pid={agy.process.pid}' in wire('sessions')
+            aevent('PostToolUse', error='')
+            assert state('working')
+        print('Synthetic approval detection seconds (busy host):', timings)
+        # A refusal can arrive after waiting has already returned to working.
+        respond(approved='false')
+        wait(lambda: state('idle'))
+        aevent('PreInvocation')
+        assert state('working')
+        # A single process can expose two active conversations sharing a log.
+        wire('ev agy working 1111111111111111 0')
+        wire('sid 1111111111111111 other-id')
+        wire('ttl 1111111111111111 fixture')
+        wire(f'path 1111111111111111 {agy_log}')
+        surface()
+        time.sleep(.1)
+        sessions = wire('sessions')
+        assert sessions.count(' working ') == 2, sessions
+        wire('ev agy end 1111111111111111 0')
+        log_line('Unknown tool confirmation format')
+        time.sleep(.1)
+        assert state('working')
         for event in ('PreToolUse', 'PostToolUse', 'PostInvocation', 'PreInvocation', 'PostInvocation'):
             aevent(event, error='')
-            assert state('working')  # No permission callback means no waiting.
+            assert state('working')  # Hooks still work without a log marker.
         aevent('Stop', error='', fullyIdle=True, terminationReason='NO_TOOL_CALL')
         assert state('done')
         cancel()
+        respond(approved='false')
+        respond()
+        time.sleep(.1)
         assert state('done')
         for _ in range(2):
             aevent('PreInvocation')
@@ -130,6 +208,16 @@ with tempfile.TemporaryDirectory(prefix='hc-qa-') as directory:
             wait(lambda: state('idle'))
             assert f'pid={agy.process.pid}' in wire('sessions')
         aevent('PreInvocation')
+        surface()
+        wait(lambda: state('waiting'))
+        cancel()
+        wait(lambda: state('idle'))
+        aevent('PreInvocation')
+        surface()
+        wait(lambda: state('waiting'))
+        aevent('Stop', error='')
+        assert state('done')
+        aevent('PreInvocation')
         aevent('Stop', error='PRIVATE-ERROR')
         assert state('error')
         agy.close()
@@ -138,9 +226,12 @@ with tempfile.TemporaryDirectory(prefix='hc-qa-') as directory:
         wire('stop')
         assert app.wait(timeout=3) == 0
         output = (root / 'runtime.log').read_text()
-        assert 'PRIVATE-ERROR' not in output and 'Cancelling in-progress' not in output
+        assert all(secret not in output for secret in (
+            'PRIVATE-ERROR', 'PRIVATE-TAIL', 'Cancelling in-progress',
+            'Surfacing tool confirmation', 'Responding to tool confirmation'))
         assert 'AddressSanitizer' not in output and 'runtime error:' not in output
-        print('Qwen/agy runtime: turns, empty prompts, errors, cancellation log and PID exit passed.')
+        print('Qwen/agy runtime: turns, first title, approval logs, ambiguous ownership, '
+              'empty prompts, errors, cancellation and PID exit passed.')
     finally:
         for parent in (qwen, agy):
             if parent:

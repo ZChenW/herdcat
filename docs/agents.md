@@ -353,6 +353,11 @@ for v2; it is not a v1 plugin.
 | session.deleted | Remove session |
 | Step failures, streaming messages and other events | Ignore |
 
+Cancellation was verified by the reviewer on October 8, 2026: pressing Esc
+twice during a reply, or twice 0.6 seconds after submitting, returned the sign
+to idle within 0.5 seconds. One Esc only asks for another press and does not
+interrupt. The bridge's interruption event handles both tested cases.
+
 The plugin runs in the **background service**. These sessions have PID 0:
 terminal jumping and process-liveness monitoring are unavailable. A left click
 acknowledges the sign instead of shaking. An unread completion or error is
@@ -433,7 +438,16 @@ Tool events use `matcher` plus nested `hooks`; invocation and Stop events use
 direct command entries. A nested non-tool command makes agy reject the whole
 file. `timeout` is in seconds. Every command needs `--event`: payloads contain
 no event name. Identity is `conversationId`; directory is the first entry in
-`workspacePaths`. `transcriptPath` is not used for cancellation.
+`workspacePaths`. `transcriptPath` supplies the title fallback, independently
+of the process log used for cancellation and approval detection. From the first
+`type=USER_INPUT`, `source=USER_EXPLICIT` record, herdcat takes only the text
+inside `<USER_REQUEST>...</USER_REQUEST>`, discarding surrounding tag blocks.
+The existing first-prompt rules keep the first nonempty line, normalize spaces
+and truncate to 96 UTF-8 bytes. Later inputs cannot overwrite it. Recovery uses
+the existing asynchronous, one-shot path: at most the first 256 KiB, complete
+records of at most 4096 bytes, HOME-confined same-UID regular files with no
+symlinks or `..`. Missing or unusable first inputs leave the title empty; an overlong record
+before recovery fails closed rather than choosing a later input.
 
 | Antigravity event | Action |
 | --- | --- |
@@ -443,10 +457,10 @@ no event name. Identity is `conversationId`; directory is the first entry in
 | Other events | Ignore |
 
 There are no startup/exit events. The first invocation registers the session;
-the process watch removes it on exit. Approval prompts have no callback, so the
-sign remains working while approval is pending. **Hook stdout is always zero
-bytes**, including malformed input and timeouts; herdcat never returns a tool
-approval or rejection decision.
+the process watch removes it on exit. Approval prompts have no hook callback;
+the per-process log provides the waiting signal described below. **Hook stdout
+is always zero bytes**, including malformed input and timeouts; herdcat never
+returns a tool approval or rejection decision.
 
 Esc during a reply or shortly after submission emits no hook or transcript
 record. The hook locates its parent's unique open
@@ -455,13 +469,27 @@ that path to the existing inotify monitor. It never follows the `cli.log` latest
 symlink, which can belong to another instance. Only newly appended complete
 lines containing `Cancelling in-progress response for conversation <ID>` with
 this session's exact ID clear working/waiting. Half lines and other IDs do
-nothing; unread done/error remains. Watches exist only during active work and
-obey `agent_interrupt_detect`. Paths remain confined to HOME, same-UID regular
+nothing; unread done/error remains. Watches remain attached through working
+and waiting and obey `agent_interrupt_detect`. Paths remain confined to HOME, same-UID regular
 files with no symlinks or `..`; replacement/truncation fails closed until a new
 handoff. Log contents are never printed, saved or sent over the socket.
 
-This is a private log format; missing files, ambiguous descriptors or a changed
-format silently fall back to `agent_stale_timeout`. Antigravity has no quiet
+A complete `Surfacing tool confirmation: "<tool>" at step <N>` log line moves
+the working session associated with that log into waiting. Because it contains
+no conversation ID, it is ignored if several working sessions share the log;
+association compares file identity, including hard-linked paths. A complete
+`Responding to tool confirmation: convID=<ID>, stepIdx=<N>, approved=<bool>`
+line with this session's exact ID returns waiting/working to working when
+`approved=true`. Choosing "No, cancel" (`approved=false`) interrupts the turn:
+waiting/working becomes idle, preserving unread done. This needs no later
+cancellation line or hook; the reviewer confirmed that neither follows refusal
+in Antigravity CLI 1.3.1. The later `Tool confirmation for conversation ...`
+server line has no effect. Subsequent PostToolUse/Stop hooks retain their usual
+behavior, and Esc can still lower a waiting sign.
+
+This is a private log format. Unrecognized approval records leave the sign
+working; missing files, ambiguous descriptors or a changed cancellation format
+silently fall back to `agent_stale_timeout`. Antigravity has no quiet
 detection: its measured idle and working terminal output rates are too close.
 The integration was checked with synthetic processes and private homes; the
 reviewer will revalidate real Qwen/agy sessions before merging.
@@ -553,7 +581,7 @@ this implementation's synthetic tests.
 | Codex | 0–0.5 KB/s | At least 3 KB/s | Esc → immediately idle | Esc → immediately idle | Unnecessary |
 | Cursor Agent 2026.10.01 | Usually 0–16 bytes/0.5 s, with a 1–10 KB burst every 1–2 s | 5–10 KB/s | Ctrl+C → immediately idle; Esc does not cancel | Ctrl+C → idle | Unnecessary; idle bursts also make the current criterion unsuitable |
 | GitHub Copilot CLI 1.0.93 (October 8) | 0–8 bytes/0.5 s; after cancellation, an approximately 8 KB burst lasting about 1 s every 7 s | Thinking: 294–383 bytes/0.5 s; replying: 2.6–50 KB/0.5 s | Double Esc → cancelled, no later hook; previously stayed working for over 15 s | Double Esc → prompt returned to input box, no later hook; previously stayed working | Quiet detection applies; supersedes the blocked 1.0.27 probe |
-| opencode | About 30–60 bytes/s | About 40 KB/s | One Esc does not interrupt; UI asks for a second press | Not successfully measured | Undetermined |
+| opencode (October 8 follow-up) | About 30–60 bytes/s | About 40 KB/s | Double Esc → idle within 0.5 s; one Esc does not interrupt | Double Esc at 0.6 s → idle within 0.5 s | Cancellation verified; quiet detection unnecessary |
 
 Quiet detection is enabled only for Claude, Grok and Copilot, measured agents
 confirmed to leave no signal after cancellation. Other measured agents already

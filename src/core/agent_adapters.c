@@ -241,10 +241,11 @@ static const agent_hook_rule_t QWEN_RULES[] = {
          AGENT_EVENT_WAITING),
 };
 static const agent_hook_alias_t AGY_FIELDS[] = {
-    {"conversationId", HOOK_FIELD_SESSION, 0, false},
-    {"workspacePaths", HOOK_FIELD_CWD,     0, true },
+    {"conversationId", HOOK_FIELD_SESSION,    0, false},
+    {"workspacePaths", HOOK_FIELD_CWD,        0, true },
+    {"transcriptPath", HOOK_FIELD_TRANSCRIPT, 0, false},
     // Classify the error string without retaining its private contents.
-    {"error",          HOOK_FIELD_STATUS,  0, false},
+    {"error",          HOOK_FIELD_STATUS,     0, false},
 };
 static const agent_hook_rule_t AGY_RULES[] = {
     META("PreInvocation", AGENT_EVENT_WORKING),

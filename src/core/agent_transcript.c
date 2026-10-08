@@ -154,3 +154,54 @@ bool agent_transcript_agy_cancelled(const char *id, const char *line,
       return true;
   return false;
 }
+
+static const char *log_step(const char *text) {
+  size_t digits = strspn(text, "0123456789");
+  return digits ? text + digits : NULL;
+}
+agy_confirmation_t agent_transcript_agy_confirmation(const char *id,
+                                                     const char *line,
+                                                     size_t length) {
+  if (!agent_session_id_valid(id) || !line || !length ||
+      length > AGENT_TRANSCRIPT_LINE_MAX || line[0] != 'I' ||
+      memchr(line, 0, length) || memchr(line, '\n', length) ||
+      memchr(line, '\r', length))
+    return AGY_CONFIRMATION_NONE;
+  char copy[AGENT_TRANSCRIPT_LINE_MAX + 1];
+  memcpy(copy, line, length);
+  copy[length] = 0;
+  const char *body = strstr(copy, "] ");
+  if (!body)
+    return AGY_CONFIRMATION_NONE;
+  body += 2;
+  static const char surface[] = "Surfacing tool confirmation: \"";
+  if (!strncmp(body, surface, sizeof(surface) - 1)) {
+    const char *name = body + sizeof(surface) - 1;
+    const char *end = strchr(name, '"');
+    if (!end || end == name || strncmp(end, "\" at step ", 10))
+      return AGY_CONFIRMATION_NONE;
+    const char *step = log_step(end + 10);
+    return step && !*step ? AGY_CONFIRMATION_WAITING : AGY_CONFIRMATION_NONE;
+  }
+  static const char response[] = "Responding to tool confirmation: convID=";
+  if (strncmp(body, response, sizeof(response) - 1))
+    return AGY_CONFIRMATION_NONE;
+  body += sizeof(response) - 1;
+  size_t n = strlen(id);
+  if (strncmp(body, id, n) || strncmp(body + n, ", stepIdx=", 10))
+    return AGY_CONFIRMATION_NONE;
+  body = log_step(body + n + 10);
+  if (!body || strncmp(body, ", approved=", 11))
+    return AGY_CONFIRMATION_NONE;
+  body += 11;
+  agy_confirmation_t event;
+  if (!strncmp(body, "true", 4)) {
+    event = AGY_CONFIRMATION_ANSWERED;
+    body += 4;
+  } else if (!strncmp(body, "false", 5)) {
+    event = AGY_CONFIRMATION_CANCELLED;
+    body += 5;
+  } else
+    return AGY_CONFIRMATION_NONE;
+  return !*body || !strncmp(body, ", ", 2) ? event : AGY_CONFIRMATION_NONE;
+}

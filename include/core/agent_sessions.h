@@ -99,6 +99,8 @@ void agent_sessions_reset(void);
 void agent_sessions_interrupt(uint64_t key, int64_t now_ms);
 // Resume an existing session after event-driven evidence corrects a guess.
 void agent_sessions_working(uint64_t key, int64_t now_ms);
+// Move existing working sessions to waiting without changing lifetime policy.
+void agent_sessions_waiting(uint64_t key, int64_t now_ms);
 void agent_sessions_fail(uint64_t key, int64_t now_ms);
 // Agents report a question but not its answer. A key press in the waiting
 // session's terminal shows it as working; if no event follows within
