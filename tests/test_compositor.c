@@ -135,6 +135,19 @@ static void rectangle(struct wl_client *client, struct wl_resource *resource,
   (void)width;
   (void)height;
 }
+static void damage_buffer(struct wl_client *client,
+                          struct wl_resource *resource, int32_t x, int32_t y,
+                          int32_t width, int32_t height) {
+  (void)client;
+  struct test_surface *surface = wl_resource_get_user_data(resource);
+  if (measure_mode && surface->monitor) {
+    struct timespec now;
+    assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+    printf("damage %s %.9f %d %d %d %d\n", surface->monitor->name,
+           (double)now.tv_sec + (double)now.tv_nsec / 1e9, x, y, width, height);
+    fflush(stdout);
+  }
+}
 struct delayed_frame {
   struct wl_resource *callback;
   struct wl_event_source *timer;
@@ -247,6 +260,15 @@ static void commit(struct wl_client *client, struct wl_resource *resource) {
     assert(buffer && wl_shm_buffer_get_width(buffer) > 0);
     commits++;
     measure_event("submit", surface->monitor->name);
+    if (measure_mode) {
+      struct timespec now;
+      assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+      printf("paint-buffer %s %.9f %u %d %d\n", surface->monitor->name,
+             (double)now.tv_sec + (double)now.tv_nsec / 1e9,
+             wl_resource_get_id(surface->buffer),
+             wl_shm_buffer_get_width(buffer), wl_shm_buffer_get_height(buffer));
+      fflush(stdout);
+    }
     wl_shm_buffer_begin_access(buffer);
     uint32_t *pixels = wl_shm_buffer_get_data(buffer);
     size_t count = (size_t)wl_shm_buffer_get_stride(buffer) *
@@ -307,7 +329,7 @@ static const struct wl_surface_interface surface_impl = {
     .commit = commit,
     .set_buffer_transform = integer_request,
     .set_buffer_scale = integer_request,
-    .damage_buffer = rectangle};
+    .damage_buffer = damage_buffer};
 static void create_surface(struct wl_client *client,
                            struct wl_resource *resource, uint32_t id) {
   struct test_surface *surface = calloc(1, sizeof(*surface));

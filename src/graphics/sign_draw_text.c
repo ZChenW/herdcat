@@ -53,6 +53,12 @@ static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
     left = round(left * scale) / scale;
     box_top = round(box_top * scale) / scale;
   }
+  // A settled waiting tag is opaque under its glyphs and translates by
+  // whole physical pixels, so the complete tag can share one bitmap.
+  if (store && text->pixel_snap && s == 1 && (text->back >> 24) == 255 &&
+      draw_cached_tag(dst, dw, dh, text, scale, bounds, left, box_top, box_w,
+                      box_h))
+    return;
   sign_shape_t plate = {.kind = SIGN_RECT,
                         .pixel_snap = text->pixel_snap,
                         .x = left,

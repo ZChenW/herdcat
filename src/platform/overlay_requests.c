@@ -14,11 +14,13 @@ int wayland_phys_dim(int logical) {
 void wayland_request_redraw(void) {
   for (size_t i = 0; i < MAX_OUTPUTS; i++) {
     overlays[i].redraw = true;
+    overlays[i].damage_all = true;
   }
 }
 void wayland_request_current_redraw(void) {
   if (active) {
     active->redraw = true;
+    active->damage_all = true;
   }
 }
 void wayland_set_hidden(bool value) {

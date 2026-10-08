@@ -355,10 +355,10 @@ $(BUILDDIR)/test_hyprland: tests/test_hyprland.c $(TEST_REDRAW_LIB)
 	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_REDRAW_LIB) \
 	  -o $@ $(TEST_LDFLAGS)
 
-$(addprefix $(BUILDDIR)/,test_animation test_overlay_pixels test_buffer_damage): \
+$(addprefix $(BUILDDIR)/,test_animation test_overlay_pixels test_buffer_damage test_sign_damage test_blit_spans): \
 $(BUILDDIR)/%: tests/%.c $(TEST_ANIMATION_LIB)
 	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $< $(TEST_ANIMATION_LIB) \
-	  -o $@ $(TEST_LDFLAGS) -lwayland-client
+	  -o $@ $(TEST_LDFLAGS) -lwayland-client $(TEST_WRAPS)
 
 $(addprefix $(BUILDDIR)/,test_overlay_signs test_overlay_below test_session_recovery): \
 $(BUILDDIR)/%: tests/%.c $(TEST_PANEL_LIB)
@@ -376,6 +376,7 @@ $(BUILDDIR)/test_title_hooks: TEST_WRAPS = -Wl,--wrap=control_request
 $(BUILDDIR)/test_hook_metadata: TEST_WRAPS = -Wl,--wrap=control_request
 $(BUILDDIR)/test_text_centering: TEST_WRAPS = -Wl,--wrap=FT_Get_Sfnt_Table,--wrap=FT_Get_Char_Index
 $(BUILDDIR)/test_ellipsis: TEST_WRAPS = -Wl,--wrap=FT_Get_Char_Index
+$(BUILDDIR)/test_blit_spans: TEST_WRAPS = -Wl,--wrap=memcpy
 $(BUILDDIR)/test_session_recovery: TEST_WRAPS = -Wl,--wrap=signs_frame
 
 # These tests embed a source implementation with their own defines/flags.

@@ -12,9 +12,10 @@ typedef enum {
 } sign_draw_layer_t;
 
 // scale_120 is the overlay buffer scale. The destination is premultiplied
-// BGRA. Settled shapes are reused from a small cache; a frame whose scalars
-// are still moving is rasterized and not stored. The LRU holds at most 2048
-// bitmaps and 64 MiB of pixels. Ink is clipped to bounds.
+// BGRA. Settled shapes and opaque waiting tags reuse cached bitmaps; a
+// frame whose scalars are still moving is rasterized and not stored. The
+// LRU holds at most 2048 bitmaps and 16 MiB including opaque-row indexes.
+// Ink is clipped to bounds.
 void sign_draw(uint8_t *dst, int dw, int dh, int scale_120,
                const sign_frame_t *frame, sign_draw_layer_t layer);
 void sign_draw_clip(uint8_t *dst, int dw, int dh, int scale_120,
@@ -34,7 +35,7 @@ int sign_draw_cache_timeout(int64_t now_ms);
 #ifdef TEST_BUILD
 // Counts shape bitmap reuse, including nameplate backgrounds, not glyphs.
 typedef struct {
-  uint64_t hits, misses;
+  uint64_t hits, misses, tag_hits, tag_misses, opaque_bytes_copied;
   size_t bytes, byte_limit, phase_bytes;
   int entries, slot_limit, phase_entries;
 } sign_draw_cache_stats_t;

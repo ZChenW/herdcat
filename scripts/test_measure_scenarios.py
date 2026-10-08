@@ -62,6 +62,30 @@ frame-request TEST-1 40.0
         for value in result['submission_intervals_ms'].values():
             self.assertAlmostEqual(value, 180)
 
+    def test_repaint_accumulates_damage_until_each_buffer_is_used(self):
+        metrics = dict(sample_start_monotonic=10, sample_end_monotonic=12)
+        log = ('paint-buffer TEST-1 9 7 100 80\n'
+               'paint-buffer TEST-1 9.2 8 100 80\n'
+               'damage TEST-1 10.5 3 4 20 30\n'
+               'paint-buffer TEST-1 10.5 7 100 80\n'
+               'damage TEST-1 11.5 0 0 10 20\n'
+               'paint-buffer TEST-1 11.5 8 100 80\n')
+        result = fixture_sample(log, metrics)
+        self.assertEqual(result['repaint_pixels_per_commit'],
+                         dict(min=600, median=691, max=782))
+
+    def test_damage_uses_sample_window_and_output(self):
+        metrics = dict(sample_start_monotonic=10, sample_end_monotonic=12)
+        log = ('damage TEST-1 9 0 0 999 999\n'
+               'damage TEST-2 10.5 0 0 999 999\n'
+               'damage TEST-1 10.5 3 4 20 30\n'
+               'damage TEST-1 11.5 0 0 10 20\n'
+               'damage TEST-1 12 0 0 999 999\n')
+        result = fixture_sample(log, metrics)
+        self.assertEqual(result['damage_pixels_per_commit'],
+                         dict(min=200, median=400, max=600))
+        self.assertIsNone(fixture_sample('', metrics)['damage_pixels_per_commit'])
+
     def test_quiet_window_excludes_setup_and_teardown(self):
         metrics = dict(sample_start_monotonic=100, sample_end_monotonic=130)
         result = fixture_sample('submit TEST-1 99\nframe-done TEST-1 99.5\n'

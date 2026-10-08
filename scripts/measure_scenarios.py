@@ -88,9 +88,43 @@ def fixture_sample(log, metrics):
         when = float(fields[2])
         if start <= when < end:
             events[fields[0]].append(when)
+    areas = []
+    for line in log.splitlines():
+        fields = line.split()
+        if len(fields) == 7 and fields[:2] == ['damage', 'TEST-1']:
+            if start <= float(fields[2]) < end:
+                areas.append(int(fields[5]) * int(fields[6]))
+    # Reconstruct each SHM buffer's repaint union from its last use. New
+    # buffers start fully dirty; busy buffers accumulate submitted damage.
+    dirty, repaints = {}, []
+    def union(a, b):
+        if not a:
+            return b
+        x, y = min(a[0], b[0]), min(a[1], b[1])
+        right = max(a[0] + a[2], b[0] + b[2])
+        bottom = max(a[1] + a[3], b[1] + b[3])
+        return (x, y, right - x, bottom - y)
+    for line in log.splitlines():
+        fields = line.split()
+        if len(fields) == 7 and fields[:2] == ['damage', 'TEST-1']:
+            rect = tuple(map(int, fields[3:]))
+            for key in dirty:
+                dirty[key] = union(dirty[key], rect)
+        elif len(fields) == 6 and fields[:2] == ['paint-buffer', 'TEST-1']:
+            key = tuple(map(int, fields[3:]))  # id, width, height
+            rect = dirty.get(key, (0, 0, key[1], key[2]))
+            if start <= float(fields[2]) < end:
+                repaints.append(rect[2] * rect[3] if rect else 0)
+            dirty[key] = None
     commits = events['submit']
     intervals = [(b - a) * 1000 for a, b in zip(commits, commits[1:])]
-    return dict(buffer_commits_in_sample=len(commits),
+    return dict(repaint_pixels_per_commit=dict(min=min(repaints),
+                                                median=statistics.median(repaints),
+                                                max=max(repaints)) if repaints else None,
+                damage_pixels_per_commit=dict(min=min(areas),
+                                               median=statistics.median(areas),
+                                               max=max(areas)) if areas else None,
+                buffer_commits_in_sample=len(commits),
                 buffer_commits_per_second=len(commits) / (end - start),
                 frame_requests_in_sample=len(events['frame-request']),
                 frame_callbacks_in_sample=len(events['frame-done']),
@@ -137,7 +171,7 @@ def warm_font_panel(server, log, processes):
 def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
            working=False, manual=False, frame_ms=17, release_ms=16,
            profile_dir=None, font_panel=False, focus_depth=None,
-           release_to=None):
+           release_to=None, style="fan", scale=120):
     pointer_scenario = scenario == 'pointer'
     # An idle event alone creates no session, so hover a working sign.
     state = 'working' if pointer_scenario else scenario
@@ -149,18 +183,19 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
                    XDG_STATE_HOME=temporary, WAYLAND_DISPLAY="wayland-test",
                    XDG_CACHE_HOME=str(directory / "cache"),
                    HERDCAT_TEST_MEASURE="1",
+                   HERDCAT_TEST_TIER_SCALE=str(scale),
                    HERDCAT_TEST_FRAME_MS=str(frame_ms),
                    HERDCAT_TEST_RELEASE_MS=str(release_ms))
         if profile_dir is not None:
             profile_dir.mkdir(parents=True, exist_ok=True)
             env['GMON_OUT_PREFIX'] = str(profile_dir.resolve() / 'gmon')
         for key in ("NIRI_SOCKET", "HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_DEBUG",
-                    "HERDCAT_TEST_DRAG"):
+                    "HERDCAT_TEST_DRAG", "SWAYSOCK", "HERDCAT_HYPRLAND_NESTED"):
             env.pop(key, None)
         if font_panel or pointer_scenario:
             env['HERDCAT_TEST_DRAG'] = '1'
         config = directory / "measure.conf"
-        config_text = CONFIG
+        config_text = CONFIG.replace('sign_style=fan', f'sign_style={style}')
         if pointer_scenario:
             config_text = config_text.replace('sign_style=fan', 'sign_style=post')
             config_text = config_text.replace('sign_idle=hover', 'sign_idle=always')
@@ -195,7 +230,10 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
                     if manual:
                         wire(directory, f"state {state}")
                     else:
-                        wire(directory, f"ev claude {state} aaaaaaaaaaaaaaaa 0")
+                        if state in ('error', 'done'):
+                            wire(directory, 'ev claude working aaaaaaaaaaaaaaaa 0')
+                        event = 'fail' if state == 'error' else state
+                        wire(directory, f"ev claude {event} aaaaaaaaaaaaaaaa 0")
                         wire(directory, "name aaaaaaaaaaaaaaaa 测量")
                 if working:
                     pid = focus.agent_pid if focus is not None else 0
@@ -223,6 +261,8 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
                     expected = 2 if working else 1
                     assert f"sessions={expected}" in status
                     assert f" {state} " in sessions
+                    if state == 'done':
+                        assert 'unread' in sessions
                     if working:
                         assert " working " in sessions
                 helpers = [int(pid) for pid in Path(
@@ -393,6 +433,8 @@ def sample(binary, fixture, scenario, seconds, warmup, *, font=None,
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--style', choices=['fan', 'post'], default='fan')
+    parser.add_argument('--scale', type=int, choices=[120, 240], default=120)
     parser.add_argument("--seconds", type=positive, default=30)
     parser.add_argument("--warmup", type=positive, default=3)
     parser.add_argument("--runs", type=int, choices=range(1, 11), default=1)
@@ -409,8 +451,10 @@ def main():
                         help='use an owned PTY agent and private Niri stream with N ancestors')
     parser.add_argument('--frame-ms', type=int, choices=range(1, 1001), default=17)
     parser.add_argument('--release-ms', type=int, choices=range(1, 1001), default=16)
-    parser.add_argument('--scenario', choices=['idle', 'working', 'waiting', 'pointer'],
+    parser.add_argument('--scenario', choices=['idle', 'working', 'waiting', 'error', 'done', 'pointer'],
                         help='sample only this scenario')
+    parser.add_argument('--fixture', type=Path,
+                        help='alternate local compositor fixture binary')
     parser.add_argument('--binary', type=Path,
                         help='alternate local binary, for profiling builds')
     parser.add_argument('--profile-dir', type=Path,
@@ -419,6 +463,8 @@ def main():
                         help='after waiting, measure cache memory across the 60 s idle grace')
     args = parser.parse_args()
     binary, fixture = ROOT / "build/release/herdcat", ROOT / "build/compositor/server"
+    if args.fixture is not None:
+        fixture = args.fixture.resolve()
     if args.binary is not None:
         binary = args.binary.resolve()
     if args.scenario == 'pointer':
@@ -436,6 +482,7 @@ def main():
             parser.error("first run: make release compositor-test-build")
     if Path("/dev/input/herdcat-measure-nonexistent").exists():
         parser.error("the test-only input selector unexpectedly exists")
+    os.environ['GIT_OPTIONAL_LOCKS'] = '0'
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT,
                                        text=True).strip()
     source_diff = subprocess.check_output(
@@ -462,7 +509,8 @@ def main():
                             manual=args.manual, frame_ms=args.frame_ms,
                             release_ms=args.release_ms,
                             profile_dir=args.profile_dir, font_panel=args.font_panel,
-                            focus_depth=args.focus_depth, release_to=args.release_to)
+                            focus_depth=args.focus_depth, release_to=args.release_to,
+                            style=args.style, scale=args.scale)
             result["run"] = run
             report["samples"].append(result)
             args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

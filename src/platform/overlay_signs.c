@@ -8,6 +8,8 @@
 #include "core/agent_state.h"
 #include "core/agent_title.h"
 #include "core/herdcat.h"
+#include "graphics/pixel_rect.h"
+#include "graphics/sign_damage.h"
 #include "graphics/sign_names.h"
 #include "graphics/sign_palette.h"
 #include "graphics/signs.h"
@@ -333,13 +335,15 @@ static void step_capacity(size_t index, const config_t *local, bool menu,
 }
 
 static void step_damage(lane_t *lane, int cat_x, int drawn, int cat_w,
-                        int cat_h, bool changed, int64_t now_ms,
+                        int cat_h, bool changed, int64_t now_ms, box_t detail,
                         overlay_signs_step_t *out) {
   bool full = !lane->presented || lane->was_invisible;
   lane->was_invisible = false;
   lane->presented = true;
   box_t current = covered(&lane->frame, cat_x, drawn, cat_w, cat_h);
   box_t damage = lane->has_prev ? unite(lane->prev, current) : current;
+  if (!full && detail.valid)
+    damage = detail;
   bool full_rate = lane->frame.animating && lane->frame.next_frame_ms == 0 &&
                    !lane->waiting_frame;
   bool due = lane->frame.animating && lane->frame.next_frame_ms > 0 &&
@@ -450,12 +454,18 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
   build_frame(index, &local, cat_x, rest, surface_h, now_ms, invisible, menu,
               browse, tap, &next);
   bool changed = !lane->has_frame || !same_ink(&lane->frame, &next);
-  lane->frame = next;
-  lane->has_frame = true;
-  published_lift = next.cat_lift;
+  box_t detail = {0};
   int drawn = rest - (int)next.cat_lift;
   if (drawn < 0)
     drawn = 0;
+  if (lane->has_frame && lane->has_box && lane->box_x == cat_x &&
+      lane->box_y == drawn && lane->box_w == cat_w && lane->box_h == cat_h) {
+    pixel_rect_t damage = sign_damage(&lane->frame, &next);
+    detail = box_make(damage.x, damage.y, damage.w, damage.h);
+  }
+  lane->frame = next;
+  lane->has_frame = true;
+  published_lift = next.cat_lift;
   lane->box_x = cat_x;
   lane->box_y = drawn;
   lane->box_w = cat_w;
@@ -467,7 +477,7 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
     lane->last = out;
     return out;
   }
-  step_damage(lane, cat_x, drawn, cat_w, cat_h, changed, now_ms, &out);
+  step_damage(lane, cat_x, drawn, cat_w, cat_h, changed, now_ms, detail, &out);
   if (closing[index] && close_at[index] > now_ms) {
     int wait = milliseconds_until(close_at[index], now_ms);
     if (out.timeout_ms < 0 || wait < out.timeout_ms)

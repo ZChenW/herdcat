@@ -23,9 +23,14 @@
 #define CACHE_IDLE_MS 60000
 
 typedef struct {
+  uint16_t left, right;
+} opaque_run_t;
+
+typedef struct {
   uint64_t key, used;
   int w, h;
   uint8_t *pixels;
+  opaque_run_t *opaque;
   bool phase, panel_only;
 } cache_slot_t;
 
@@ -38,28 +43,38 @@ static int cache_phases;
 static int64_t cache_release_at;
 static bool panel_drawing;
 
+static size_t slot_bytes(const cache_slot_t *slot) {
+  return (size_t)slot->w * slot->h * 4 +
+         (slot->opaque ? (size_t)slot->h * sizeof(*slot->opaque) : 0);
+}
+
 #ifdef TEST_BUILD
-static uint64_t cache_hits, cache_misses;
+static uint64_t opaque_bytes_copied;
+static uint64_t cache_hits, cache_misses, tag_hits, tag_misses;
 static bool cache_disabled;
 sign_draw_cache_stats_t sign_draw_cache_stats(void) {
   sign_draw_cache_stats_t stats = {.hits = cache_hits,
                                    .misses = cache_misses,
+                                   .tag_hits = tag_hits,
+                                   .tag_misses = tag_misses,
+                                   .opaque_bytes_copied = opaque_bytes_copied,
                                    .slot_limit = CACHE_SLOTS,
                                    .byte_limit = CACHE_BYTES};
   for (int i = 0; i < CACHE_SLOTS; i++) {
     if (cache[i].pixels) {
       stats.entries++;
-      stats.bytes += (size_t)cache[i].w * (size_t)cache[i].h * 4;
+      stats.bytes += slot_bytes(&cache[i]);
       if (cache[i].phase) {
         stats.phase_entries++;
-        stats.phase_bytes += (size_t)cache[i].w * (size_t)cache[i].h * 4;
+        stats.phase_bytes += slot_bytes(&cache[i]);
       }
     }
   }
   return stats;
 }
 void sign_draw_cache_reset_stats(void) {
-  cache_hits = cache_misses = 0;
+  cache_hits = cache_misses = tag_hits = tag_misses = 0;
+  opaque_bytes_copied = 0;
 }
 void sign_draw_cache_disable(bool disable) {
   cache_disabled = disable;
@@ -70,8 +85,9 @@ static void cache_drop(cache_slot_t *slot) {
   if (slot->phase)
     cache_phases--;
   if (slot->pixels)
-    cache_bytes -= (size_t)slot->w * (size_t)slot->h * 4;
+    cache_bytes -= slot_bytes(slot);
   free(slot->pixels);
+  free(slot->opaque);
   *slot = (cache_slot_t){0};
 }
 static void cache_clear(void) {
@@ -139,7 +155,8 @@ static void premultiply(uint8_t *rgba, int count) {
   }
 }
 static void blend(uint8_t *dst, int dw, int dh, const uint8_t *src, int sw,
-                  int sh, int ox, int oy, pix_t limit) {
+                  int sh, int ox, int oy, pix_t limit,
+                  const opaque_run_t *opaque) {
   pix_t clip = intersect(intersect(limit, (pix_t){0, 0, dw, dh}),
                          (pix_t){ox, oy, ox + sw, oy + sh});
   if (clip.r <= clip.x || clip.b <= clip.y)
@@ -148,7 +165,27 @@ static void blend(uint8_t *dst, int dw, int dh, const uint8_t *src, int sw,
     const uint8_t *s =
         src + ((size_t)(dy - oy) * (size_t)sw + (size_t)(clip.x - ox)) * 4;
     uint8_t *d = dst + ((size_t)dy * (size_t)dw + (size_t)clip.x) * 4;
+    int fast_left = clip.r, fast_right = clip.r;
+    if (opaque) {
+      fast_left = ox + opaque[dy - oy].left;
+      fast_right = ox + opaque[dy - oy].right;
+      if (fast_left < clip.x)
+        fast_left = clip.x;
+      if (fast_right > clip.r)
+        fast_right = clip.r;
+    }
     for (int dx = clip.x; dx < clip.r; dx++, s += 4, d += 4) {
+      if (dx == fast_left && fast_right > fast_left) {
+        size_t bytes = (size_t)(fast_right - fast_left) * 4;
+        memcpy(d, s, bytes);
+#ifdef TEST_BUILD
+        opaque_bytes_copied += bytes;
+#endif
+        dx = fast_right - 1;
+        s += bytes - 4;
+        d += bytes - 4;
+        continue;
+      }
       unsigned sa = s[3];
       if (!sa)
         continue;
@@ -185,11 +222,29 @@ static cache_slot_t *cache_oldest(void) {
   }
   return oldest;
 }
+static opaque_run_t *opaque_rows(const uint8_t *pixels, int w, int h) {
+  opaque_run_t *rows = calloc((size_t)h, sizeof(*rows));
+  if (!rows)
+    return NULL;
+  for (int y = 0; y < h; y++) {
+    int start = 0;
+    for (int x = 0; x <= w; x++) {
+      bool full = x < w && pixels[((size_t)y * w + x) * 4 + 3] == 255;
+      if (full)
+        continue;
+      if (x - start > rows[y].right - rows[y].left)
+        rows[y] = (opaque_run_t){(uint16_t)start, (uint16_t)x};
+      start = x + 1;
+    }
+  }
+  return rows;
+}
 // Ownership passes to the cache; cache_drop() frees this mutable allocation.
 // NOLINTNEXTLINE(readability-non-const-parameter)
 static void cache_store(uint64_t key, uint8_t *pixels, int w, int h,
                         bool phase) {
-  size_t bytes = (size_t)w * (size_t)h * 4;
+  opaque_run_t *opaque = opaque_rows(pixels, w, h);
+  size_t bytes = (size_t)w * h * 4 + (opaque ? (size_t)h * sizeof(*opaque) : 0);
   while (cache_bytes + bytes > CACHE_BYTES)
     cache_drop(cache_oldest());
   cache_slot_t *slot = NULL;
@@ -207,11 +262,58 @@ static void cache_store(uint64_t key, uint8_t *pixels, int w, int h,
                          .w = w,
                          .h = h,
                          .pixels = pixels,
+                         .opaque = opaque,
                          .phase = phase,
                          .panel_only = panel_drawing};
   if (phase)
     cache_phases++;
   cache_bytes += bytes;
+}
+bool draw_cached_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
+                     double scale, pix_t bounds, double left, double top,
+                     double w, double h) {
+  int bw = (int)ceil(w * scale) + 6, bh = (int)ceil(h * scale) + 6;
+  int x = (int)lround(left * scale) - 3;
+  int y = (int)lround(top * scale) - 3;
+  if (bw <= 0 || bh <= 0 || bw > 8192 || bh > 8192 ||
+      (size_t)bw * bh > (size_t)512 * 512)
+    return false;
+#ifdef TEST_BUILD
+  if (cache_disabled)
+    return false;
+#endif
+  sign_text_t signature = *text;
+  signature.x = signature.anchor_y = 0;
+  signature.surface_width = 0;
+  uint64_t key = mix(UINT64_C(0x7461676269746d61), text_layout_key());
+  const unsigned char *bytes = (const unsigned char *)&signature;
+  for (size_t i = 0; i < sizeof(signature); i++)
+    key = mix(key, bytes[i]);
+  cache_slot_t *slot = cache_find(key, bw, bh);
+  uint8_t *pixels = slot ? slot->pixels : NULL;
+  if (slot) {
+#ifdef TEST_BUILD
+    cache_hits++;
+    tag_hits++;
+#endif
+  } else {
+#ifdef TEST_BUILD
+    tag_misses++;
+#endif
+    pixels = calloc((size_t)bw * bh, 4);
+    if (!pixels)
+      return false;
+    sign_text_t local = *text;
+    local.x = w / 2 + 3 / scale;
+    local.anchor_y = sign_tag_height(text) + 3 / scale;
+    local.surface_width = 0;
+    // store=false prevents recursion. The tag background contributes the
+    // ordinary shape miss; its glyphs are composed over the opaque paper.
+    draw_text(pixels, bw, bh, &local, scale, (pix_t){0, 0, bw, bh}, false);
+    cache_store(key, pixels, bw, bh, true);
+  }
+  blend(dst, dw, dh, pixels, bw, bh, x, y, bounds, slot ? slot->opaque : NULL);
+  return true;
 }
 static int append_rect(char *svg, int used, double x, double y, double w,
                        double h, double radius, uint32_t color) {
@@ -480,7 +582,10 @@ void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
   if (shape->clipped)
     limit = intersect(limit, pix_of(shape->clip_x, shape->clip_y, shape->clip_w,
                                     shape->clip_h, scale));
-  if (limit.r <= limit.x || limit.b <= limit.y)
+  // Reject disjoint shapes before looking up or rebuilding their bitmap.
+  pix_t visible = intersect(limit, (pix_t){left, top, right, bottom});
+  visible = intersect(visible, (pix_t){0, 0, dw, dh});
+  if (visible.r <= visible.x || visible.b <= visible.y)
     return;
   uint64_t key = shape_key(shape, x, y, w, h, radius, stroke);
   key = mix(key, (uint64_t)cache_scale);
@@ -523,7 +628,8 @@ void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
     if (cacheable)
       cache_store(key, pixels, bw, bh, shape->pixel_snap);
   }
-  blend(dst, dw, dh, pixels, bw, bh, left, top, limit);
+  blend(dst, dw, dh, pixels, bw, bh, left, top, limit,
+        slot ? slot->opaque : NULL);
   if (!slot && !cacheable)
     free(pixels);
 }

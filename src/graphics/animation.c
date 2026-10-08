@@ -601,7 +601,12 @@ void blit_cached_frame_clip(uint8_t *dest, int dest_w, int dest_h,
         continue;
       }
       if (sa == 255) {
-        memcpy(&dest[di], &src[si], 4);
+        int end = dx + 1;
+        while (end < clip.x + clip.w &&
+               src[si + (size_t)(end - dx) * 4 + 3] == 255)
+          end++;
+        memcpy(&dest[di], &src[si], (size_t)(end - dx) * 4);
+        dx = end - 1;
       } else {
         // Premultiplied alpha "over" compositing
         uint8_t inv_a = 255 - sa;

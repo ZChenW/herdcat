@@ -132,6 +132,9 @@ static void reuse_phase(sign_style_t style, int scale, bool neighbors) {
     draw(cached, w, h, scale, &frame);
     sign_draw_cache_stats_t stats = sign_draw_cache_stats();
     TEST_ASSERT(stats.hits > 0 && stats.misses == 0);
+    TEST_ASSERT(stats.opaque_bytes_copied > 0);
+    if (style == SIGN_STYLE_FAN)
+      TEST_ASSERT(stats.tag_hits > 0 && stats.tag_misses == 0);
     sign_draw_cache_disable(true);
     draw(plain, w, h, scale, &frame);
     sign_draw_cache_disable(false);
@@ -150,6 +153,22 @@ static void reuse_phase(sign_style_t style, int scale, bool neighbors) {
   TEST_ASSERT(stats.entries <= stats.slot_limit);
   free(cached);
   free(plain);
+  sign_draw_cleanup();
+}
+static void clipped_shapes_do_not_rasterize(void) {
+  static uint8_t pixels[W * H * 4];
+  sign_frame_t frame = {.bounds_w = W, .bounds_h = H, .shape_count = 1};
+  frame.shapes[0] = (sign_shape_t){
+      .x = 200, .y = 200, .w = 100, .h = 40, .fill = 0xffabcdefU};
+  sign_draw_cleanup();
+  sign_draw_cache_reset_stats();
+  sign_draw_clip(pixels, W, H, 120, &frame, SIGN_DRAW_UNDER,
+                 (pixel_rect_t){0, 0, 20, 20});
+  TEST_ASSERT(sign_draw_cache_stats().misses == 0);
+  TEST_ASSERT(sign_draw_cache_stats().entries == 0);
+  sign_draw(pixels, W, H, 120, &frame, SIGN_DRAW_UNDER);
+  TEST_ASSERT(sign_draw_cache_stats().misses == 1);
+  TEST_ASSERT(sign_draw_cache_stats().entries == 1);
   sign_draw_cleanup();
 }
 static void cache_limits(void) {
@@ -431,6 +450,7 @@ int main(int argc, char **argv) {
       }
     tag_cycle(SIGN_STYLE_FAN, 120, false);
     tag_cycle(SIGN_STYLE_POST, 120, false);
+    clipped_shapes_do_not_rasterize();
     cache_limits();
     mixed_cycle(false);
   }

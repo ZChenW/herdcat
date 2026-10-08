@@ -153,6 +153,11 @@ static void waiting_phases(void) {
       TEST_ASSERT(!overlay_signs_frame(0)->transitioning);
       TEST_ASSERT(step.redraw == (phase != previous));
       TEST_ASSERT(step.timeout_ms == boundary - now % 1500);
+      if (step.redraw && styles[style] == SIGN_STYLE_FAN) {
+        const sign_frame_t *frame = overlay_signs_frame(0);
+        TEST_ASSERT(step.damage_w * step.damage_h <
+                    frame->bounds_w * (frame->bounds_h + 110) / 2);
+      }
       submissions += step.redraw;
     }
     TEST_ASSERT(submissions >= 912 && submissions <= 1008);
