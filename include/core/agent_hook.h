@@ -4,6 +4,10 @@
 #include "core/agent_adapters.h"
 #include "core/agent_transcript.h"
 
+// Find the parent's unique per-process Antigravity log, never cli.log.
+bool agent_hook_agy_log(const char *proc_root, pid_t pid,
+                        char path[AGENT_TRANSCRIPT_PATH_MAX + 1]);
+
 #define AGENT_HOOK_MAX_DEPTH 128
 
 typedef struct {

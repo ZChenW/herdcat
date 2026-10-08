@@ -19,7 +19,7 @@ A desktop cat for Wayland that herds your coding agents: it types along with you
 - 🌗 Light and dark themes, or follow the desktop
 - 🧩 An agent started by another agent joins its sign: `Claude + Codex`
 - ✋ Drag the cat anywhere, the position is remembered
-- 🤖 Claude Code, Codex, Grok, Kimi Code, Cursor Agent, Copilot CLI, Pi and opencode
+- 🤖 Claude Code, Codex, Grok, Kimi Code, Cursor Agent, Copilot CLI, Pi, opencode, Qwen Code and Antigravity CLI
 - 🎯 Everything Bongo Cat already did: keyboard animation, hot-reload, multi-monitor, sleep mode
 
 ![Signs in the signpost style](docs/screenshots/session-signs/post.png)

@@ -68,11 +68,13 @@ static void finish_string(agent_hook_scanner_t *s) {
   if (!s->key && s->depth == 1 && s->field == HOOK_FIELD_PARENT)
     s->child_session = s->text_length > 0 || s->overflow;
   bool prompt = !s->key && s->field == HOOK_FIELD_PROMPT && s->depth == 1;
-  bool valid =
-      (prompt || !s->overflow) &&
-      (!s->escaped || (!s->key && (s->field == HOOK_FIELD_CWD ||
-                                   s->field == HOOK_FIELD_TRANSCRIPT ||
-                                   s->field == HOOK_FIELD_TITLE || prompt)));
+  bool error = !s->key && s->depth == 1 && s->field == HOOK_FIELD_STATUS &&
+               !strcmp(s->adapter->name, "agy");
+  bool valid = (prompt || error || !s->overflow) &&
+               (!s->escaped ||
+                (!s->key && (s->field == HOOK_FIELD_CWD ||
+                             s->field == HOOK_FIELD_TRANSCRIPT ||
+                             s->field == HOOK_FIELD_TITLE || prompt || error)));
   if (s->key) {
     if (s->depth == 1) {
       s->field = HOOK_FIELD_NONE;
@@ -126,6 +128,12 @@ static void finish_string(agent_hook_scanner_t *s) {
       s->child_session = s->text_length > 0;
       break;
     case HOOK_FIELD_STATUS:
+      if (error) {
+        memcpy(s->status, s->text_length ? "error" : "",
+               s->text_length ? 6 : 1);
+        s->valid_fields |= 1U << HOOK_FIELD_STATUS;
+        break;
+      }
       target = s->status;
       capacity = sizeof(s->status);
       break;

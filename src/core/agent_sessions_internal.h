@@ -25,6 +25,8 @@ typedef struct {
   agent_state_t state;
   pid_t pid;
   agent_terminal_t terminals[2];
+  // Qwen idle_prompt may precede StopFailure by about 15 ms.
+  int64_t qwen_rest_until_ms;
   int64_t updated_ms;
   int64_t done_until_ms;
   bool unread;

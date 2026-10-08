@@ -131,6 +131,66 @@ static void test_cursor(void) {
   TEST_ASSERT(agent_hook_name(&s, name) && !strcmp(name, "project"));
 }
 
+static void test_qwen_agy(void) {
+  TEST_ASSERT(!strcmp(agent_adapter_find("qwen")->display_name, "Qwen"));
+  TEST_ASSERT(!strcmp(agent_adapter_find("agy")->display_name, "Antigravity"));
+  TEST_ASSERT(!agent_adapter_find("qwen")->continuous_output);
+  TEST_ASSERT(!agent_adapter_find("agy")->continuous_output);
+  TEST_ASSERT(!agent_adapter_find("agy")->json_stdout);
+  const char *events[] = {"SessionStart",       "UserPromptSubmit",
+                          "PreToolUse",         "PostToolUse",
+                          "PostToolUseFailure", "PostToolBatch",
+                          "PermissionRequest",  "Stop",
+                          "StopFailure",        "SessionEnd"};
+  const int expected[] = {AGENT_EVENT_START,   AGENT_EVENT_WORKING,
+                          AGENT_EVENT_WORKING, AGENT_EVENT_WORKING,
+                          AGENT_EVENT_WORKING, AGENT_EVENT_WORKING,
+                          AGENT_EVENT_WAITING, AGENT_EVENT_DONE,
+                          AGENT_EVENT_FAIL,    AGENT_EVENT_END};
+  for (size_t i = 0; i < sizeof(events) / sizeof(events[0]); i++) {
+    char json[128];
+    snprintf(json, sizeof(json), "{\"hook_event_name\":\"%s\"}", events[i]);
+    adapter_check("qwen", json, NULL, expected[i]);
+  }
+  adapter_check("qwen", "{\"notification_type\":\"idle_prompt\"}",
+                "Notification", AGENT_EVENT_REST);
+  adapter_check("qwen", "{\"notification_type\":\"permission_prompt\"}",
+                "Notification", AGENT_EVENT_WAITING);
+  adapter_check("qwen", "{\"stop_hook_active\":true}", "Stop", -1);
+  for (size_t i = 0; i < 3; i++) {
+    const char *ignored[] = {"MessageDisplay", "SubagentStop", "TodoWrite"};
+    adapter_check("qwen", "{}", ignored[i], -1);
+  }
+  const char *working[] = {"PreInvocation", "PostInvocation", "PreToolUse",
+                           "PostToolUse"};
+  for (size_t i = 0; i < 4; i++)
+    adapter_check("agy", "{}", working[i], AGENT_EVENT_WORKING);
+  adapter_check("agy", "{}", NULL, -1);
+  adapter_check("agy", "{}", "PermissionRequest", -1);
+  adapter_check("agy", "{}", "SessionStart", -1);
+  adapter_check("agy", "{}", "SessionEnd", -1);
+  adapter_check("agy", "{\"error\":\"\"}", "Stop", AGENT_EVENT_DONE);
+  adapter_check("agy", "{\"error\":\"failure\\nmessage\"}", "Stop",
+                AGENT_EVENT_FAIL);
+  adapter_check("agy", "{}", "Stop", -1);
+  adapter_check("agy", "{\"error\":null}", "Stop", -1);
+  char large[512];
+  memset(large, 'x', sizeof(large));
+  memcpy(large, "{\"error\":\"", 10);
+  strcpy(large + 500, "\"}");
+  adapter_check("agy", large, "Stop", AGENT_EVENT_FAIL);
+  agent_hook_scanner_t scanner;
+  agent_hook_scan_adapter(&scanner, agent_adapter_find("agy"));
+  const char *json =
+      "{\"conversationId\":\"test-id\",\"workspacePaths\":[\"/tmp/project\",\"/"
+      "tmp/other\"],\"transcriptPath\":\"/tmp/ignored.jsonl\"}";
+  agent_hook_scan_feed(&scanner, json, strlen(json));
+  TEST_ASSERT(agent_hook_scan_finish(&scanner));
+  TEST_ASSERT(!strcmp(scanner.session_id, "test-id"));
+  char name[41];
+  TEST_ASSERT(agent_hook_name(&scanner, name) && !strcmp(name, "project"));
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && !strcmp(argv[1], "--list-agents")) {
     for (size_t i = 0; i < agent_adapter_count(); i++)
@@ -139,6 +199,7 @@ int main(int argc, char **argv) {
   }
   if (argc == 2 && !strcmp(argv[1], "--client"))
     return agent_hook_run_adapter("fixture", NULL, &FIXTURE);
+  test_qwen_agy();
   test_grok();
   test_cursor();
   TEST_ASSERT(agent_adapter_find("opencode")->no_pid);

@@ -62,7 +62,7 @@ herdcat setup --remove claude codex --yes
 ```
 
 Agent names are `claude`, `codex`, `grok`, `cursor`, `copilot`, `kimi`, `pi`, and
-`opencode`. Terminal adapters `tmux` and `kitty` are also available; see
+`opencode`, `qwen`, and `agy`. Terminal adapters `tmux` and `kitty` are also available; see
 [terminal support](signs.md#terminal-support). Without names, setup selects agents whose executable is in `PATH`
 or whose configuration directory exists. Explicit names also allow preparing
 configuration before installing an agent. Confirmation defaults to no; a
@@ -386,14 +386,94 @@ was reviewed as an MIT reference (copyright 2026 OpenPets; notice retained).
 It uses v1 `event({event})`, `session.status` and tool callbacks, which are not
 the observed v2 API; this bridge implements the locally verified v2 interface.
 
+## Qwen Code
+
+Qwen Code 0.25.0 was measured by the reviewer on October 8, 2026. Merge
+[qwen-code.settings.json](../integrations/hooks/qwen-code.settings.json) into
+`~/.qwen/settings.json`, preserving settings and unrelated hooks, or use
+`herdcat setup qwen`. Project settings use `.qwen/settings.json` and require
+trust. Restart Qwen after setup; the hook writes no stdout.
+
+| Qwen event | Action |
+| --- | --- |
+| SessionStart | Register idle; preserve existing state |
+| UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PostToolBatch | working |
+| PermissionRequest; Notification(permission_prompt) | waiting |
+| Stop | done unless stop_hook_active is true |
+| StopFailure | error |
+| Notification(idle_prompt) | Clear working/waiting; preserve unread done/error |
+| SessionEnd | Remove session |
+| Other events, including MessageDisplay and SubagentStart/Stop | Ignore |
+
+A tool batch can submit an empty internal prompt; it reports working without
+replacing the title or first prompt. Do not install MessageDisplay hooks: they
+fire repeatedly during streaming. Normal completion emits Stop followed by
+idle_prompt, which retains the unread completion. Both early Esc and mid-reply
+Esc emit idle_prompt, so Qwen needs no quiet detection.
+
+On a model error, idle_prompt arrives about 15 ms before StopFailure. Qwen alone
+allows StopFailure to turn an idle session into error within 250 ms of an
+idle_prompt that cleared working/waiting. Any other applied event consumes the
+window. Late failures and failures after an unread completion cannot revive or
+replace the sign. The common fields use snake_case (`session_id`, `cwd`,
+`hook_event_name`); no real prompts or payloads are shipped in tests.
+
+## Antigravity CLI
+
+Antigravity CLI 1.3.1 (`agy`) was measured by the reviewer on October 8, 2026.
+Use `herdcat setup agy`, or merge
+[antigravity.hooks.json](../integrations/hooks/antigravity.hooks.json) into
+`~/.gemini/config/hooks.json`. For manual use, replace `/absolute/path/to/herdcat`
+with your executable's absolute path. Project hooks use `.agents/hooks.json`.
+Preserve existing named groups and unrelated entries in the `herdcat` group.
+Setup previews the resolved command, backs up changes and supports repeatable
+installation and `--remove`.
+
+Tool events use `matcher` plus nested `hooks`; invocation and Stop events use
+direct command entries. A nested non-tool command makes agy reject the whole
+file. `timeout` is in seconds. Every command needs `--event`: payloads contain
+no event name. Identity is `conversationId`; directory is the first entry in
+`workspacePaths`. `transcriptPath` is not used for cancellation.
+
+| Antigravity event | Action |
+| --- | --- |
+| PreInvocation, PostInvocation, PreToolUse, PostToolUse | working |
+| Stop with empty error | done |
+| Stop with nonempty error | error, from working/waiting only |
+| Other events | Ignore |
+
+There are no startup/exit events. The first invocation registers the session;
+the process watch removes it on exit. Approval prompts have no callback, so the
+sign remains working while approval is pending. **Hook stdout is always zero
+bytes**, including malformed input and timeouts; herdcat never returns a tool
+approval or rejection decision.
+
+Esc during a reply or shortly after submission emits no hook or transcript
+record. The hook locates its parent's unique open
+`~/.gemini/antigravity-cli/log/cli-*.log` file through `/proc/<pid>/fd`, then hands
+that path to the existing inotify monitor. It never follows the `cli.log` latest
+symlink, which can belong to another instance. Only newly appended complete
+lines containing `Cancelling in-progress response for conversation <ID>` with
+this session's exact ID clear working/waiting. Half lines and other IDs do
+nothing; unread done/error remains. Watches exist only during active work and
+obey `agent_interrupt_detect`. Paths remain confined to HOME, same-UID regular
+files with no symlinks or `..`; replacement/truncation fails closed until a new
+handoff. Log contents are never printed, saved or sent over the socket.
+
+This is a private log format; missing files, ambiguous descriptors or a changed
+format silently fall back to `agent_stale_timeout`. Antigravity has no quiet
+detection: its measured idle and working terminal output rates are too close.
+The integration was checked with synthetic processes and private homes; the
+reviewer will revalidate real Qwen/agy sessions before merging.
+
 ## Interrupted and failed turns
 
 `agent_interrupt_detect=1` (default, global and reloadable) watches Claude Code
-and Codex recording files while their sessions are working or waiting. A Claude
+and Codex recording files, plus Antigravity cancellation logs, while their sessions are working or waiting. A Claude
 session made idle by quiet detection may retain that watch for recovery below.
 SessionStart/UserPromptSubmit hooks supply the top-level `transcript_path`;
 there is no directory scan. Paths are limited to 1024 decoded bytes, must be
-absolute `.jsonl` files under the current user's home, and must be regular files
+absolute `.jsonl` files (or Antigravity `.log` files) under the current user's home, and must be regular files
 owned by that user. Symlinks (including ancestors) and `..` components are
 rejected. Disabling the option immediately releases all recording watches;
 enabling it starts at the current end of each file.

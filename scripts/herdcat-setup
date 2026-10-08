@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import shlex
 import stat
 import sys
 import tempfile
@@ -37,6 +38,16 @@ def tr(en, zh):
 def owned_hook(item):
     if not isinstance(item, dict):
         return False
+    command = item.get('command')
+    if isinstance(command, str):
+        try:
+            words = shlex.split(command)
+        except ValueError:
+            words = []
+        if (len(words) >= 3 and Path(words[0]).is_absolute() and
+                Path(words[0]).name in ('herdcat', 'bongocat') and
+                words[1:3] == ['--hook', 'agy']):
+            return True
     return any(isinstance(item.get(key), str) and
                item[key].startswith(('herdcat --hook ', 'bongocat --hook '))
                for key in ('command', 'bash'))
@@ -101,6 +112,50 @@ def merge_hooks(before, template, remove):
     # Retain the existing formatting when the definitions are already current.
     after = before if result == data else json_bytes(result)
     return after, baseline, found
+
+
+def agy_template(source):
+    template = load_json(source.decode())
+    executable = shutil.which('herdcat')
+    if not executable:
+        candidate = Path(__file__).resolve().parent.parent / 'build/herdcat'
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            executable = str(candidate)
+    if not executable:
+        raise SetupError('cannot find herdcat executable for absolute hooks')
+    executable = str(Path(executable).absolute())
+    if any(c in executable for c in '\n\r\x00'):
+        raise SetupError('unsafe herdcat executable path')
+    for event, entries in template['herdcat'].items():
+        for entry in entries:
+            for hook in entry.get('hooks', [entry]):
+                hook['command'] = (shlex.quote(executable) + ' --hook agy --event '
+                                   + event + ' >/dev/null 2>&1 || true')
+    return template
+
+
+def merge_agy(before, template, remove):
+    data = load_json(before.decode()) if before else {}
+    if not isinstance(data, dict):
+        raise SetupError('expected named hook groups')
+    cleaned = {}
+    found = False
+    for name, group in data.items():
+        if not isinstance(group, dict):
+            raise SetupError('hook groups must be objects')
+        stripped, owned = strip_hooks({'hooks': group})
+        found |= owned
+        remaining = stripped.get('hooks', {})
+        if remaining or not owned:
+            cleaned[name] = remaining
+    baseline = json_bytes(cleaned) if found else before
+    if remove:
+        return baseline, baseline, found
+    result = copy.deepcopy(cleaned)
+    group = result.setdefault('herdcat', {})
+    for event, entries in template['herdcat'].items():
+        group.setdefault(event, []).extend(copy.deepcopy(entries))
+    return before if result == data else json_bytes(result), baseline, found
 
 
 BEGIN = '# >>> herdcat >>>'
@@ -272,6 +327,10 @@ class Adapter:
 
 
 ADAPTERS = (
+    Adapter('qwen', ('qwen',), '.qwen', 'settings.json', 'json',
+            'hooks/qwen-code.settings.json'),
+    Adapter('agy', ('agy',), '.gemini', 'config/hooks.json', 'agy',
+            'hooks/antigravity.hooks.json'),
     Adapter('tmux', ('tmux',), '.config/tmux', 'tmux.conf', 'terminal',
             'tmux/herdcat.conf'),
     Adapter('kitty', ('kitty',), '.config/kitty', 'kitty.conf', 'terminal',
@@ -488,6 +547,9 @@ def prepare(adapter, templates, remove):
                                     None, bool(old), remove)]
     if adapter.kind == 'json':
         after, baseline, found = merge_hooks(before, load_json(source.decode()), remove)
+    elif adapter.kind == 'agy':
+        template = None if remove else agy_template(source)
+        after, baseline, found = merge_agy(before, template, remove)
     elif adapter.kind == 'kimi':
         after, baseline, found = kimi_text(before or b'', source, remove)
         if not remove and before and BEGIN.encode() in before:
@@ -584,11 +646,12 @@ def describe(adapter, changes, remove):
             print('  ' + tr(f'remove/replace {count} managed hook commands',
                            f'移除/替换 {count} 条受管理 hook 命令'))
     # Show only our definitions, never any portion of an existing config.
-    if adapter.kind in ('json', 'kimi') and not remove:
+    if adapter.kind in ('json', 'agy', 'kimi') and not remove:
         source = (integrations_dir() / adapter.template).read_text()
-        if adapter.kind == 'json':
-            data = load_json(source)
-            for event, entries in data['hooks'].items():
+        if adapter.kind in ('json', 'agy'):
+            data = agy_template(source.encode()) if adapter.kind == 'agy' else load_json(source)
+            hooks = data['herdcat'] if adapter.kind == 'agy' else data['hooks']
+            for event, entries in hooks.items():
                 for entry in entries:
                     for hook in entry.get('hooks', [entry]):
                         print(f'  {event}: {hook.get("command", hook.get("bash"))}')

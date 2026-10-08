@@ -1,6 +1,6 @@
 # bash completion for herdcat
 _herdcat() {
-  local agents='opencode claude codex grok kimi cursor copilot pi'
+  local agents='opencode claude codex grok kimi cursor copilot pi qwen agy'
   local current=${COMP_WORDS[COMP_CWORD]} previous=${COMP_WORDS[COMP_CWORD-1]}
   local options='-c --config -w --watch-config -m --monitor -t --toggle --hide --show --pause --resume --focus --pane --tmux --state --sessions --reset-position --event --hook --reload --status --check-config --list-devices --list-monitors --doctor -h --help -v --version'
   COMPREPLY=()

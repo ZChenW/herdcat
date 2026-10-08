@@ -1,6 +1,7 @@
 #include "core/agent_transcript.h"
 
 #include "core/agent_hook.h"
+#include "core/agent_title.h"
 
 #include <string.h>
 
@@ -133,4 +134,23 @@ bool agent_transcript_failed(const char *agent, const char *line,
   spaces(&root);
   value_t payload = field(root, "payload");
   return string_is(field(payload, "type"), "task_complete", false);
+}
+
+bool agent_transcript_agy_cancelled(const char *id, const char *line,
+                                    size_t length) {
+  static const char marker[] =
+      "] Cancelling in-progress response for conversation ";
+  if (!agent_session_id_valid(id) || !line || !length ||
+      length > AGENT_TRANSCRIPT_LINE_MAX || line[0] != 'I' ||
+      memchr(line, 0, length))
+    return false;
+  size_t n = sizeof(marker) - 1, id_length = strlen(id);
+  if (length < n + id_length)
+    return false;
+  // Bounded search; the ID must occupy the entire remaining line.
+  for (size_t i = 1; i + n + id_length <= length; i++)
+    if (!memcmp(line + i, marker, n) && length == i + n + id_length &&
+        !memcmp(line + i + n, id, id_length))
+      return true;
+  return false;
 }

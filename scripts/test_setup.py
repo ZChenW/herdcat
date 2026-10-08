@@ -138,6 +138,75 @@ class SetupTests(unittest.TestCase):
         baseline = original.replace(b' ' + entry + b',', b' ')
         return original, baseline
 
+    def test_qwen_agy_roundtrip(self):
+        for agent, relative in (('qwen', '.qwen/settings.json'),
+                                ('agy', '.gemini/config/hooks.json')):
+            with self.subTest(agent=agent):
+                path = self.home / relative
+                audit = {'type': 'command', 'command': 'audit-private-hook'}
+                groups = {'Stop': [audit]}
+                original_data = ({'model': 'private-model', 'hooks': groups} if agent == 'qwen'
+                                 else {'audit': groups, 'herdcat': {'Stop': [audit]}})
+                original = (json.dumps(original_data) + '\n').encode()
+                self.write(path, original)
+                executable = self.bin / 'herdcat'
+                self.write(executable, b'#!/bin/sh\nexit 0\n', 0o700)
+                before = snapshot(self.home)
+                self.run_setup(agent, '--dry-run')
+                self.assertEqual(snapshot(self.home), before)
+                self.run_setup(agent, '--yes')
+                data = json.loads(path.read_text())
+                hooks = data['hooks'] if agent == 'qwen' else data['herdcat']
+                self.assertIn(audit, hooks['Stop'])
+                if agent == 'qwen':
+                    self.assertEqual(data['model'], 'private-model')
+                    self.assertNotIn('MessageDisplay', hooks)
+                    self.assertIn('PostToolBatch', hooks)
+                else:
+                    self.assertEqual(data['audit'], groups)
+                    for event, entries in hooks.items():
+                        for entry in entries:
+                            commands = entry.get('hooks', [entry])
+                            for hook in commands:
+                                if hook == audit:
+                                    continue
+                                self.assertIn(str(executable), hook['command'])
+                                self.assertIn('--event ' + event, hook['command'])
+                                self.assertEqual(hook['timeout'], 10)
+                                self.assertEqual('hooks' in entry,
+                                                 event in ('PreToolUse', 'PostToolUse'))
+                    self.assertNotIn('PermissionRequest', hooks)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o640)
+                self.assertTrue(any(p.is_file() and p.read_bytes() == original
+                                    for p in (self.home / '.local/state/herdcat/backups').rglob('*')))
+                installed = snapshot(self.home)
+                self.run_setup(agent, '--yes')
+                self.assertEqual(snapshot(self.home), installed)
+                self.assertIn(b'connected', self.run_setup(agent, '--status'))
+                self.run_setup('--remove', agent, '--yes')
+                self.assertEqual(path.read_bytes(), original)
+                self.run_setup(agent, '--yes')
+                data = json.loads(path.read_text())
+                if agent == 'qwen':
+                    data['new-setting'] = True
+                else:
+                    data['new-group'] = {'Stop': [audit]}
+                self.write(path, (json.dumps(data) + '\n').encode())
+                self.run_setup('--remove', agent, '--yes')
+                data = json.loads(path.read_text())
+                if agent == 'qwen':
+                    self.assertTrue(data['new-setting'])
+                    self.assertEqual(data['hooks'], groups)
+                else:
+                    self.assertEqual(data['new-group'], groups)
+                    self.assertEqual(data['herdcat'], groups)
+                    self.assertEqual(data['audit'], groups)
+                # Invalid structure is never overwritten, even during removal.
+                self.write(path, b'{"hooks":false}' if agent == 'qwen' else b'{"audit":false}')
+                before = snapshot(self.home)
+                self.run_setup(agent, '--yes', code=1)
+                self.assertEqual(snapshot(self.home), before)
+
     def test_all_fixtures(self):
         for agent in TARGETS:
             for variant in ('blank', 'other', 'old'):
@@ -485,7 +554,7 @@ class SetupTests(unittest.TestCase):
 
     def test_detection_and_locale(self):
         output = self.run_setup('--status')
-        self.assertEqual(output.count(b'not installed'), 10)
+        self.assertEqual(output.count(b'not installed'), 12)
         (self.home / '.codex').mkdir()
         output = self.run_setup('--status')
         self.assertIn(b'codex: not connected', output)

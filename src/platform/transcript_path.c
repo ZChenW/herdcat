@@ -9,17 +9,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-int agent_title_open(const char *path) {
+static int private_open(const char *path) {
   const char *home = getenv("HOME");
   if (!path || !home || home[0] != '/' || path[0] != '/')
     return -1;
   size_t n = strlen(path), hn = strlen(home);
   while (hn > 1 && home[hn - 1] == '/')
     hn--;
-  if (hn <= 1 || n > AGENT_TRANSCRIPT_PATH_MAX || n < hn + 7 ||
-      strncmp(path, home, hn) || path[hn] != '/' ||
-      (strcmp(path + n - 6, ".jsonl") && strcmp(path + n - 5, ".json") &&
-       strcmp(path + n - 5, ".yaml")))
+  if (hn <= 1 || n > AGENT_TRANSCRIPT_PATH_MAX || n <= hn + 1 ||
+      strncmp(path, home, hn) || path[hn] != '/')
     return -1;
   char copy[AGENT_TRANSCRIPT_PATH_MAX + 1];
   memcpy(copy, path, n + 1);
@@ -52,8 +50,18 @@ int agent_title_open(const char *path) {
   return parent;
 }
 
+int agent_title_open(const char *path) {
+  size_t n = path ? strlen(path) : 0;
+  if (n < 6 || (strcmp(path + n - 6, ".jsonl") &&
+                strcmp(path + n - 5, ".json") && strcmp(path + n - 5, ".yaml")))
+    return -1;
+  return private_open(path);
+}
+
 int transcript_watch_open(const char *path) {
   size_t n = path ? strlen(path) : 0;
-  return n >= 6 && !strcmp(path + n - 6, ".jsonl") ? agent_title_open(path)
-                                                   : -1;
+  return n >= 6 && (!strcmp(path + n - 6, ".jsonl") ||
+                    !strcmp(path + n - 4, ".log"))
+             ? private_open(path)
+             : -1;
 }

@@ -1,0 +1,49 @@
+{
+  "herdcat": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "/absolute/path/to/herdcat --hook agy --event PreInvocation >/dev/null 2>&1 || true",
+        "timeout": 10
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "/absolute/path/to/herdcat --hook agy --event PostInvocation >/dev/null 2>&1 || true",
+        "timeout": 10
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/absolute/path/to/herdcat --hook agy --event PreToolUse >/dev/null 2>&1 || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/absolute/path/to/herdcat --hook agy --event PostToolUse >/dev/null 2>&1 || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "/absolute/path/to/herdcat --hook agy --event Stop >/dev/null 2>&1 || true",
+        "timeout": 10
+      }
+    ]
+  }
+}

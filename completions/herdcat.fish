@@ -1,5 +1,5 @@
 # fish completion for herdcat
-set -l agents opencode claude codex grok kimi cursor copilot pi
+set -l agents opencode claude codex grok kimi cursor copilot pi qwen agy
 
 function __herdcat_setup
     set -l words (commandline -opc)

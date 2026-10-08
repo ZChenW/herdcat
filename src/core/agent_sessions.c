@@ -382,7 +382,8 @@ static void apply_session_event(agent_session_t *s, uint64_t key,
     break;
   }
   case AGENT_EVENT_REST:
-    if (s->state == AGENT_STATE_WORKING) {
+    if (s->state == AGENT_STATE_WORKING ||
+        (!strcmp(s->agent, "qwen") && s->state == AGENT_STATE_WAITING)) {
       s->state = AGENT_STATE_IDLE;
     }
     break;
@@ -436,9 +437,14 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
     }
     return 0;
   }
+  bool qwen_failure =
+      s && event == AGENT_EVENT_FAIL && !strcmp(agent, "qwen") &&
+      !strcmp(s->agent, "qwen") && s->state == AGENT_STATE_IDLE &&
+      s->qwen_rest_until_ms > 0 && now_ms <= s->qwen_rest_until_ms &&
+      now_ms >= s->updated_ms;
   if ((event == AGENT_EVENT_INTERRUPT || event == AGENT_EVENT_FAIL) &&
-      (!s ||
-       (s->state != AGENT_STATE_WORKING && s->state != AGENT_STATE_WAITING)))
+      (!s || (s->state != AGENT_STATE_WORKING &&
+              s->state != AGENT_STATE_WAITING && !qwen_failure)))
     return 0;
   if (!s) {
     if (event == AGENT_EVENT_IDLE || event == AGENT_EVENT_REST) {
@@ -461,6 +467,12 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
   }
   bool created = is_new && *is_new;
   pid_t previous_pid = s->pid;
+  s->qwen_rest_until_ms =
+      !strcmp(s->agent, "qwen") && event == AGENT_EVENT_REST &&
+              (s->state == AGENT_STATE_WORKING ||
+               s->state == AGENT_STATE_WAITING)
+          ? (now_ms > INT64_MAX - 250 ? INT64_MAX : now_ms + 250)
+          : 0;
   s->updated_ms = now_ms;
   s->answered_until_ms = 0;
   if (pid > 0 && pid != s->pid) {

@@ -503,7 +503,63 @@ static void test_hook_title(void) {
     TEST_ASSERT(!strcmp(out, expected[i] ? expected[i] : ""));
   }
 }
+static void test_agy_log_path(void) {
+  char home[] = "/tmp/herdcat-agy-fd-XXXXXX";
+  TEST_ASSERT(mkdtemp(home));
+  const char *previous = getenv("HOME");
+  char *saved = previous ? strdup(previous) : NULL;
+  TEST_ASSERT(setenv("HOME", home, 1) == 0);
+  char proc[256], process[256], fds[256], link[300], log[512], out[1025];
+  snprintf(proc, sizeof(proc), "%s/proc", home);
+  snprintf(process, sizeof(process), "%s/proc/42", home);
+  snprintf(fds, sizeof(fds), "%s/proc/42/fd", home);
+  TEST_ASSERT(mkdir(proc, 0700) == 0 && mkdir(process, 0700) == 0 &&
+              mkdir(fds, 0700) == 0);
+  snprintf(link, sizeof(link), "%s/7", fds);
+  snprintf(log, sizeof(log), "%s/.gemini/antigravity-cli/log/cli-test.log",
+           home);
+  TEST_ASSERT(symlink(log, link) == 0);
+  TEST_ASSERT(agent_hook_agy_log(proc, 42, out) && !strcmp(out, log));
+  unlink(link);
+  const char *bad[] = {"/tmp/cli-outside.log", "/tmp/cli.log", "/dev/pts/1"};
+  for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+    TEST_ASSERT(symlink(bad[i], link) == 0);
+    TEST_ASSERT(!agent_hook_agy_log(proc, 42, out));
+    unlink(link);
+  }
+  // The 'latest' symlink, deleted files and ambiguous descriptors fail closed.
+  snprintf(log, sizeof(log), "%s/.gemini/antigravity-cli/cli.log", home);
+  TEST_ASSERT(symlink(log, link) == 0);
+  TEST_ASSERT(!agent_hook_agy_log(proc, 42, out));
+  unlink(link);
+  snprintf(log, sizeof(log),
+           "%s/.gemini/antigravity-cli/log/cli-test.log (deleted)", home);
+  TEST_ASSERT(symlink(log, link) == 0);
+  TEST_ASSERT(!agent_hook_agy_log(proc, 42, out));
+  unlink(link);
+  snprintf(log, sizeof(log), "%s/.gemini/antigravity-cli/log/cli-test.log",
+           home);
+  TEST_ASSERT(symlink(log, link) == 0);
+  char second[300];
+  snprintf(second, sizeof(second), "%s/8", fds);
+  strcat(log, ".log");
+  TEST_ASSERT(symlink(log, second) == 0);
+  TEST_ASSERT(!agent_hook_agy_log(proc, 42, out));
+  unlink(link);
+  unlink(second);
+  rmdir(fds);
+  rmdir(process);
+  rmdir(proc);
+  rmdir(home);
+  if (saved) {
+    TEST_ASSERT(setenv("HOME", saved, 1) == 0);
+    free(saved);
+  } else
+    unsetenv("HOME");
+}
+
 int main(void) {
+  test_agy_log_path();
   test_prompt();
   test_hook_title();
   test_front_process();

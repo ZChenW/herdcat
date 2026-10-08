@@ -399,7 +399,7 @@ TEST_JOBS ?= 1
 else
 TEST_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
 endif
-TEST_PYTHON = tests/test_input_helper.py tests/test_theme_watch.py \
+TEST_PYTHON = tests/test_agy_hook_io.py tests/test_input_helper.py tests/test_theme_watch.py \
   tests/test_terminal_commands.py tests/test_kitty_watcher.py \
   scripts/test_measure_scenarios.py scripts/test_runtime_helpers.py \
   scripts/test_surface_tier_runtime_geometry.py scripts/test_setup.py \
@@ -442,7 +442,8 @@ RUNTIME_PARALLEL = scripts/test_subagent_badge_runtime.py \
   scripts/test_agent_detached.py scripts/test_sign_rows_runtime.py \
   scripts/test_agent_children_runtime.py scripts/test_agent_children_hook.py \
   scripts/test_runtime.py scripts/test_hook_client.py \
-  scripts/test_transcript_runtime.py scripts/test_focus_client.py \
+  scripts/test_transcript_runtime.py scripts/test_qwen_agy_runtime.py \
+  scripts/test_focus_client.py \
   scripts/test_font_panel_runtime.py scripts/test_below_runtime.py
 # Sway/Hyprland invoke make internally and mutate shared build artifacts.
 # Tier matrices assert 10s shrink deadlines; quiet/focus check 1s sampling;

@@ -42,7 +42,7 @@ Display version information and exit.
 .SH AGENT SETUP
 .B herdcat setup
 uses the optional Python 3 helper \fBherdcat-setup\fR to connect installed agents.
-Supported names are claude, codex, grok, cursor, copilot, kimi, pi and opencode.
+Supported names are claude, codex, grok, cursor, copilot, kimi, pi, opencode, qwen and agy.
 With no names, it detects executables in PATH and existing configuration
 directories, previews changes and asks for confirmation (default: no).
 .TP
@@ -296,6 +296,32 @@ and recent families in
 beside it. The configuration file is never rewritten. A stored choice applies
 while the configuration value it replaced is unchanged; editing that option
 afterward makes the file win.
+.SS Qwen Code and Antigravity CLI
+Qwen Code 0.25.0 uses ~/.qwen/settings.json, merged by setup qwen.
+SessionStart registers idle; prompt submissions (including empty internal ones),
+tool callbacks and PostToolBatch report working. PermissionRequest and
+permission_prompt notifications report waiting. Stop reports done unless
+stop_hook_active is true. idle_prompt clears working/waiting, preserving unread
+done. StopFailure reports error, including within 250 ms immediately after an
+active idle_prompt; intervening events clear that Qwen-only grace window.
+Empty prompts retain the existing title. SessionEnd removes the session.
+.PP
+Antigravity CLI 1.3.1 (agy) uses ~/.gemini/config/hooks.json. setup agy preserves
+named groups and installs absolute commands. Replace /absolute/path/to/herdcat
+in integrations/hooks/antigravity.hooks.json before merging it manually.
+Tool hooks use matcher/hooks wrappers; invocation and Stop hooks are direct
+command entries with timeout in seconds. All use --event because payloads
+have no event name. Hook stdout is always empty and never makes a permission decision.
+PreInvocation, PostInvocation, PreToolUse and PostToolUse report working;
+Stop reports done when error is empty, or error when nonempty.
+There are no startup/exit or approval events: first invocation registers the
+session, PID exit removes it, and approval prompts keep it working.
+.PP
+Antigravity cancellation watches the per-process cli-*.log discovered through
+its parent's open file descriptors, never the latest cli.log symlink. Only a
+complete cancellation line for the current conversationId clears working.
+The private log format may change silently; timeout remains the fallback.
+Neither Qwen nor Antigravity uses terminal quiet detection.
 .SS Interruption detection
 agent_interrupt_detect=1 (default) enables event-driven Claude Code interruption
 and Codex abort/error detection from paths supplied by their hooks. On niri it
@@ -306,7 +332,7 @@ boolean is reloadable. Setting 0 removes recording watches immediately.
 Only newly appended complete JSONL lines (at most 4096 bytes) are inspected in
 memory; contents and error messages are never logged, saved or transmitted.
 Paths must be absolute, no longer than 1024 decoded bytes, under the user's home,
-regular, same-UID, without symlinks or .. components, and end in .jsonl.
+regular, same-UID, without symlinks or .. components, and end in .jsonl (or .log for Antigravity cancellation).
 Working/waiting returns to idle on interruption; done/unread is preserved.
 Normal Codex task_complete is ignored. Claude matches read within one second of
 submission are ignored; literal marker prompts read later can be misclassified.

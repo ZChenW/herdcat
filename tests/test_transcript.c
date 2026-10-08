@@ -137,6 +137,78 @@ static void begin(const char *agent, const char *path) {
   transcript_watch_path(1, path, now);
   TEST_ASSERT(transcript_watch_count() == 1);
 }
+static void agy_log(const char *home) {
+  char path[256], moved[270];
+  snprintf(path, sizeof(path), "%s/cli-test.log", home);
+  snprintf(moved, sizeof(moved), "%s.old", path);
+  int fd = open(path, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
+  TEST_ASSERT(fd >= 0);
+  const char *marker =
+      "I1008 09:08:36.312548 2668 conversation_manager.go:1520] "
+      "Cancelling in-progress response for conversation test-id";
+  append(fd, marker);
+  append(fd, "\n");
+  agent_sessions_reset();
+  TEST_ASSERT(agent_sessions_apply(1, "agy", AGENT_EVENT_WORKING, 0, now, 5,
+                                   NULL) == 0);
+  TEST_ASSERT(agent_sessions_set_id(1, "test-id") == 0);
+  TEST_ASSERT(agent_sessions_set_title(1, "fixture") == 0);
+  transcript_watch_sync(true, now);
+  transcript_watch_path(1, path, now);
+  TEST_ASSERT(transcript_watch_count() == 1);
+  drain();
+  state(AGENT_STATE_WORKING);  // Historical cancellation is not replayed.
+  append(fd, "I1008 log.go:1] Cancelling in-progress response for conversation "
+             "other-id\n");
+  append(fd, "I1008 log.go:1] Cancelling in-progress response for conversation "
+             "test-id-extra\n");
+  append(fd, "normal response\n");
+  drain();
+  state(AGENT_STATE_WORKING);
+  append(fd, marker);
+  drain();
+  state(AGENT_STATE_WORKING);  // A partial line is not an event.
+  append(fd, "\n");
+  drain();
+  state(AGENT_STATE_IDLE);
+  TEST_ASSERT(transcript_watch_count() == 0);
+  for (int rotation = 0; rotation < 3; rotation++) {
+    agent_sessions_apply(1, "agy", AGENT_EVENT_WORKING, 0, now, 5, NULL);
+    transcript_watch_path(1, path, now);
+    TEST_ASSERT(transcript_watch_count() == 1);
+    if (rotation == 2) {
+      int replacement = open(moved, O_WRONLY | O_CREAT | O_CLOEXEC, 0600);
+      TEST_ASSERT(replacement >= 0);
+      append(replacement, marker);
+      append(replacement, "\n");
+      close(replacement);
+      TEST_ASSERT(rename(moved, path) == 0);
+    } else if (rotation) {
+      TEST_ASSERT(rename(path, moved) == 0);
+      int replacement = open(path, O_WRONLY | O_CREAT | O_CLOEXEC, 0600);
+      TEST_ASSERT(replacement >= 0);
+      append(replacement, marker);
+      append(replacement, "\n");
+      close(replacement);
+    } else
+      TEST_ASSERT(ftruncate(fd, 0) == 0);
+    drain();
+    state(AGENT_STATE_WORKING);
+    TEST_ASSERT(transcript_watch_count() == 0);
+    transcript_watch_sync(true, now);
+    TEST_ASSERT(transcript_watch_count() == 0);
+    append(fd, marker);
+    append(fd, "\n");
+    drain();
+    state(AGENT_STATE_WORKING);
+  }
+  transcript_watch_cleanup();
+  agent_sessions_reset();
+  close(fd);
+  unlink(path);
+  unlink(moved);
+}
+
 int main(int argc, char **argv) {
   if (argc > 1 && !strcmp(argv[1], "--transcript-prompt"))
     return agent_prompt_main(argc, argv);
@@ -265,6 +337,7 @@ int main(int argc, char **argv) {
   TEST_ASSERT(transcript_watch_command("path 0000000000000000 /a.jsonl", now) ==
               1);
   transcript_watch_cleanup();
+  agy_log(home);
   agent_watch_cleanup();
   close(fd);
   unlink(path);

@@ -497,7 +497,15 @@ structural slices without a DOM or allocation. Claude requires top-level user,
 message.role=user and a single text block with the interruption prefix. A
 one-second post-submission guard reduces literal-prompt false positives. Codex
 requires event_msg with turn_aborted or task_complete plus an error object;
-normal completion is ignored. The idempotent session interrupt operation only
+normal completion is ignored. Antigravity uses the same bounded line/watcher
+pipeline for its per-process log. Hooks discover the unique cli-*.log descriptor
+under HOME in the parent's /proc fd directory; transcriptPath and the latest
+cli.log symlink are ignored. The path handoff follows session-ID metadata,
+letting each watcher match only an entire cancellation line ending in its own
+conversation ID. Logs keep the same secure opening, EOF baseline and fail-closed
+rotation/truncation rules. Qwen uses idle_prompt hooks instead; only an active
+Qwen idle_prompt arms a 250 ms allowance for the following StopFailure to enter
+error from idle, consumed by the next applied event. The idempotent session interrupt operation only
 changes working/waiting to idle, preserving unread done and configured timers.
 Neither paths nor transcript contents/error messages are printed by the monitor;
 contents are never persisted or transmitted. These private formats may change:

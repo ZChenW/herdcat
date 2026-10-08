@@ -403,8 +403,65 @@ int agent_hook_run(const char *agent, const char *event_name) {
   return agent_hook_run_adapter(agent, event_name, agent_adapter_find(agent));
 }
 
+bool agent_hook_agy_log(const char *proc_root, pid_t pid,
+                        char path[AGENT_TRANSCRIPT_PATH_MAX + 1]) {
+  const char *home = getenv("HOME");
+  char prefix[AGENT_TRANSCRIPT_PATH_MAX + 1], directory[4096];
+  path[0] = 0;
+  if (!home || home[0] != '/' || !proc_root || pid <= 1)
+    return false;
+  int n = snprintf(prefix, sizeof(prefix),
+                   "%s/.gemini/antigravity-cli/log/cli-", home);
+  if (n < 0 || (size_t)n >= sizeof(prefix))
+    return false;
+  size_t prefix_length = (size_t)n;
+  n = snprintf(directory, sizeof(directory), "%s/%jd/fd", proc_root,
+               (intmax_t)pid);
+  if (n < 0 || (size_t)n >= sizeof(directory))
+    return false;
+  DIR *dir = opendir(directory);
+  if (!dir)
+    return false;
+  struct dirent *entry;
+  bool found = false;
+  for (unsigned seen = 0; seen < 4096; seen++) {
+    entry = readdir(dir);
+    if (!entry)
+      break;
+    if (!*entry->d_name ||
+        strspn(entry->d_name, "0123456789") != strlen(entry->d_name))
+      continue;
+    char link[4352], target[AGENT_TRANSCRIPT_PATH_MAX + 2];
+    n = snprintf(link, sizeof(link), "%s/%s", directory, entry->d_name);
+    if (n < 0 || (size_t)n >= sizeof(link))
+      continue;
+    ssize_t size = readlink(link, target, sizeof(target) - 1);
+    if (size <= 0 || size > AGENT_TRANSCRIPT_PATH_MAX)
+      continue;
+    target[size] = 0;
+    size_t length = (size_t)size;
+    if (length <= prefix_length + 4 || strncmp(target, prefix, prefix_length) ||
+        strcmp(target + length - 4, ".log") ||
+        strchr(target + prefix_length, '/') || strchr(target, '\n') ||
+        strchr(target, '\r'))
+      continue;
+    if (found && strcmp(path, target)) {
+      found = false;
+      break;
+    }
+    memcpy(path, target, length + 1);
+    found = true;
+  }
+  closedir(dir);
+  if (!found)
+    path[0] = 0;
+  return found;
+}
+
 static bool title_path(const char *agent, const agent_hook_scanner_t *scanner,
                        char path[AGENT_TRANSCRIPT_PATH_MAX + 1]) {
+  if (!strcmp(agent, "agy"))
+    return agent_hook_agy_log("/proc", agent_parent(), path);
   if (strcmp(agent, "grok"))
     return agent_hook_transcript(scanner, path);
   const char *home = getenv("HOME"), *base = getenv("GROK_HOME");

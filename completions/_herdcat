@@ -1,6 +1,6 @@
 #compdef herdcat
 local -a agents
-agents=(opencode claude codex grok kimi cursor copilot pi)
+agents=(opencode claude codex grok kimi cursor copilot pi qwen agy)
 
 if [[ $words[2] == setup ]]; then
   _arguments \

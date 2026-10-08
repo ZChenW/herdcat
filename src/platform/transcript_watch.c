@@ -31,6 +31,7 @@
 typedef struct {
   uint64_t key, order;
   char agent[9], path[AGENT_TRANSCRIPT_PATH_MAX + 1];
+  char session_id[AGENT_SESSION_ID_MAX + 1];
   int fd, wd;
   int64_t submitted_ms;
   off_t offset;
@@ -128,8 +129,8 @@ static void arm(transcript_t *slot) {
   }
   char proc[64];
   snprintf(proc, sizeof(proc), "/proc/self/fd/%d", fd);
-  int wd = inotify_add_watch(notify_fd, proc,
-                             IN_MODIFY | IN_DELETE_SELF | IN_MOVE_SELF);
+  int wd = inotify_add_watch(
+      notify_fd, proc, IN_MODIFY | IN_ATTRIB | IN_DELETE_SELF | IN_MOVE_SELF);
   off_t offset = lseek(fd, 0, SEEK_END);
   if (wd < 0 || offset < 0) {
     if (wd >= 0)
@@ -199,8 +200,16 @@ void transcript_watch_path(uint64_t key, const char *path, int64_t now_ms) {
                     adapter->error_source == AGENT_SIGNAL_TRANSCRIPT;
   if (!transcript && strcmp(view->agent, "pi") && strcmp(view->agent, "grok"))
     return;
+  size_t length = strlen(path);
+  if (!strcmp(view->agent, "agy")) {
+    if (length < 4 || strcmp(path + length - 4, ".log") ||
+        !agent_session_id_valid(view->session_id))
+      return;
+  } else if (length >= 4 && !strcmp(path + length - 4, ".log"))
+    return;
   agent_sessions_set_transcript(key, path);
-  agent_sessions_refresh_title(key);
+  if (strcmp(view->agent, "agy"))
+    agent_sessions_refresh_title(key);
   if (!transcript)
     return;
   transcript_t *slot = NULL;
@@ -222,6 +231,7 @@ void transcript_watch_path(uint64_t key, const char *path, int64_t now_ms) {
   slot->order = view->order;
   slot->submitted_ms = now_ms;
   memcpy(slot->agent, view->agent, sizeof(slot->agent));
+  memcpy(slot->session_id, view->session_id, sizeof(slot->session_id));
   memcpy(slot->path, path, strlen(path) + 1);
   transcript_watch_sync(enabled, now_ms);
 }
@@ -232,7 +242,11 @@ static bool feed(transcript_t *slot, const char *data, size_t length,
       bool hit =
           !slot->skipping &&
           (strcmp(slot->agent, "claude") || now - slot->submitted_ms >= 1000) &&
-          agent_transcript_interrupted(slot->agent, slot->line, slot->used);
+          (!strcmp(slot->agent, "agy")
+               ? agent_transcript_agy_cancelled(slot->session_id, slot->line,
+                                                slot->used)
+               : agent_transcript_interrupted(slot->agent, slot->line,
+                                              slot->used));
       if (!slot->skipping && !strcmp(slot->agent, "claude")) {
         char title[AGENT_TITLE_MAX + 1];
         if (agent_title_line(slot->agent, NULL, slot->line, slot->used, title))
@@ -312,8 +326,10 @@ void transcript_watch_ready(uint32_t token, int64_t now_ms) {
     transcript_t *slot = &slots[cursor++ % AGENT_SESSIONS_MAX];
     if (!slot->active || !slot->pending)
       continue;
-    struct stat st;
-    if (fstat(slot->fd, &st) < 0 || st.st_size < slot->offset) {
+    struct stat st, named;
+    if (fstat(slot->fd, &st) < 0 || st.st_size < slot->offset ||
+        lstat(slot->path, &named) < 0 || st.st_dev != named.st_dev ||
+        st.st_ino != named.st_ino) {
       disarm(
           slot);  // Truncation/rotation: fail closed until next path handoff.
       slot->failed = true;
