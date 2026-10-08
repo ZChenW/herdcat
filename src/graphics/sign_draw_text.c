@@ -75,7 +75,7 @@ static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
     return;
   text_clip_t box = {clip.x, clip.y, clip.r - clip.x, clip.b - clip.y};
   for (int line = 0; line < layout.lines; line++) {
-    double line_top = box_top + border + pad_t;
+    double line_top = border + pad_t;
     double line_h = text->px * 1.2 * s;
     if (line) {
       line_top += line_h;
@@ -88,7 +88,11 @@ static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
     double baseline = text_baseline(
         line_top, line_h, (float)((bold_line ? text->px : text->meta_px) * s),
         bold_line);
-    double x = left + border + pad_x;
+    // A snapped tag places its text by whole pixels from its own corner,
+    // so the same tag has the same pixels wherever it stands.
+    int left_px = (int)lround(left * scale),
+        top_px = (int)lround(box_top * scale);
+    double x = border + pad_x;
     for (int i = 0; i < layout.count; i++) {
       const nameplate_paint_run_t *r = &layout.runs[i];
       if (r->line != line)
@@ -96,8 +100,13 @@ static void draw_tag(uint8_t *dst, int dw, int dh, const sign_text_t *text,
       uint32_t color = r->bold    ? text->color
                        : r->state ? text->meta_color
                                   : text->secondary_color;
-      text_draw_clip(dst, dw, dh, (int)lround(x * scale),
-                     (int)lround(baseline * scale), r->text, r->px, r->bold,
+      int text_x = (int)lround((left + x) * scale);
+      int text_y = (int)lround((box_top + baseline) * scale);
+      if (text->pixel_snap) {
+        text_x = left_px + (int)lround(x * scale);
+        text_y = top_px + (int)lround(baseline * scale);
+      }
+      text_draw_clip(dst, dw, dh, text_x, text_y, r->text, r->px, r->bold,
                      color, 0, box);
       x += r->width;
     }

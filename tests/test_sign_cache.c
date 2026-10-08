@@ -453,6 +453,22 @@ int main(int argc, char **argv) {
     clipped_shapes_do_not_rasterize();
     cache_limits();
     mixed_cycle(false);
+    // Glyph widths decide where a nameplate's text rounds to; the default
+    // font alone once hid a one-pixel difference at 1.25x and 1.5x. A
+    // family that is not installed falls back and repeats the default.
+    const char *families[] = {"DejaVu Sans Mono", "Liberation Mono",
+                              "Noto Sans CJK SC"};
+    const int fractional[] = {150, 180};
+    for (size_t f = 0; f < sizeof(families) / sizeof(families[0]); f++) {
+      text_cleanup();
+      TEST_ASSERT(text_init(families[f]) == 0);
+      for (size_t style = 0; style < sizeof(styles) / sizeof(styles[0]);
+           style++)
+        for (size_t scale = 0; scale < 2; scale++) {
+          reuse_phase(styles[style], fractional[scale], false);
+          reuse_phase(styles[style], fractional[scale], true);
+        }
+    }
   }
   text_cleanup();
   return 0;
