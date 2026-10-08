@@ -4,72 +4,57 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- Clicking a sign focuses its window on Hyprland 0.56 with a Lua
-  configuration. That setup rejects the old `hyprctl dispatch focuswindow`
-  form; herdcat now retries with the Lua dispatcher when Hyprland says so.
-  Found by running the Hyprland backend against a real Hyprland for the first
-  time (nested in niri; six of seven checks pass, the frame reply does not
-  arrive there).
-- Claude and Grok quiet-output cancellation detection now samples every second
-  throughout working turns, keeping the normal 2–3 second response for long
-  turns too. The unused terminal-title cancellation classifier was removed;
-  ordinary title display and focus matching are preserved.
-- Closed signs now use a smaller resting surface, reducing transparent SHM
-  allocations for both fan and post styles. Hover, persistent names, dragging,
-  the switch card and fonts reserve expanded space before painting. Shrink
-  retains the existing ten-second delay and cat/desk output coordinates.
-
-- Signs choose their above/below direction from measured sign ink reach rather
-  than switch-card space. The switch card opens below independently when it
-  cannot fit above and can fit below; its font panel retains the card's opening
-  output-space anchor during retraction and main-surface resizing. Surface
-  growth waits for configure and replacement buffers, preserving cat and desk
-  output coordinates. The 24px return hysteresis remains unchanged.
-
-- The truncation ellipsis no longer touches the letter before it: it stands
-  as far from the text as its dots stand from each other, and the dots keep
-  the font's own spacing.
-- Signs flip below using the current surface tier's capacity, so five or fewer
-  boards no longer reserve ten-board clearance. Growth flips before new boards
-  enter; delayed shrink retains the 24px return hysteresis. Saved positions
-  retain their previous meaning.
-
-- Claude and Grok signs return to idle after an early cancellation that emits
-  no stop hook, using two quiet terminal-output windows. Detection runs only
-  for eligible working processes; waiting and unread completions are preserved.
-  Grok's running-command Ctrl+C path is now documented as verified.
-
-- Truncation ellipses use three compact baseline periods in the selected
-  font and weight, including CJK faces, with a circular-dot fallback when
-  periods are missing. Sign, typing-desk and font-panel width budgets match
-  the drawn dots; middle-dot separators retain their spacing and position.
+- **Sway** - Clicking a sign, focus tracking and the typing desk work on Sway
+  without the experimental switch. The backend is checked against a real
+  headless Sway 1.12 in CI. Not covered there: real pointer clicks, several
+  outputs and XWayland windows. `compositor_experimental` remains, for
+  Hyprland alone.
 
 ### Changed
 
-- Sway is now supported without opt-in whenever `SWAYSOCK` is advertised;
-  status reports `Sway`. `compositor_experimental` now controls only
-  Hyprland. Verified on headless Sway 1.12; real pointer clicks, multiple
-  outputs and XWayland remain untested. Reloading the flag preserves Sway's
-  focus subscription.
-- Test compilation treats warnings as errors; existing initializer,
-  signed-comparison and wrapper-prototype warnings are fixed.
-- English and Chinese README demo animations use the current sign renderer,
-  preserving their scenes and timing.
+- **Less memory** - The transparent surface follows what is on screen instead
+  of always holding room for `sign_max` boards. With a 110 pixel cat on a 2x
+  output the two buffers take 0.9 MB with no signs (8.2 MB before), 1.5 MB
+  with up to five closed fan signs and 3.2 MB with a ten-row signpost (12.4 MB
+  before). Hovering, a name that must stay visible, the switch card, the font
+  panel or a drag ask for the larger surface first, so names appear a few
+  milliseconds later; it shrinks again ten seconds after it is no longer
+  needed. The cat and the typing desk keep their place throughout.
+- **Flipping** - Dragging the cat upward turns the signs below it only as near
+  the top as the signs themselves need: 114 pixels for a fan of up to five
+  with a 110 pixel cat, where it used to be 273. When the switch card does
+  not fit above the cat it opens below, and the signs stay up.
+- Under Sway and Hyprland, `herdcat --sessions` adds a `window-session` line
+  per session with the window it was matched to.
+- The README animations show the current signs.
 
-- Transparent sign surfaces now allocate buffers for the current board count:
-  none, up to five, or the configured maximum. Growth waits for compositor
-  configure and new buffers before entry; shrink waits ten seconds after exit
-  and pauses during hover, menus, font browsing and dragging. Cat and typing
-  desk positions stay fixed, including at fractional scales. Signs-off and
-  translucent output-wide bars retain their existing geometry.
-- The Sway backend is exercised against a real headless
-  Sway in CI: layer surface, window discovery, focus events, focusing a
-  session's window, window close, configuration reload and clean shutdown.
-  Under Sway and Hyprland, `herdcat
-  --sessions` adds a `window-session` line per session with the window it
-  was matched to.
+### Fixed
+
+- **Cancelled prompts** - A prompt cancelled before Claude Code or Grok starts
+  to answer leaves no trace: no hook fires and nothing is written. The sign
+  stayed on "working" until the next prompt. herdcat now notices that the
+  agent has stopped writing to its terminal and lowers the sign within about
+  three seconds, at any point in a turn. Kimi, Pi, Codex and Cursor report a
+  cancel themselves and needed nothing.
+- **Ellipsis** - A shortened name ends in three dots on the baseline, set off
+  from the text, in every font. CJK fonts used to centre the dots, level with
+  the " · " separator beside them.
+- **Hyprland** - Clicking a sign focuses its window on Hyprland 0.56 with a
+  Lua configuration, which rejects the older `hyprctl dispatch` form. Found
+  by running the backend against a real Hyprland for the first time; it stays
+  experimental.
+- The font panel no longer drifts by a pixel or two while the switch card
+  retracts.
+
+### Internal
+
+- `make lint` passes without warnings and fails on any; functions are held to
+  200 lines and 100 statements. The test sources build with `-Werror`.
+- `make test` and `make test-runtime` run their tests in parallel
+  (`TEST_JOBS`), each under the 1024 open-file limit of an ordinary shell.
+- The Arch `-git` package takes its version from the release tags.
 
 ## [0.3.0] - 2026-10-07
 
