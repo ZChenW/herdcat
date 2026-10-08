@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
         server.bind(str(Path(directory) / 'herdcat.sock'))
         server.listen(1)
 
-        def invoke(payload, expected=None, shell=False):
+        def invoke(payload, expected=None, shell=False, reply=b'0 ok'):
             expected = expected if isinstance(expected, list) else [expected] if expected else []
             requests = []
             errors = []
@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
                         with connection:
                             connection.settimeout(3)
                             requests.append(connection.recv(1280).decode())
-                            connection.sendall(b'0 ok')
+                            connection.sendall(reply)
                 except Exception as error:
                     errors.append(str(error))
 
@@ -56,6 +56,14 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
                 worker.join(timeout=4)
                 assert not worker.is_alive() and not errors, errors
                 assert requests == expected, requests
+                server.settimeout(0)
+                try:
+                    connection, _ = server.accept()
+                except BlockingIOError:
+                    pass
+                else:
+                    connection.close()
+                    raise AssertionError('Unexpected extra hook request')
             else:
                 server.settimeout(0)
                 try:
@@ -84,6 +92,21 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
             if hook == 'UserPromptSubmit':
                 requests.append('ask e430d22bdbbe8583 synthetic first')
             invoke(json.dumps(payload).encode(), requests)
+        # New hook / old daemon: the original reply preserves the exact bytes.
+        late = dict(event, cwd='/tmp/late-project',
+                    transcript_path='/tmp/late-project/turn.jsonl')
+        invoke(json.dumps(late).encode(), expected)
+        # The real authenticated transport prints the marker for the hook to
+        # consume, but the hook must keep stdout silent.
+        metadata = [expected, 'sid e430d22bdbbe8583 test',
+                    'path e430d22bdbbe8583 /tmp/late-project/turn.jsonl',
+                    'cwd e430d22bdbbe8583 '
+                    + '/tmp/late-project'.encode().hex() + ' late-project']
+        invoke(json.dumps(late).encode(), metadata, reply=b'0 ok metadata')
+        for reply in (b'0 ok metadata-extra', b'0 metadata', b'1 ok metadata'):
+            invoke(json.dumps(late).encode(), expected, reply=reply)
+        invoke(json.dumps(event).encode(),
+               [expected, 'sid e430d22bdbbe8583 test'], reply=b'0 ok metadata')
         event['tool_input'] = {'content': 'x' * (4 * 1024 * 1024)}
         invoke(json.dumps(event).encode(), expected)
         for payload in (b'', b'{', b'{}', b'{"hook_event_name":"Unknown"}',

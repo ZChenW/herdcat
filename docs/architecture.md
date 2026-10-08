@@ -267,6 +267,20 @@ socket. It never emits stdout and has a two-second alarm. The caller discovers
 the agent PID by walking at most eight process ancestors, skipping shell wrappers.
 `--state` controls the reserved manual session; `--sessions` lists the table.
 
+After applying an `ev` request, the renderer replies `ok metadata` if the
+surviving session still lacks its starting directory or name (including PID
+aliases). Otherwise it replies `ok` as before; rejected requests and events
+that leave no session never request metadata. The hook captures the bounded
+reply printed by the existing authenticated control client using a private
+pipe, keeping its normal stdout policy and two-second alarm. On the exact
+successful marker it sends the same session ID, transcript path, directory
+and name handoff as a metadata event; terminal and title reporting retain
+their existing rules. A known session's tool event adds no control requests.
+Payloads without a directory keep the placeholder and retry the handoff on
+the next event until a directory arrives. Old hooks ignore the extra reply
+text, and new hooks accept an old daemon's plain `ok` without a handoff.
+Persisted names, starting directories and titles survive renderer restarts.
+
 Child ownership uses the top session's creation order, surviving provisional
 key adoption. The renderer reads at most 32 `/proc/<pid>/stat` parent links
 on first registration and unmerged metadata handoffs. Headless hooks append

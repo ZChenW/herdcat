@@ -224,7 +224,7 @@ static int agent_apply(uint64_t key, const char *agent, agent_event_t event,
   return 0;
 }
 
-static int agent_command(const char *request) {
+static int agent_command(const char *request, bool *needs_metadata) {
   char agent[AGENT_NAME_MAX + 1];
   agent_event_t event;
   uint64_t key;
@@ -233,7 +233,9 @@ static int agent_command(const char *request) {
   if (!agent_event_owner_request(request, &key, agent, &event, &pid, &candidate,
                                  &metadata, &owner))
     return 1;
-  return agent_apply(key, agent, event, pid, candidate, metadata, owner);
+  int result = agent_apply(key, agent, event, pid, candidate, metadata, owner);
+  *needs_metadata = !result && agent_sessions_needs_metadata(key);
+  return result;
 }
 
 // Keep compositor IDs out of the persisted session model. These diagnostics
@@ -398,6 +400,7 @@ static int pane_command(const char *request) {
 
 int command(const char *request, char *response, size_t capacity) {
   int result = 0;
+  bool needs_metadata = false;
   if (strcmp(request, "stop") == 0) {
     {
       running = 0;
@@ -423,7 +426,7 @@ int command(const char *request, char *response, size_t capacity) {
   } else if (strncmp(request, "state ", 6) == 0) {
     result = state_command(request);
   } else if (strncmp(request, "ev ", 3) == 0) {
-    result = agent_command(request);
+    result = agent_command(request, &needs_metadata);
   } else if (strncmp(request, "term ", 5) == 0) {
     result = terminal_command(request);
   } else if (strncmp(request, "tmux ", 5) == 0) {
@@ -477,7 +480,10 @@ int command(const char *request, char *response, size_t capacity) {
        !strncmp(request, "ttl ", 4) || !strncmp(request, "ask ", 4))) {
     reconcile_metadata(request);
   }
-  snprintf(response, capacity, "%s", result ? "request failed" : "ok");
+  snprintf(response, capacity, "%s",
+           result           ? "request failed"
+           : needs_metadata ? "ok metadata"
+                            : "ok");
   return result;
 }
 // How long a typed answer is believed without a hook event to confirm it.

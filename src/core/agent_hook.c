@@ -493,12 +493,51 @@ static bool title_path(const char *agent, const agent_hook_scanner_t *scanner,
   return n > 0 && n <= AGENT_TRANSCRIPT_PATH_MAX;
 }
 
+// Reuse the authenticated control client without changing its CLI output API.
+// Its bounded reply is printed to stdout; capture only the ev reply while
+// hooks' stdout is already /dev/null. Older daemons print plain "ok".
+static int send_hook_event(const char *request, bool *needs_metadata) {
+  *needs_metadata = false;
+  int saved = dup(STDOUT_FILENO), reply[2];
+  if (saved < 0)
+    return control_request(request);
+  if (pipe(reply) < 0) {
+    close(saved);
+    return control_request(request);
+  }
+  fflush(stdout);
+  if (dup2(reply[1], STDOUT_FILENO) < 0) {
+    close(saved);
+    close(reply[0]);
+    close(reply[1]);
+    return control_request(request);
+  }
+  close(reply[1]);
+  int sent = control_request(request);
+  fflush(stdout);
+  if (dup2(saved, STDOUT_FILENO) < 0) {
+    close(STDOUT_FILENO);
+    sent = 1;
+  }
+  close(saved);
+  char response[512];
+  ssize_t length;
+  do {
+    length = read(reply[0], response, sizeof(response));
+  } while (length < 0 && errno == EINTR);
+  close(reply[0]);
+  static const char marker[] = "ok metadata\n";
+  *needs_metadata = !sent && length == sizeof(marker) - 1 &&
+                    !memcmp(response, marker, sizeof(marker) - 1);
+  return sent;
+}
+
 static void send_hook_metadata(const char *agent, const char *event_name,
                                const agent_adapter_t *adapter,
                                const agent_hook_scanner_t *scanner, pid_t pid,
                                agent_event_t event, bool metadata, int sent) {
-  // The raw id is only needed to look a title up, so it travels with the
-  // events that can change one, not with every tool call.
+  // The raw id travels with title-changing events or a requested handoff,
+  // rather than every tool call.
   if (!sent && (metadata || event == AGENT_EVENT_DONE) &&
       (scanner->valid_fields & (1U << HOOK_FIELD_SESSION)) &&
       agent_session_id_valid(scanner->session_id)) {
@@ -638,8 +677,9 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
   if (!freopen("/dev/null", "w", stdout)) {
     return 0;
   }
-  int sent = control_request(request);
-  send_hook_metadata(agent, event_name, adapter, &scanner, pid, event, metadata,
-                     sent);
+  bool needs_metadata;
+  int sent = send_hook_event(request, &needs_metadata);
+  send_hook_metadata(agent, event_name, adapter, &scanner, pid, event,
+                     metadata || needs_metadata, sent);
   return 0;
 }

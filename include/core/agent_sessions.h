@@ -64,6 +64,8 @@ int agent_sessions_set_name(uint64_t key, const char *name);
 int agent_sessions_cwd_command(const char *request);
 int agent_sessions_set_cwd_name(uint64_t key, const char *cwd,
                                 const char *name);
+// Only an existing row (including a PID alias) can request a metadata handoff.
+bool agent_sessions_needs_metadata(uint64_t key);
 // A second id from a process that already has a row takes the row over once
 // it carries a name, a session record path or a start event.
 void agent_sessions_adopt(uint64_t key);

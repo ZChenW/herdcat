@@ -153,7 +153,7 @@ int main(int argc, char **argv) {
   TEST_ASSERT(agent_sessions_set_name(2, "other") == 0);
   apply(3, "kimi", AGENT_EVENT_START, dead);
   apply(4, "opencode", AGENT_EVENT_START, 0);
-  TEST_ASSERT(agent_sessions_set_name(4, "svc") == 0);
+  TEST_ASSERT(agent_sessions_set_cwd_name(4, "/tmp/svc", "svc") == 0);
   TEST_ASSERT(agent_sessions_set_id(4, "persisted-id") == 0);
   TEST_ASSERT(agent_sessions_set_title(4, "持久化标题") == 0);
   TEST_ASSERT(agent_sessions_set_prompt(1, "temporary prompt") == 0);
@@ -211,6 +211,7 @@ int main(int argc, char **argv) {
   TEST_ASSERT(!find_key(rows, count, 5));
   TEST_ASSERT(open && open->pid == 0 && open->state == AGENT_STATE_IDLE &&
               !strcmp(open->name, "svc2") &&
+              !strcmp(open->start_cwd, "/tmp/svc") &&
               !strcmp(open->title, "持久化标题") && !open->title_temporary &&
               !strcmp(open->session_id, "persisted-id"));
   TEST_ASSERT(agent_sessions_next_deadline(600) == 601000);

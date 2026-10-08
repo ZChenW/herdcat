@@ -82,6 +82,13 @@ int agent_sessions_pids(pid_t *pids, size_t capacity) {
   return (int)count;
 }
 
+bool agent_sessions_needs_metadata(uint64_t key) {
+  const agent_session_t *s = find_session(key);
+  if (!s)
+    s = find_alias(key);
+  return s && (!s->start_cwd[0] || !s->name[0]);
+}
+
 int agent_sessions_set_name(uint64_t key, const char *name) {
   if (!utf8_label_valid(name, 40))
     return -1;

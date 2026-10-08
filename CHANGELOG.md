@@ -38,6 +38,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Names after a restart** - A session that herdcat first hears of in the
+  middle of a turn, because the cat was restarted or started after the agent,
+  showed a placeholder such as `codex e86e` until the next prompt. It now
+  gets its project name and title with the first event.
 - **Cancelled prompts** - A prompt cancelled before Claude Code, Grok or Copilot
   starts to answer can leave no trace: no hook fires and nothing is written.
   Copilot can also leave no hook when cancelled during a reply. The sign

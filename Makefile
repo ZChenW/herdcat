@@ -373,6 +373,7 @@ $(BUILDDIR)/test_theme_watch: TEST_WRAPS = -Wl,--wrap=posix_spawnp
 $(BUILDDIR)/test_compositor_backends: TEST_WRAPS = -Wl,--wrap=socket,--wrap=connect
 $(BUILDDIR)/test_agent_children: TEST_WRAPS = -Wl,--wrap=openat
 $(BUILDDIR)/test_title_hooks: TEST_WRAPS = -Wl,--wrap=control_request
+$(BUILDDIR)/test_hook_metadata: TEST_WRAPS = -Wl,--wrap=control_request
 $(BUILDDIR)/test_text_centering: TEST_WRAPS = -Wl,--wrap=FT_Get_Sfnt_Table,--wrap=FT_Get_Char_Index
 $(BUILDDIR)/test_ellipsis: TEST_WRAPS = -Wl,--wrap=FT_Get_Char_Index
 $(BUILDDIR)/test_session_recovery: TEST_WRAPS = -Wl,--wrap=signs_frame
@@ -442,6 +443,7 @@ RUNTIME_PARALLEL = scripts/test_subagent_badge_runtime.py \
   scripts/test_agent_detached.py scripts/test_sign_rows_runtime.py \
   scripts/test_agent_children_runtime.py scripts/test_agent_children_hook.py \
   scripts/test_runtime.py scripts/test_hook_client.py \
+  scripts/test_hook_metadata_runtime.py \
   scripts/test_transcript_runtime.py scripts/test_qwen_agy_runtime.py \
   scripts/test_focus_client.py \
   scripts/test_font_panel_runtime.py scripts/test_below_runtime.py
