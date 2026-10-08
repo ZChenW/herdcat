@@ -395,7 +395,8 @@ $(BUILDDIR)/test_nanosvg: tests/test_nanosvg.c $(TEST_LIB)
 # The completion test asks the program itself for its options.
 test: $(TEST_BINARIES) $(TARGET) $(BUILDDIR)/herdcat-input
 	@echo "Running tests..."
-	@failures=0; \
+	@ulimit -n 1024 2>/dev/null || :; \
+	failures=0; \
 	for t in $(TEST_BINARIES); do \
 		echo "--- $$(basename $$t) ---"; \
 		$$t || failures=$$((failures + 1)); \

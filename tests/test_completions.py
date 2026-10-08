@@ -12,6 +12,14 @@ ROOT = Path(__file__).resolve().parent.parent
 # make test builds this one, also after test-sanitize has cleaned.
 BINARY = ROOT / 'build/herdcat'
 
+
+def help_options(help_text):
+    # The usage path and descriptions can contain hyphenated words too.
+    declarations = re.findall(r'^\s+(-\S.*?)(?: {2,}|$)', help_text, re.M)
+    return set(re.findall(r'(?<!\w)--?[a-z][a-z-]*',
+                          '\n'.join(declarations)))
+
+
 class CompletionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -40,7 +48,8 @@ class CompletionTests(unittest.TestCase):
     def test_all_help_options_and_setup_targets(self):
         help_text = subprocess.check_output(
             [BINARY, '--help'], text=True)
-        options = set(re.findall(r'(?<!\w)--?[a-z][a-z-]*', help_text))
+        options = help_options(help_text)
+        self.assertTrue(options)
         for shell, path in self.files.items():
             with self.subTest(shell=shell):
                 text = path.read_text()
@@ -56,6 +65,17 @@ class CompletionTests(unittest.TestCase):
                         self.assertIn(option, text)
                 for target in ('setup', 'tmux', 'kitty'):
                     self.assertIn(target, text)
+
+    def test_help_options_ignore_paths_and_descriptions(self):
+        text = ('Usage: /tmp/-home-chakew-/build/herdcat [options]\n'
+                '  -c, --config FILE    Read config\n'
+                '  --hide, --show       Control visibility\n'
+                '  --event NAME         Used after --hook AGENT\n'
+                '  --hook AGENT         Read stdin\n'
+                '  -h, --help           See --documentation-only\n')
+        self.assertEqual(help_options(text),
+                         {'-c', '--config', '--hide', '--show', '--event',
+                          '--hook', '-h', '--help'})
 
     def test_shell_syntax(self):
         for shell, path in self.files.items():

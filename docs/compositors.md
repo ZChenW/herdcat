@@ -7,10 +7,11 @@ no focus subprocess or event connection is attempted for it by default. No
 advertised compositor leaves signs available, but focus, typing-desk tracking
 and read acknowledgements unavailable.
 
-Hyprland: **未在真实环境验证** (unverified on real compositors). Sway:
+Hyprland: **无 GPU 无头验证受阻，未在真实合成器验证** (2026-10-07,
+Hyprland 0.56.2 / Aquamarine 0.15.1: no DRM/GBM allocator). Sway:
 **已在无头 Sway 1.12 上验证** (2026-10-07, headless/pixman).
-All seven real-compositor runtime assertions passed. Both experimental backends
-remain opt-in. Unit fixtures additionally check payloads, argv and gating.
+All seven Sway real-compositor runtime assertions passed. Both experimental
+backends remain opt-in. Unit fixtures additionally check payloads, argv and gating.
 niri CLI arguments, EventStream parsing,
 terminal ancestry/selection and all previous niri test expectations are retained.
 
@@ -49,6 +50,29 @@ enable it in an isolated test config and verify initial focus, window lifecycle,
 title changes, click focus, unread acknowledgement, typing desk, reconnection,
 shutdown and disabled opt-in. Stage 34 exercised a private headless Sway 1.12
 instance; the remaining desktop acceptance is listed below.
+
+## Headless Hyprland initialization blocked
+
+Official Arch packages were unpacked under `/tmp` and tested without a GPU
+session or a host display connection. Direct startup, forced llvmpipe and
+surfaceless EGL each failed twice before creating a Wayland socket:
+`Cannot open backend: no allocator available`. Aquamarine's headless backend
+returns no DRM fd, while its primary GBM allocator requires one. An independent
+probe of the shipped headless backend reproduced that failure twice.
+
+Mesa surfaceless EGL successfully used llvmpipe twice. Nesting Hyprland inside
+private headless Sway/pixman still failed twice: the parent does not advertise
+the `zwp_linux_dmabuf_v1` protocol required by Aquamarine's Wayland backend.
+The official [virtual GPU documentation](https://wiki.hypr.land/configuring/extra/virtual-gpu/)
+describes a GPU without display outputs; `AQ_NO_KMS_REQUIREMENT=1` does not
+provide a device-free allocator.
+
+Consequently, Hyprland's seven real-compositor acceptance assertions remain
+unverified, and CI has no Hyprland runtime job. The experimental default remains
+zero, and existing Sway diagnostics retain their format. This is the blocked
+initialization outcome permitted by stage 41, not a successful backend test.
+See [the report](performance/hyprland-headless-report.md) for exact versions,
+source references, commands, repeated attempts and verification results.
 
 ## Headless Sway runtime acceptance
 
