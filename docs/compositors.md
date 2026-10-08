@@ -8,7 +8,8 @@ advertised compositor leaves signs available, but focus, typing-desk tracking
 and read acknowledgements unavailable.
 
 Hyprland: **无 GPU 无头验证受阻，未在真实合成器验证** (2026-10-07,
-Hyprland 0.56.2 / Aquamarine 0.15.1: no DRM/GBM allocator). Sway:
+Hyprland 0.56.2 / Aquamarine 0.15.1: no DRM/GBM allocator without a GPU;
+local GPU nesting also blocked by an xdg-shell version mismatch). Sway:
 **已在无头 Sway 1.12 上验证** (2026-10-07, headless/pixman).
 All seven Sway real-compositor runtime assertions passed. Both experimental
 backends remain opt-in. Unit fixtures additionally check payloads, argv and gating.
@@ -67,10 +68,20 @@ The official [virtual GPU documentation](https://wiki.hypr.land/configuring/extr
 describes a GPU without display outputs; `AQ_NO_KMS_REQUIREMENT=1` does not
 provide a device-free allocator.
 
+A subsequent local attempt used the system-installed `/usr/bin/Hyprland`
+0.56.2 inside private headless Sway 1.12 / wlroots 0.20.1 with `gles2`, an
+AMD render node and Mesa/radeonsi. The parent provided linux-dmabuf, but
+Aquamarine 0.15.1 unconditionally bound `xdg_wm_base` version 6 while Sway
+advertised version 5. Both repeats failed with `expected at most 5, got 6`,
+then aborted before creating a Hyprland Wayland socket. Seat access was
+blocked using a nonexistent private seatd socket; neither compositor used a
+host display socket. No system library or compositor was patched.
+
 Consequently, Hyprland's seven real-compositor acceptance assertions remain
 unverified, and CI has no Hyprland runtime job. The experimental default remains
 zero, and existing Sway diagnostics retain their format. This is the blocked
-initialization outcome permitted by stage 41, not a successful backend test.
+initialization outcome permitted by stages 41.2 and 41.3, not a successful
+backend test. No nested Hyprland test was added to `make test-runtime`.
 See [the report](performance/hyprland-headless-report.md) for exact versions,
 source references, commands, repeated attempts and verification results.
 
