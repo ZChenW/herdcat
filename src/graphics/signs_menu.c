@@ -160,11 +160,7 @@ static void note_font(signs_t *model, const sign_input_t *in,
   model->menu.font_in.duration = 0;
 }
 
-void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
-               double scale) {
-  const sign_palette_t *palette = sign_palette(in->theme);
-  if (in->menu_tap == 1 || in->menu_tap == 2)
-    frame->menu_paw = in->menu_tap;
+static void prepare_menu(signs_t *model, const sign_input_t *in) {
   bool was_closed = model->menu.open.target == 0 &&
                     sample(&model->menu.open, in->now_ms) == 0;
   if (was_closed) {
@@ -189,6 +185,267 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
     snap(&model->menu.holder, 0);
     snap(&model->menu.holder_fade, 0);
   }
+}
+
+typedef struct {
+  double scale;
+  double appear;
+  double fade;
+  double enter;
+  double track_x;
+  double track_w;
+  double track_h;
+  const double *rows;
+  double font_y;
+  double side;
+  double origin_x;
+  double origin_y;
+  double lang_color;
+  const sign_palette_t *palette;
+  double style_pos;
+  double lang_pos;
+  double theme_pos;
+  double style_color;
+  double theme_color;
+} menu_drawing_t;
+
+static void emit_menu_text(signs_t *model, const sign_input_t *in,
+                           sign_frame_t *frame, const menu_drawing_t *drawing) {
+  if (frame->text_count + 3 > SIGN_MAX_TEXTS)
+    return;
+  double ratio = font_ratio(in);
+  for (int half = 0; half < 2; half++) {
+    sign_text_t *text = &frame->texts[frame->text_count++];
+    double x = drawing->track_x + half * (drawing->track_w / 2);
+    double y = drawing->rows[1];
+    double fitted = 0.88 + 0.12 * drawing->appear;
+    double drop = (1 - drawing->appear) * 12 * drawing->scale;
+    double left = drawing->origin_x + (x - drawing->origin_x) * fitted;
+    double top = drawing->origin_y + (y - drawing->origin_y) * fitted + drop;
+    double width = (drawing->track_w / 2) * fitted;
+    double height = drawing->track_h * fitted;
+    uint32_t color =
+        half == 0 ? mix_rgb(drawing->palette->paper, drawing->palette->ink,
+                            drawing->lang_color)
+                  : mix_rgb(drawing->palette->ink, drawing->palette->paper,
+                            drawing->lang_color);
+    double line_h = 13 * drawing->scale * ratio * fitted;
+    double border = 2 * drawing->scale * fitted;
+    double content_h = height - border * 2;
+    *text = (sign_text_t){.x = left,
+                          .line_top = top + border + (content_h - line_h) / 2,
+                          .line_h = line_h,
+                          .w = width,
+                          .clip_y = top,
+                          .clip_h = height,
+                          .px = line_h,
+                          .color = with_alpha(color, drawing->fade),
+                          .above = true,
+                          .center = true};
+    snprintf(text->value, sizeof(text->value), "%s", half ? "EN" : "中");
+  }
+  sign_text_t *font = &frame->texts[frame->text_count++];
+  double fitted = 0.88 + 0.12 * drawing->appear;
+  double drop = (1 - drawing->appear) * 12 * drawing->scale;
+  double shift = (1 - drawing->enter) * 14 * drawing->scale *
+                 (model->menu.font_dir < 0 ? -1 : 1);
+  double x = drawing->track_x + drawing->side;
+  double width = drawing->track_w - drawing->side * 2;
+  double left = drawing->origin_x + (x - drawing->origin_x) * fitted;
+  double top =
+      drawing->origin_y + (drawing->font_y - drawing->origin_y) * fitted + drop;
+  double line_h = 13 * drawing->scale * ratio * fitted;
+  double border = 2 * drawing->scale * fitted;
+  double height = drawing->track_h * fitted;
+  double content_h = height - border * 2;
+  *font = (sign_text_t){.x = left,
+                        .line_top = top + border + (content_h - line_h) / 2,
+                        .line_h = line_h,
+                        .w = width * fitted,
+                        .clip_y = top,
+                        .clip_h = height,
+                        .px = line_h,
+                        .color = with_alpha(drawing->palette->ink,
+                                            drawing->fade * drawing->enter),
+                        .above = true,
+                        .center = true,
+                        .slide = shift * fitted};
+  snprintf(font->value, sizeof(font->value), "%s", font_label(in));
+  if (in->menu_font[0])
+    snprintf(font->family, sizeof(font->family), "%s", in->menu_font);
+}
+
+static void emit_menu_icons(sign_frame_t *frame, double track_x, double scale,
+                            const double rows[3], const double colors[3],
+                            double theme_color, double fade,
+                            const sign_palette_t *palette) {
+  double pad_x = track_x + 2 * scale;
+  double pad_w = 126 * scale;
+  double pad_h = 26 * scale;
+  double cell = pad_w / 2;
+  double icon_w = 26 * scale;
+  double icon_h = 18 * scale;
+  for (int row = 0; row < 3; row++) {
+    double icon_y = rows[row] + 2 * scale + (pad_h - icon_h) / 2;
+    uint32_t left =
+        with_alpha(mix_rgb(palette->paper, palette->ink, colors[row]), fade);
+    uint32_t right =
+        with_alpha(mix_rgb(palette->ink, palette->paper, colors[row]), fade);
+    double left_x = pad_x + (cell - icon_w) / 2;
+    double right_x = pad_x + cell + (cell - icon_w) / 2;
+    if (row == 0) {
+      glyph_fan(frame, left_x, icon_y, scale, left);
+      glyph_post(frame, right_x, icon_y, scale, right);
+    } else if (row == 2) {
+      for (int part = 0; part < 3; part++) {
+        double x = pad_x + part * (pad_w / 3) + (pad_w / 3 - icon_w) / 2;
+        double selected = 1 - fmin(1, fabs(theme_color - part));
+        uint32_t color =
+            with_alpha(mix_rgb(palette->ink, palette->paper, selected), fade);
+        if (part == 0)
+          glyph_sun(frame, x, icon_y, scale, color);
+        else if (part == 1)
+          glyph_auto(frame, x, icon_y, scale, color);
+        else
+          glyph_moon(frame, x, icon_y, scale, color);
+      }
+    }
+  }
+}
+
+static void emit_menu_card(signs_t *model, const sign_input_t *in,
+                           sign_frame_t *frame, const menu_drawing_t *drawing) {
+  double card_x = in->cat_x + 22 * drawing->scale;
+  double card_y = in->cat_y - 174 * drawing->scale;
+  double card_w = 154 * drawing->scale;
+  double card_h = 168 * drawing->scale;
+  double origin_x = card_x + card_w / 2;
+  double origin_y = card_y + card_h;
+  int from = frame->shape_count;
+  add_shape(frame, SIGN_RECT, card_x, card_y, card_w, card_h,
+            14 * drawing->scale, 2 * drawing->scale,
+            with_alpha(drawing->palette->paper, drawing->fade),
+            with_alpha(drawing->palette->ink, drawing->fade));
+  double track_x = card_x + 12 * drawing->scale;
+  double track_w = 130 * drawing->scale;
+  double track_h = 30 * drawing->scale;
+  double rows[3] = {card_y + 12 * drawing->scale, card_y + 50 * drawing->scale,
+                    card_y + 126 * drawing->scale};
+  double font_y = card_y + 88 * drawing->scale;
+  double positions[3] = {drawing->style_pos, drawing->lang_pos,
+                         drawing->theme_pos};
+  double colors[3] = {drawing->style_color, drawing->lang_color,
+                      drawing->theme_color};
+  for (int row = 0; row < 3; row++) {
+    add_shape(frame, SIGN_RECT, track_x, rows[row], track_w, track_h,
+              11 * drawing->scale, 2 * drawing->scale,
+              with_alpha(drawing->palette->paper, drawing->fade),
+              with_alpha(drawing->palette->ink, drawing->fade));
+    double step = row == 2 ? 122.0 / 3 : 61;
+    double thumb_x = track_x + (4 + positions[row] * step) * drawing->scale;
+    double thumb_y = rows[row] + 4 * drawing->scale;
+    add_shape(frame, SIGN_RECT, thumb_x, thumb_y, step * drawing->scale,
+              22 * drawing->scale, 7 * drawing->scale, 0,
+              with_alpha(drawing->palette->ink, drawing->fade), 0);
+  }
+  emit_menu_icons(frame, track_x, drawing->scale, rows, colors,
+                  drawing->theme_color, drawing->fade, drawing->palette);
+  add_shape(frame, SIGN_RECT, track_x, font_y, track_w, track_h,
+            11 * drawing->scale, 2 * drawing->scale,
+            with_alpha(drawing->palette->paper, drawing->fade),
+            with_alpha(drawing->palette->ink, drawing->fade));
+  note_font(model, in, font_label(in));
+  double enter =
+      clamp_unit(aim(&model->menu.font_in, 1, 200, &BEZIER_SLIDE, in, frame));
+  double arrow_scale = 1;
+  if (in->menu_arrow) {
+    model->menu.arrow_id = in->menu_arrow;
+    snap(&model->menu.arrow, 0.8);
+    arrow_scale = 0.8;
+  } else if (model->menu.arrow.target == 0) {
+    snap(&model->menu.arrow, 1);
+  } else {
+    arrow_scale = aim(&model->menu.arrow, 1, 180, &BEZIER_POP, in, frame);
+  }
+  uint32_t ink = with_alpha(drawing->palette->ink, drawing->fade);
+  double side = 26 * drawing->scale;
+  for (int end = 0; end < 2; end++) {
+    bool pressed = model->menu.arrow_id == end + 1;
+    double shrink = pressed ? arrow_scale : 1;
+    double cx = track_x + (end ? track_w - side / 2 : side / 2);
+    double cy = font_y + track_h / 2;
+    double s = drawing->scale * shrink;
+    double tip = end ? 2.5 : -2.5;
+    double wing = end ? -2 : 2;
+    capsule(frame, cx + wing * s, cy - 5 * s, cx + tip * s, cy, 2 * s, ink);
+    capsule(frame, cx + tip * s, cy, cx + wing * s, cy + 5 * s, 2 * s, ink);
+  }
+  if (in->menu_font_hot)
+    add_shape(frame, SIGN_RECT, track_x + side, font_y + 2 * drawing->scale,
+              track_w - side * 2, track_h - 4 * drawing->scale,
+              7 * drawing->scale, 0,
+              with_alpha(drawing->palette->hover, drawing->fade), 0);
+  for (int i = from; i < frame->shape_count; i++) {
+    place_card(&frame->shapes[i], origin_x, origin_y, drawing->appear,
+               drawing->scale);
+    include_bounds(frame, frame->shapes[i].x, frame->shapes[i].y,
+                   frame->shapes[i].w, frame->shapes[i].h);
+  }
+  frame->menu_open = true;
+  frame->menu_card = place_rect(card_x, card_y, card_w, card_h, origin_x,
+                                origin_y, drawing->appear, drawing->scale);
+  for (int row = 0; row < 3; row++) {
+    sign_rect_t *halves = row == 0   ? frame->menu_style
+                          : row == 1 ? frame->menu_lang
+                                     : frame->menu_theme;
+    int parts = row == 2 ? 3 : 2;
+    for (int part = 0; part < parts; part++)
+      halves[part] = place_rect(track_x + part * track_w / parts, rows[row],
+                                track_w / parts, track_h, origin_x, origin_y,
+                                drawing->appear, drawing->scale);
+    double step = row == 2 ? 122.0 / 3 : 61;
+    double thumb_x = track_x + (4 + positions[row] * step) * drawing->scale;
+    sign_rect_t thumb =
+        place_rect(thumb_x, rows[row] + 4 * drawing->scale,
+                   step * drawing->scale, 22 * drawing->scale, origin_x,
+                   origin_y, drawing->appear, drawing->scale);
+    if (row == 0)
+      frame->menu_style_thumb = thumb;
+    else if (row == 1)
+      frame->menu_lang_thumb = thumb;
+    else
+      frame->menu_theme_thumb = thumb;
+  }
+  frame->menu_font = place_rect(track_x, font_y, track_w, track_h, origin_x,
+                                origin_y, drawing->appear, drawing->scale);
+  frame->menu_font_prev = place_rect(track_x, font_y, side, track_h, origin_x,
+                                     origin_y, drawing->appear, drawing->scale);
+  frame->menu_font_next =
+      place_rect(track_x + track_w - side, font_y, side, track_h, origin_x,
+                 origin_y, drawing->appear, drawing->scale);
+  emit_menu_text(model, in, frame,
+                 &(menu_drawing_t){.scale = drawing->scale,
+                                   .appear = drawing->appear,
+                                   .fade = drawing->fade,
+                                   .enter = enter,
+                                   .track_x = track_x,
+                                   .track_w = track_w,
+                                   .track_h = track_h,
+                                   .rows = rows,
+                                   .font_y = font_y,
+                                   .side = side,
+                                   .origin_x = origin_x,
+                                   .origin_y = origin_y,
+                                   .lang_color = drawing->lang_color,
+                                   .palette = drawing->palette});
+}
+
+void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
+               double scale) {
+  const sign_palette_t *palette = sign_palette(in->theme);
+  if (in->menu_tap == 1 || in->menu_tap == 2)
+    frame->menu_paw = in->menu_tap;
+  prepare_menu(model, in);
   double appear =
       aim(&model->menu.open, in->menu ? 1 : 0, 260, &BEZIER_POP, in, frame);
   double fade = clamp_unit(
@@ -225,190 +482,15 @@ void emit_menu(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
   }
   if (appear <= 0.001 && fade <= 0.01)
     return;
-  double card_x = in->cat_x + 22 * scale;
-  double card_y = in->cat_y - 174 * scale;
-  double card_w = 154 * scale;
-  double card_h = 168 * scale;
-  double origin_x = card_x + card_w / 2;
-  double origin_y = card_y + card_h;
-  int from = frame->shape_count;
-  add_shape(frame, SIGN_RECT, card_x, card_y, card_w, card_h, 14 * scale,
-            2 * scale, with_alpha(palette->paper, fade),
-            with_alpha(palette->ink, fade));
-  double track_x = card_x + 12 * scale;
-  double track_w = 130 * scale;
-  double track_h = 30 * scale;
-  double rows[3] = {card_y + 12 * scale, card_y + 50 * scale,
-                    card_y + 126 * scale};
-  double font_y = card_y + 88 * scale;
-  double positions[3] = {style_pos, lang_pos, theme_pos};
-  double colors[3] = {style_color, lang_color, theme_color};
-  for (int row = 0; row < 3; row++) {
-    add_shape(frame, SIGN_RECT, track_x, rows[row], track_w, track_h,
-              11 * scale, 2 * scale, with_alpha(palette->paper, fade),
-              with_alpha(palette->ink, fade));
-    double step = row == 2 ? 122.0 / 3 : 61;
-    double thumb_x = track_x + (4 + positions[row] * step) * scale;
-    double thumb_y = rows[row] + 4 * scale;
-    add_shape(frame, SIGN_RECT, thumb_x, thumb_y, step * scale, 22 * scale,
-              7 * scale, 0, with_alpha(palette->ink, fade), 0);
-  }
-  double pad_x = track_x + 2 * scale;
-  double pad_w = 126 * scale;
-  double pad_h = 26 * scale;
-  double cell = pad_w / 2;
-  double icon_w = 26 * scale;
-  double icon_h = 18 * scale;
-  for (int row = 0; row < 3; row++) {
-    double icon_y = rows[row] + 2 * scale + (pad_h - icon_h) / 2;
-    uint32_t left =
-        with_alpha(mix_rgb(palette->paper, palette->ink, colors[row]), fade);
-    uint32_t right =
-        with_alpha(mix_rgb(palette->ink, palette->paper, colors[row]), fade);
-    double left_x = pad_x + (cell - icon_w) / 2;
-    double right_x = pad_x + cell + (cell - icon_w) / 2;
-    if (row == 0) {
-      glyph_fan(frame, left_x, icon_y, scale, left);
-      glyph_post(frame, right_x, icon_y, scale, right);
-    } else if (row == 2) {
-      for (int part = 0; part < 3; part++) {
-        double x = pad_x + part * (pad_w / 3) + (pad_w / 3 - icon_w) / 2;
-        double selected = 1 - fmin(1, fabs(theme_color - part));
-        uint32_t color =
-            with_alpha(mix_rgb(palette->ink, palette->paper, selected), fade);
-        if (part == 0)
-          glyph_sun(frame, x, icon_y, scale, color);
-        else if (part == 1)
-          glyph_auto(frame, x, icon_y, scale, color);
-        else
-          glyph_moon(frame, x, icon_y, scale, color);
-      }
-    }
-  }
-  add_shape(frame, SIGN_RECT, track_x, font_y, track_w, track_h, 11 * scale,
-            2 * scale, with_alpha(palette->paper, fade),
-            with_alpha(palette->ink, fade));
-  note_font(model, in, font_label(in));
-  double enter =
-      clamp_unit(aim(&model->menu.font_in, 1, 200, &BEZIER_SLIDE, in, frame));
-  double arrow_scale = 1;
-  if (in->menu_arrow) {
-    model->menu.arrow_id = in->menu_arrow;
-    snap(&model->menu.arrow, 0.8);
-    arrow_scale = 0.8;
-  } else if (model->menu.arrow.target == 0) {
-    snap(&model->menu.arrow, 1);
-  } else {
-    arrow_scale = aim(&model->menu.arrow, 1, 180, &BEZIER_POP, in, frame);
-  }
-  uint32_t ink = with_alpha(palette->ink, fade);
-  double side = 26 * scale;
-  for (int end = 0; end < 2; end++) {
-    bool pressed = model->menu.arrow_id == end + 1;
-    double shrink = pressed ? arrow_scale : 1;
-    double cx = track_x + (end ? track_w - side / 2 : side / 2);
-    double cy = font_y + track_h / 2;
-    double s = scale * shrink;
-    double tip = end ? 2.5 : -2.5;
-    double wing = end ? -2 : 2;
-    capsule(frame, cx + wing * s, cy - 5 * s, cx + tip * s, cy, 2 * s, ink);
-    capsule(frame, cx + tip * s, cy, cx + wing * s, cy + 5 * s, 2 * s, ink);
-  }
-  if (in->menu_font_hot)
-    add_shape(frame, SIGN_RECT, track_x + side, font_y + 2 * scale,
-              track_w - side * 2, track_h - 4 * scale, 7 * scale, 0,
-              with_alpha(palette->hover, fade), 0);
-  for (int i = from; i < frame->shape_count; i++) {
-    place_card(&frame->shapes[i], origin_x, origin_y, appear, scale);
-    include_bounds(frame, frame->shapes[i].x, frame->shapes[i].y,
-                   frame->shapes[i].w, frame->shapes[i].h);
-  }
-  frame->menu_open = true;
-  frame->menu_card = place_rect(card_x, card_y, card_w, card_h, origin_x,
-                                origin_y, appear, scale);
-  for (int row = 0; row < 3; row++) {
-    sign_rect_t *halves = row == 0   ? frame->menu_style
-                          : row == 1 ? frame->menu_lang
-                                     : frame->menu_theme;
-    int parts = row == 2 ? 3 : 2;
-    for (int part = 0; part < parts; part++)
-      halves[part] = place_rect(track_x + part * track_w / parts, rows[row],
-                                track_w / parts, track_h, origin_x, origin_y,
-                                appear, scale);
-    double step = row == 2 ? 122.0 / 3 : 61;
-    double thumb_x = track_x + (4 + positions[row] * step) * scale;
-    sign_rect_t thumb =
-        place_rect(thumb_x, rows[row] + 4 * scale, step * scale, 22 * scale,
-                   origin_x, origin_y, appear, scale);
-    if (row == 0)
-      frame->menu_style_thumb = thumb;
-    else if (row == 1)
-      frame->menu_lang_thumb = thumb;
-    else
-      frame->menu_theme_thumb = thumb;
-  }
-  frame->menu_font = place_rect(track_x, font_y, track_w, track_h, origin_x,
-                                origin_y, appear, scale);
-  frame->menu_font_prev = place_rect(track_x, font_y, side, track_h, origin_x,
-                                     origin_y, appear, scale);
-  frame->menu_font_next =
-      place_rect(track_x + track_w - side, font_y, side, track_h, origin_x,
-                 origin_y, appear, scale);
-  if (frame->text_count + 3 > SIGN_MAX_TEXTS)
-    return;
-  double ratio = font_ratio(in);
-  for (int half = 0; half < 2; half++) {
-    sign_text_t *text = &frame->texts[frame->text_count++];
-    double x = track_x + half * (track_w / 2);
-    double y = rows[1];
-    double fitted = 0.88 + 0.12 * appear;
-    double drop = (1 - appear) * 12 * scale;
-    double left = origin_x + (x - origin_x) * fitted;
-    double top = origin_y + (y - origin_y) * fitted + drop;
-    double width = (track_w / 2) * fitted;
-    double height = track_h * fitted;
-    uint32_t color = half == 0
-                         ? mix_rgb(palette->paper, palette->ink, lang_color)
-                         : mix_rgb(palette->ink, palette->paper, lang_color);
-    double line_h = 13 * scale * ratio * fitted;
-    double border = 2 * scale * fitted;
-    double content_h = height - border * 2;
-    *text = (sign_text_t){.x = left,
-                          .line_top = top + border + (content_h - line_h) / 2,
-                          .line_h = line_h,
-                          .w = width,
-                          .clip_y = top,
-                          .clip_h = height,
-                          .px = line_h,
-                          .color = with_alpha(color, fade),
-                          .above = true,
-                          .center = true};
-    snprintf(text->value, sizeof(text->value), "%s", half ? "EN" : "中");
-  }
-  sign_text_t *font = &frame->texts[frame->text_count++];
-  double fitted = 0.88 + 0.12 * appear;
-  double drop = (1 - appear) * 12 * scale;
-  double shift = (1 - enter) * 14 * scale * (model->menu.font_dir < 0 ? -1 : 1);
-  double x = track_x + side;
-  double width = track_w - side * 2;
-  double left = origin_x + (x - origin_x) * fitted;
-  double top = origin_y + (font_y - origin_y) * fitted + drop;
-  double line_h = 13 * scale * ratio * fitted;
-  double border = 2 * scale * fitted;
-  double height = track_h * fitted;
-  double content_h = height - border * 2;
-  *font = (sign_text_t){.x = left,
-                        .line_top = top + border + (content_h - line_h) / 2,
-                        .line_h = line_h,
-                        .w = width * fitted,
-                        .clip_y = top,
-                        .clip_h = height,
-                        .px = line_h,
-                        .color = with_alpha(palette->ink, fade * enter),
-                        .above = true,
-                        .center = true,
-                        .slide = shift * fitted};
-  snprintf(font->value, sizeof(font->value), "%s", font_label(in));
-  if (in->menu_font[0])
-    snprintf(font->family, sizeof(font->family), "%s", in->menu_font);
+  emit_menu_card(model, in, frame,
+                 &(menu_drawing_t){.scale = scale,
+                                   .appear = appear,
+                                   .fade = fade,
+                                   .style_pos = style_pos,
+                                   .lang_pos = lang_pos,
+                                   .theme_pos = theme_pos,
+                                   .style_color = style_color,
+                                   .lang_color = lang_color,
+                                   .theme_color = theme_color,
+                                   .palette = palette});
 }

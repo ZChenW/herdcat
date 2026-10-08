@@ -12,6 +12,47 @@
 #include <stdio.h>
 #include <string.h>
 
+static void fit_nameplate(sign_text_t *text, const sign_input_t *in,
+                          sign_frame_t *frame) {
+  // A second row is optional when the real output has insufficient clearance.
+  double height = sign_tag_height(text);
+  double available =
+      in->orientation == SIGN_BELOW && in->surface_height > 0
+          ? in->surface_height -
+                (2 * (in->cat_y + in->cat_height / 2) - text->anchor_y)
+          : text->anchor_y;
+  if (text->nameplate.lines > 1 && in->surface_height > 0 &&
+      height > available) {
+    int keep = 0;
+    for (int i = 0; i < text->nameplate.count; i++)
+      if (text->nameplate.runs[i].bold) {
+        keep = text->nameplate.runs[i].line;
+        break;
+      }
+    int n = 0;
+    for (int i = 0; i < text->nameplate.count; i++) {
+      nameplate_run_t r = text->nameplate.runs[i];
+      if (r.line == keep) {
+        r.line = 0;
+        text->nameplate.runs[n++] = r;
+      }
+    }
+    text->nameplate.count = n;
+    text->nameplate.lines = 1;
+  }
+  text->surface_width = in->surface_width;
+  text->max_width = in->surface_width > 0 ? in->surface_width : 0;
+  if (in->surface_width > 0 &&
+      (text->x - 220 * in->cat_height / 110 > 0 ||
+       text->x + 220 * in->cat_height / 110 < in->surface_width))
+    include_bounds(frame, 0, text->anchor_y - sign_tag_height(text) - 2,
+                   in->surface_width, sign_tag_height(text) + 4);
+  if (text->nameplate.lines > 1)
+    include_bounds(frame, text->x - 220 * in->cat_height / 110,
+                   text->anchor_y - height - 2, 440 * in->cat_height / 110,
+                   height + 4);
+}
+
 void sign_nameplate(sign_text_t *text, const sign_input_t *in,
                     const agent_session_view_t *session, sign_frame_t *frame) {
   text->templated = true;
@@ -71,41 +112,5 @@ void sign_nameplate(sign_text_t *text, const sign_input_t *in,
     project = "";
   nameplate_fields_t fields = {text->value, project, title, who, state};
   nameplate_expand(source, &fields, &text->nameplate);
-  // A second row is optional when the real output has insufficient clearance.
-  double height = sign_tag_height(text);
-  double available =
-      in->orientation == SIGN_BELOW && in->surface_height > 0
-          ? in->surface_height -
-                (2 * (in->cat_y + in->cat_height / 2) - text->anchor_y)
-          : text->anchor_y;
-  if (text->nameplate.lines > 1 && in->surface_height > 0 &&
-      height > available) {
-    int keep = 0;
-    for (int i = 0; i < text->nameplate.count; i++)
-      if (text->nameplate.runs[i].bold) {
-        keep = text->nameplate.runs[i].line;
-        break;
-      }
-    int n = 0;
-    for (int i = 0; i < text->nameplate.count; i++) {
-      nameplate_run_t r = text->nameplate.runs[i];
-      if (r.line == keep) {
-        r.line = 0;
-        text->nameplate.runs[n++] = r;
-      }
-    }
-    text->nameplate.count = n;
-    text->nameplate.lines = 1;
-  }
-  text->surface_width = in->surface_width;
-  text->max_width = in->surface_width > 0 ? in->surface_width : 0;
-  if (in->surface_width > 0 &&
-      (text->x - 220 * in->cat_height / 110 > 0 ||
-       text->x + 220 * in->cat_height / 110 < in->surface_width))
-    include_bounds(frame, 0, text->anchor_y - sign_tag_height(text) - 2,
-                   in->surface_width, sign_tag_height(text) + 4);
-  if (text->nameplate.lines > 1)
-    include_bounds(frame, text->x - 220 * in->cat_height / 110,
-                   text->anchor_y - height - 2, 440 * in->cat_height / 110,
-                   height + 4);
+  fit_nameplate(text, in, frame);
 }

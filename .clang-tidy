@@ -15,8 +15,6 @@
 #   idiom in this C project.
 # readability-avoid-nested-conditional-operator: Nested conditional expressions
 #   follow the existing project style.
-# readability-function-size: Function decomposition is outside this lint cleanup
-#   stage.
 # readability-inconsistent-ifelse-braces: Mixed braced and single-statement
 #   bodies follow the existing style.
 # bugprone-signed-bitwise: Reviewed uses are OS/enum flags, bounded UTF-8 fields
@@ -62,7 +60,6 @@ Checks: >
   -readability-isolate-declaration,
   -bugprone-suspicious-string-compare,
   -readability-avoid-nested-conditional-operator,
-  -readability-function-size,
   -readability-inconsistent-ifelse-braces,
   -bugprone-signed-bitwise,
   -clang-analyzer-optin.performance.Padding,
@@ -79,6 +76,12 @@ WarningsAsErrors: '*'
 
 # Check options
 CheckOptions:
+  # clang-tidy's own default is 800 statements and no line limit, which
+  # never fires. These are the limits the project used before.
+  - key: readability-function-size.LineThreshold
+    value: '200'
+  - key: readability-function-size.StatementThreshold
+    value: '100'
   # Public libc headers provide these internal macros/types. Do not require
   # direct inclusion of glibc implementation headers.
   - key: misc-include-cleaner.IgnoreHeaders

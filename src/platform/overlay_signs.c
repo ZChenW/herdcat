@@ -99,6 +99,35 @@ static void track_expanded(size_t index, int cat_x, int cat_y, int cat_w,
     lanes[index].hover_key = over_hit ? hit.key : 0;
   }
 }
+static void build_cached_frame(size_t index, const sign_input_t *input,
+                               const agent_session_view_t *shown,
+                               int64_t now_ms, sign_frame_t *frame) {
+  lane_t *lane = &lanes[index];
+  sign_input_t signature = *input;
+  signature.sessions = NULL;
+  signature.now_ms = 0;
+  // A settled frame or a future phase deadline cannot change just because
+  // another pointer packet woke the event loop. Hit tests still use the live
+  // geometry so crossing a plate, pad or card edge invalidates this input.
+  bool before_deadline =
+      !lane->frame.animating || lane->frame.next_frame_ms > now_ms ||
+      (lane->frame.next_frame_ms == 0 && lane->waiting_frame);
+  // Compare bytes deliberately: different padding can only miss the cache.
+  if (lane->cached && before_deadline &&
+      lane->cached_text_key == text_layout_key() &&
+      !memcmp((const unsigned char *)&signature,
+              (const unsigned char *)&lane->cached_input, sizeof(signature)) &&
+      !memcmp(shown, lane->cached_sessions, input->count * sizeof(*shown))) {
+    *frame = lane->frame;
+    return;
+  }
+  signs_frame(&lane->model, input, frame);
+  lane->cached_text_key = text_layout_key();
+  lane->cached_input = signature;
+  memcpy(lane->cached_sessions, shown, input->count * sizeof(*shown));
+  lane->cached = true;
+}
+
 static void build_frame(size_t index, const config_t *config, int cat_x,
                         int cat_y, int surface_h, int64_t now_ms, bool snap,
                         bool menu, bool browse, unsigned tap,
@@ -188,30 +217,7 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
   snprintf(input.menu_font, sizeof(input.menu_font), "%s", face);
   if (menu)
     font_dir = 0;
-  lane_t *lane = &lanes[index];
-  sign_input_t signature = input;
-  signature.sessions = NULL;
-  signature.now_ms = 0;
-  // A settled frame or a future phase deadline cannot change just because
-  // another pointer packet woke the event loop. Hit tests still use the live
-  // geometry so crossing a plate, pad or card edge invalidates this input.
-  bool before_deadline =
-      !lane->frame.animating || lane->frame.next_frame_ms > now_ms ||
-      (lane->frame.next_frame_ms == 0 && lane->waiting_frame);
-  // Compare bytes deliberately: different padding can only miss the cache.
-  if (lane->cached && before_deadline &&
-      lane->cached_text_key == text_layout_key() &&
-      !memcmp((const unsigned char *)&signature,
-              (const unsigned char *)&lane->cached_input, sizeof(signature)) &&
-      !memcmp(shown, lane->cached_sessions, input.count * sizeof(*shown))) {
-    *frame = lane->frame;
-    return;
-  }
-  signs_frame(&lane->model, &input, frame);
-  lane->cached_text_key = text_layout_key();
-  lane->cached_input = signature;
-  memcpy(lane->cached_sessions, shown, input.count * sizeof(*shown));
-  lane->cached = true;
+  build_cached_frame(index, &input, shown, now_ms, frame);
 }
 static bool same_ink(const sign_frame_t *a, const sign_frame_t *b) {
   if (a->shape_count != b->shape_count || a->text_count != b->text_count ||
@@ -293,12 +299,71 @@ bool over_sign(size_t index) {
          signs_hit(&lanes[index].frame, pointer_x, pointer_y, &hit);
 }
 
-overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
-                                        int cat_x, int cat_w, int surface_h,
-                                        bool invisible, int64_t now_ms) {
-  overlay_signs_step_t out = {.timeout_ms = -1};
-  if (index >= MAX_OUTPUTS || !config)
-    return out;
+static void step_capacity(size_t index, const config_t *local, bool menu,
+                          bool browse, lane_t *lane,
+                          overlay_signs_step_t *out) {
+  agent_session_view_t all[AGENT_SESSIONS_MAX], shown[SIGN_MAX_VISIBLE];
+  int count = agent_sessions_snapshot(all, AGENT_SESSIONS_MAX);
+  int selected = count > 0 ? agent_sessions_select(all, (size_t)count, shown,
+                                                   (size_t)local->sign_max)
+                           : 0;
+  int visible = 0;
+  bool persistent = false;
+  for (int i = 0; i < selected; i++)
+    if (agent_sign_state(&shown[i]) != AGENT_STATE_IDLE ||
+        local->sign_idle == SIGN_IDLE_ALWAYS ||
+        (local->sign_idle == SIGN_IDLE_HOVER && expanded[index]) || browse)
+      visible++;
+  for (int i = 0; i < selected; i++)
+    persistent |= sign_name_persistent(local->sign_style, &shown[i]);
+  bool needs_names = expanded[index] || menu || browse || persistent ||
+                     (holding && hold_index == index);
+  out->required_capacity = surface_tier_select(local, visible, needs_names);
+  if (((menu_open && menu_index == index) ||
+       (lane->has_frame && lane->frame.menu_open)) &&
+      lane->card_below && lane->orientation == SIGN_ABOVE &&
+      local->overlay_opacity == 0)
+    out->required_capacity |= SURFACE_TIER_CARD_BELOW;
+  if (lane->capacity_managed)
+    out->required_capacity =
+        surface_tier_reserve(lane->capacity, out->required_capacity);
+  out->shrink_blocked = expanded[index] || (holding && hold_index == index) ||
+                        (menu_open && menu_index == index) ||
+                        (lane->has_frame && lane->frame.menu_open);
+}
+
+static void step_damage(lane_t *lane, int cat_x, int drawn, int cat_w,
+                        int cat_h, bool changed, int64_t now_ms,
+                        overlay_signs_step_t *out) {
+  bool full = !lane->presented || lane->was_invisible;
+  lane->was_invisible = false;
+  lane->presented = true;
+  box_t current = covered(&lane->frame, cat_x, drawn, cat_w, cat_h);
+  box_t damage = lane->has_prev ? unite(lane->prev, current) : current;
+  bool full_rate = lane->frame.animating && lane->frame.next_frame_ms == 0 &&
+                   !lane->waiting_frame;
+  bool due = lane->frame.animating && lane->frame.next_frame_ms > 0 &&
+             lane->frame.next_frame_ms <= now_ms;
+  out->redraw = changed || full || full_rate || due;
+  out->frame = full_rate || due;
+  out->damage_full = full;
+  if (damage.valid) {
+    out->damage_x = damage.x;
+    out->damage_y = damage.y;
+    out->damage_w = damage.w;
+    out->damage_h = damage.h;
+  }
+  if (out->redraw) {
+    lane->prev = current;
+    lane->has_prev = current.valid;
+  }
+  if (!out->frame && lane->frame.animating &&
+      lane->frame.next_frame_ms > now_ms)
+    out->timeout_ms = milliseconds_until(lane->frame.next_frame_ms, now_ms);
+}
+
+static config_t step_config(size_t index, const config_t *config,
+                            bool invisible, int64_t now_ms) {
   take_panel_choice();
   if (font_pending) {
     font_pending = false;
@@ -330,6 +395,17 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
     lane->model.menu = menu;
     lane->style = local.sign_style;
   }
+  return local;
+}
+
+overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
+                                        int cat_x, int cat_w, int surface_h,
+                                        bool invisible, int64_t now_ms) {
+  overlay_signs_step_t out = {.timeout_ms = -1};
+  if (index >= MAX_OUTPUTS || !config)
+    return out;
+  config_t local = step_config(index, config, invisible, now_ms);
+  lane_t *lane = &lanes[index];
   int cat_h = local.cat_height > 0 ? local.cat_height : 0;
   if (desk_on &&
       (invisible || !local.sign_typing_desk ||
@@ -362,34 +438,7 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
     menu_tap = 0;
     menu_tap_at = now_ms + 220;
   }
-  agent_session_view_t all[AGENT_SESSIONS_MAX], shown[SIGN_MAX_VISIBLE];
-  int count = agent_sessions_snapshot(all, AGENT_SESSIONS_MAX);
-  int selected = count > 0 ? agent_sessions_select(all, (size_t)count, shown,
-                                                   (size_t)local.sign_max)
-                           : 0;
-  int visible = 0;
-  bool persistent = false;
-  for (int i = 0; i < selected; i++)
-    if (agent_sign_state(&shown[i]) != AGENT_STATE_IDLE ||
-        local.sign_idle == SIGN_IDLE_ALWAYS ||
-        (local.sign_idle == SIGN_IDLE_HOVER && expanded[index]) || browse)
-      visible++;
-  for (int i = 0; i < selected; i++)
-    persistent |= sign_name_persistent(local.sign_style, &shown[i]);
-  bool needs_names = expanded[index] || menu || browse || persistent ||
-                     (holding && hold_index == index);
-  out.required_capacity = surface_tier_select(&local, visible, needs_names);
-  if (((menu_open && menu_index == index) ||
-       (lane->has_frame && lane->frame.menu_open)) &&
-      lane->card_below && lane->orientation == SIGN_ABOVE &&
-      local.overlay_opacity == 0)
-    out.required_capacity |= SURFACE_TIER_CARD_BELOW;
-  if (lane->capacity_managed)
-    out.required_capacity =
-        surface_tier_reserve(lane->capacity, out.required_capacity);
-  out.shrink_blocked = expanded[index] || (holding && hold_index == index) ||
-                       (menu_open && menu_index == index) ||
-                       (lane->has_frame && lane->frame.menu_open);
+  step_capacity(index, &local, menu, browse, lane, &out);
   // Discovery is synchronous in track_expanded. Re-snapshot above, then hold
   // the current model until configure AND buffer allocation have completed.
   if (lane->capacity_managed &&
@@ -418,30 +467,7 @@ overlay_signs_step_t overlay_signs_step(size_t index, const config_t *config,
     lane->last = out;
     return out;
   }
-  bool full = !lane->presented || lane->was_invisible;
-  lane->was_invisible = false;
-  lane->presented = true;
-  box_t current = covered(&lane->frame, cat_x, drawn, cat_w, cat_h);
-  box_t damage = lane->has_prev ? unite(lane->prev, current) : current;
-  bool full_rate = lane->frame.animating && lane->frame.next_frame_ms == 0 &&
-                   !lane->waiting_frame;
-  bool due = lane->frame.animating && lane->frame.next_frame_ms > 0 &&
-             lane->frame.next_frame_ms <= now_ms;
-  out.redraw = changed || full || full_rate || due;
-  out.frame = full_rate || due;
-  out.damage_full = full;
-  if (damage.valid) {
-    out.damage_x = damage.x;
-    out.damage_y = damage.y;
-    out.damage_w = damage.w;
-    out.damage_h = damage.h;
-  }
-  if (out.redraw) {
-    lane->prev = current;
-    lane->has_prev = current.valid;
-  }
-  if (!out.frame && lane->frame.animating && lane->frame.next_frame_ms > now_ms)
-    out.timeout_ms = milliseconds_until(lane->frame.next_frame_ms, now_ms);
+  step_damage(lane, cat_x, drawn, cat_w, cat_h, changed, now_ms, &out);
   if (closing[index] && close_at[index] > now_ms) {
     int wait = milliseconds_until(close_at[index], now_ms);
     if (out.timeout_ms < 0 || wait < out.timeout_ms)

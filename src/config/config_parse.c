@@ -54,8 +54,7 @@ static bool config_parse_int(const char *str, int *out) {
   return true;
 }
 
-static herdcat_error_t
-config_parse_integer_key(config_t *config, const char *key, const char *value) {
+static int *config_integer_target(config_t *config, const char *key) {
   // Identify which field this key maps to (NULL = not an integer key)
   int *target = NULL;
   if (strcmp(key, "sign_title_length") == 0) {
@@ -118,6 +117,13 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
     target = &config->disable_fullscreen_hide;
   }
 
+  return target;
+}
+
+static herdcat_error_t
+config_parse_integer_key(config_t *config, const char *key, const char *value) {
+  int *target = config_integer_target(config, key);
+
   if (!target) {
     return HERDCAT_ERROR_INVALID_PARAM;  // Not an integer key
   }
@@ -175,7 +181,7 @@ config_parse_integer_key(config_t *config, const char *key, const char *value) {
   return HERDCAT_SUCCESS;
 }
 
-static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
+static herdcat_error_t config_parse_sign_key(config_t *config, const char *key,
                                              const char *value) {
   const struct {
     const char *key, *value;
@@ -229,6 +235,13 @@ static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
       config->sign_done = (sign_done_t)signs[i].number;
     return HERDCAT_SUCCESS;
   }
+  return HERDCAT_ERROR_INVALID_PARAM;
+}
+
+static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
+                                             const char *value) {
+  if (config_parse_sign_key(config, key, value) == HERDCAT_SUCCESS)
+    return HERDCAT_SUCCESS;
   if (strcmp(key, "layer") == 0) {
     if (strcmp(value, "background") == 0) {
       config->layer = LAYER_BACKGROUND;
@@ -497,25 +510,7 @@ static bool config_parse_section(char *trimmed, char *section,
   return false;
 }
 
-herdcat_error_t config_parse_file(config_t *config,
-                                  const char *config_file_path) {
-  HERDCAT_CHECK_NULL(config, HERDCAT_ERROR_INVALID_PARAM);
-
-  char resolved[PATH_MAX];
-  const char *file_path = config_startup_path(config_file_path, resolved);
-
-  snprintf(diagnostic_path, sizeof(diagnostic_path), "%s", file_path);
-  diagnostic_line = 0;
-  FILE *file = fopen(file_path, "r");
-  if (!file) {
-    if (strict_parse) {
-      diagnostic(NULL, "cannot open configuration");
-      return HERDCAT_ERROR_FILE_IO;
-    }
-    herdcat_log_info("Config file '%s' not found, using defaults", file_path);
-    return HERDCAT_SUCCESS;
-  }
-
+static herdcat_error_t config_read_file(config_t *config, FILE *file) {
   char line[512];
   int line_number = 0;
   char section[128] = "";
@@ -594,6 +589,29 @@ herdcat_error_t config_parse_file(config_t *config,
   if (ferror(file)) {
     result = HERDCAT_ERROR_FILE_IO;
   }
+  return result;
+}
+
+herdcat_error_t config_parse_file(config_t *config,
+                                  const char *config_file_path) {
+  HERDCAT_CHECK_NULL(config, HERDCAT_ERROR_INVALID_PARAM);
+
+  char resolved[PATH_MAX];
+  const char *file_path = config_startup_path(config_file_path, resolved);
+
+  snprintf(diagnostic_path, sizeof(diagnostic_path), "%s", file_path);
+  diagnostic_line = 0;
+  FILE *file = fopen(file_path, "r");
+  if (!file) {
+    if (strict_parse) {
+      diagnostic(NULL, "cannot open configuration");
+      return HERDCAT_ERROR_FILE_IO;
+    }
+    herdcat_log_info("Config file '%s' not found, using defaults", file_path);
+    return HERDCAT_SUCCESS;
+  }
+
+  herdcat_error_t result = config_read_file(config, file);
   fclose(file);
 
   if (result == HERDCAT_SUCCESS) {

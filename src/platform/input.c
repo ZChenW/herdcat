@@ -623,6 +623,59 @@ static void setup_helper_signals(void) {
   sigaction(SIGINT, &sa, NULL);
 }
 
+typedef struct {
+  struct timespec last_scan_time;
+  bool initial_devices_found;
+  bool scanning_enabled;
+  uint32_t denied;
+} input_scan_t;
+
+static void
+scan_input_hotplug(input_scan_t *scan,
+                   active_device_t active_devices[MAX_ACTIVE_DEVICES],
+                   char **static_paths, int num_static, char **names,
+                   int num_names, int scan_interval) {
+  static const int fast_retry_interval = 5;
+  // Scan for devices periodically
+  // Use a fast retry interval (5s) until at least one device is found,
+  // then switch to the configured scan_interval.
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+
+  int effective_interval =
+      (int)scan->initial_devices_found ? scan_interval : fast_retry_interval;
+  if (scan->scanning_enabled &&
+      now.tv_sec - scan->last_scan_time.tv_sec >= effective_interval) {
+    scan->last_scan_time = now;
+    privilege_raise();
+    scan->denied = discover_input_devices(active_devices, static_paths,
+                                          num_static, names, num_names);
+
+    if (scan_interval == 0) {
+      scan->scanning_enabled = false;
+      // No rescans will ever happen, so the devices already open are all
+      // this process will read: give the group up for good.
+      input_privilege_drop();
+    } else {
+      privilege_lower();
+    }
+
+    // Check if any devices are now open
+    if (!scan->initial_devices_found) {
+      for (int i = 0; i < MAX_ACTIVE_DEVICES; i++) {
+        if (active_devices[i].fd >= 0) {
+          scan->initial_devices_found = true;
+          break;
+        }
+      }
+      if (!scan->initial_devices_found) {
+        herdcat_log_debug("No input devices found yet, retrying in %ds",
+                          fast_retry_interval);
+      }
+    }
+  }
+}
+
 static void capture_input_hotplug(char **static_paths, int num_static,
                                   char **names, int num_names,
                                   int scan_interval, int enable_debug) {
@@ -640,13 +693,9 @@ static void capture_input_hotplug(char **static_paths, int num_static,
   }
 
   struct pollfd pfds[MAX_ACTIVE_DEVICES];
-  struct timespec last_scan_time = {0, 0};
-  bool initial_devices_found = false;
-  bool scanning_enabled = true;
-  static const int fast_retry_interval = 5;
+  input_scan_t scan = {.scanning_enabled = true};
 
   uint32_t reported_count = UINT32_MAX;
-  uint32_t denied = 0;
   uint32_t reported_denied = UINT32_MAX;
   bool warned_denied = false;
   while (1) {
@@ -656,63 +705,27 @@ static void capture_input_hotplug(char **static_paths, int num_static,
       break;
     }
 
-    // Scan for devices periodically
-    // Use a fast retry interval (5s) until at least one device is found,
-    // then switch to the configured scan_interval.
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-
-    int effective_interval =
-        (int)initial_devices_found ? scan_interval : fast_retry_interval;
-    if (scanning_enabled &&
-        now.tv_sec - last_scan_time.tv_sec >= effective_interval) {
-      last_scan_time = now;
-      privilege_raise();
-      denied = discover_input_devices(active_devices, static_paths, num_static,
-                                      names, num_names);
-
-      if (scan_interval == 0) {
-        scanning_enabled = false;
-        // No rescans will ever happen, so the devices already open are all
-        // this process will read: give the group up for good.
-        input_privilege_drop();
-      } else {
-        privilege_lower();
-      }
-
-      // Check if any devices are now open
-      if (!initial_devices_found) {
-        for (int i = 0; i < MAX_ACTIVE_DEVICES; i++) {
-          if (active_devices[i].fd >= 0) {
-            initial_devices_found = true;
-            break;
-          }
-        }
-        if (!initial_devices_found) {
-          herdcat_log_debug("No input devices found yet, retrying in %ds",
-                            fast_retry_interval);
-        }
-      }
-    }
+    scan_input_hotplug(&scan, active_devices, static_paths, num_static, names,
+                       num_names, scan_interval);
 
     uint32_t count = 0;
     for (int d = 0; d < MAX_ACTIVE_DEVICES; d++) {
       count += active_devices[d].fd >= 0;
     }
-    if (count == 0 && denied && !warned_denied) {
+    if (count == 0 && scan.denied && !warned_denied) {
       herdcat_log_warning("Hotplug: no keyboard open, %u input device(s) "
                           "denied access; %s",
-                          denied, input_access_hint());
+                          scan.denied, input_access_hint());
       warned_denied = true;
     } else if (count) {
       warned_denied = false;
     }
-    if (count != reported_count || denied != reported_denied) {
-      input_message_t status = {.devices = count, .denied = denied};
+    if (count != reported_count || scan.denied != reported_denied) {
+      input_message_t status = {.devices = count, .denied = scan.denied};
       if (send(helper_socket, &status, sizeof(status),
                MSG_NOSIGNAL | MSG_DONTWAIT) >= 0) {
         reported_count = count;
-        reported_denied = denied;
+        reported_denied = scan.denied;
       } else if (errno != EAGAIN && errno != EINTR) {
         break;
       }
@@ -745,7 +758,7 @@ static void capture_input_hotplug(char **static_paths, int num_static,
     }
 
     read_ready_devices(active_devices, pfds, nfds, pfd_to_dev,
-                       &initial_devices_found, count, enable_debug);
+                       &scan.initial_devices_found, count, enable_debug);
   }
 
   // Clean up open device fds

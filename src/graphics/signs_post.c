@@ -56,6 +56,102 @@ static void board_label(const sign_slot_t *slot, const sign_input_t *in,
   }
 }
 
+typedef struct {
+  double name_w;
+  double name_opacity;
+  double name_x;
+  double name_y;
+  double scale;
+  double ratio;
+  bool nudging;
+  int direction;
+  const sign_palette_t *palette;
+  const sign_text_t *label;
+  bool visible;
+  double pole_x;
+  double width;
+  double x;
+  double y;
+  double plate_h;
+} board_drawing_t;
+
+static void emit_board_text(sign_slot_t *slot, const sign_input_t *in,
+                            sign_frame_t *frame,
+                            const board_drawing_t *drawing) {
+  if (drawing->name_w > 16 && drawing->name_opacity > 0 &&
+      frame->text_count < SIGN_MAX_TEXTS) {
+    sign_text_t *text = &frame->texts[frame->text_count++];
+    double line_h = 13 * drawing->scale * drawing->ratio;
+    *text = (sign_text_t){
+        .x = drawing->name_x + 8 * drawing->scale,
+        .pixel_snap = drawing->nudging,
+        .line_top = drawing->name_y + 2 * drawing->scale +
+                    (22 * drawing->scale - line_h) / 2,
+        .line_h = line_h,
+        .w = (drawing->name_w - 16) * drawing->scale,
+        .clip_y = drawing->name_y + 2 * drawing->scale,
+        .clip_h = 22 * drawing->scale,
+        .px = line_h,
+        .meta_px = 11.5 * drawing->scale * drawing->ratio,
+        .gap = 7 * drawing->scale,
+        .color = with_alpha(drawing->palette->ink, drawing->name_opacity),
+        .secondary_color =
+            with_alpha(drawing->palette->secondary, drawing->name_opacity),
+        .meta_color =
+            with_alpha(drawing->palette->secondary, drawing->name_opacity),
+        .reverse = drawing->direction < 0};
+    if (agent_sign_state(&slot->session) == AGENT_STATE_WORKING) {
+      int64_t elapsed = in->now_ms - agent_sign_since(&slot->session);
+      if (elapsed < 0)
+        elapsed = 0;
+      wake_at(frame, in->now_ms + 60000 - elapsed % 60000);
+    }
+    memcpy(text->value, drawing->label->value, sizeof(text->value));
+    memcpy(text->extra, drawing->label->extra, sizeof(text->extra));
+    memcpy(text->meta, drawing->label->meta, sizeof(text->meta));
+  }
+}
+
+static void emit_board_hit(sign_slot_t *slot, const sign_input_t *in,
+                           sign_frame_t *frame,
+                           const board_drawing_t *drawing) {
+  if (drawing->visible && frame->hit_count < SIGN_MAX_VISIBLE) {
+    // The board slides away from the pole when hovered, nudged or shaken.
+    // Its target also covers where it rests, or a pointer on the pole-side
+    // edge would lose the board it just hovered and make it slide back.
+    double rest =
+        drawing->pole_x + drawing->direction * 5 * drawing->scale -
+        (drawing->direction < 0 ? drawing->width * drawing->scale : 0);
+    if (in->surface_width > 0)
+      rest = fmax(
+          0, fmin(rest, in->surface_width - drawing->width * drawing->scale));
+    double left = fmin(drawing->x, rest),
+           right = fmax(drawing->x, rest) + drawing->width * drawing->scale;
+    frame->hits[frame->hit_count++] = (sign_hit_t){
+        .x = (int)floor(left),
+        .y = (int)floor(fmin(drawing->y, drawing->name_y)),
+        .w = (int)ceil(right) - (int)floor(left),
+        .h = (int)ceil(
+                 fmax(drawing->y + drawing->plate_h,
+                      drawing->name_y + POST_NAME_HEIGHT * drawing->scale)) -
+             (int)floor(fmin(drawing->y, drawing->name_y)),
+        .key = slot->session.key,
+        .pid = slot->session.pid};
+  }
+}
+
+static uint32_t board_fill(const sign_palette_t *palette,
+                           const double states[AGENT_STATE_COUNT], double sum) {
+  uint32_t fill = 0;
+  for (int channel = 0; channel < 3; channel++) {
+    double mixed = 0;
+    for (int state = 0; state < AGENT_STATE_COUNT; state++)
+      mixed += ((palette->fills[state] >> (channel * 8)) & 255) * states[state];
+    fill |= (uint32_t)lround(sum ? mixed / sum : 0) << (channel * 8);
+  }
+  return fill;
+}
+
 void layout_board(sign_slot_t *slot, const sign_input_t *in,
                   sign_frame_t *frame, double pole_x, double cat_bottom,
                   double scale, double desk_clear) {
@@ -125,13 +221,7 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
   }
   if (width <= .1 || opacity <= 0)
     return;
-  uint32_t fill = 0;
-  for (int channel = 0; channel < 3; channel++) {
-    double mixed = 0;
-    for (int state = 0; state < AGENT_STATE_COUNT; state++)
-      mixed += ((palette->fills[state] >> (channel * 8)) & 255) * states[state];
-    fill |= (uint32_t)lround(sum ? mixed / sum : 0) << (channel * 8);
-  }
+  uint32_t fill = board_fill(palette, states, sum);
   double offset = hover;
   bool nudging =
       states[AGENT_STATE_WAITING] > .001 && in->animations == SIGN_ANIM_FULL;
@@ -187,50 +277,25 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
               with_alpha(palette->paper, name_opacity),
               with_alpha(palette->ink, name_opacity));
   snap_from(frame, board_at, nudging);
-  if (name_w > 16 && name_opacity > 0 && frame->text_count < SIGN_MAX_TEXTS) {
-    sign_text_t *text = &frame->texts[frame->text_count++];
-    double line_h = 13 * scale * ratio;
-    *text = (sign_text_t){
-        .x = name_x + 8 * scale,
-        .pixel_snap = nudging,
-        .line_top = name_y + 2 * scale + (22 * scale - line_h) / 2,
-        .line_h = line_h,
-        .w = (name_w - 16) * scale,
-        .clip_y = name_y + 2 * scale,
-        .clip_h = 22 * scale,
-        .px = line_h,
-        .meta_px = 11.5 * scale * ratio,
-        .gap = 7 * scale,
-        .color = with_alpha(palette->ink, name_opacity),
-        .secondary_color = with_alpha(palette->secondary, name_opacity),
-        .meta_color = with_alpha(palette->secondary, name_opacity),
-        .reverse = direction < 0};
-    if (agent_sign_state(&slot->session) == AGENT_STATE_WORKING) {
-      int64_t elapsed = in->now_ms - agent_sign_since(&slot->session);
-      if (elapsed < 0)
-        elapsed = 0;
-      wake_at(frame, in->now_ms + 60000 - elapsed % 60000);
-    }
-    memcpy(text->value, label.value, sizeof(text->value));
-    memcpy(text->extra, label.extra, sizeof(text->extra));
-    memcpy(text->meta, label.meta, sizeof(text->meta));
-  }
-  if (visible && frame->hit_count < SIGN_MAX_VISIBLE) {
-    // The board slides away from the pole when hovered, nudged or shaken.
-    // Its target also covers where it rests, or a pointer on the pole-side
-    // edge would lose the board it just hovered and make it slide back.
-    double rest =
-        pole_x + direction * 5 * scale - (direction < 0 ? width * scale : 0);
-    if (in->surface_width > 0)
-      rest = fmax(0, fmin(rest, in->surface_width - width * scale));
-    double left = fmin(x, rest), right = fmax(x, rest) + width * scale;
-    frame->hits[frame->hit_count++] = (sign_hit_t){
-        .x = (int)floor(left),
-        .y = (int)floor(fmin(y, name_y)),
-        .w = (int)ceil(right) - (int)floor(left),
-        .h = (int)ceil(fmax(y + plate_h, name_y + POST_NAME_HEIGHT * scale)) -
-             (int)floor(fmin(y, name_y)),
-        .key = slot->session.key,
-        .pid = slot->session.pid};
-  }
+  emit_board_text(slot, in, frame,
+                  &(board_drawing_t){.name_w = name_w,
+                                     .name_opacity = name_opacity,
+                                     .name_x = name_x,
+                                     .name_y = name_y,
+                                     .scale = scale,
+                                     .ratio = ratio,
+                                     .nudging = nudging,
+                                     .direction = direction,
+                                     .palette = palette,
+                                     .label = &label});
+  emit_board_hit(slot, in, frame,
+                 &(board_drawing_t){.visible = visible,
+                                    .pole_x = pole_x,
+                                    .direction = direction,
+                                    .scale = scale,
+                                    .width = width,
+                                    .x = x,
+                                    .y = y,
+                                    .name_y = name_y,
+                                    .plate_h = plate_h});
 }

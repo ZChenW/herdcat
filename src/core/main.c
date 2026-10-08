@@ -434,6 +434,73 @@ static int run_setup(char **argv) {
   return 1;
 }
 
+static int parse_pane_argument(int argc, char **argv, cli_options_t *options,
+                               int *index) {
+  int i = *index;
+  if (options->request || options->hook_agent) {
+    fprintf(stderr, "Select one control command\n");
+    return 1;
+  }
+  if (i + 2 >= argc) {
+    fprintf(stderr, "--pane requires a process and a split\n");
+    return 1;
+  }
+  pid_t pane_pid = 0;
+  uint64_t pane_split = 0;
+  agent_terminal_t terminal;
+  bool tmux =
+      agent_terminal_environment(&terminal) && terminal.kind == TERMINAL_TMUX;
+  if (!(tmux ? focus_tmux_pane_fields(argv[i + 1], argv[i + 2], &pane_pid,
+                                      &pane_split)
+             : focus_pane_fields(argv[i + 1], argv[i + 2], &pane_pid,
+                                 &pane_split))) {
+    fprintf(stderr, "--pane requires a process and a split\n");
+    return 1;
+  }
+  i += 2;
+  if (tmux) {
+    if (!agent_terminal_pane_message(options->pane_request,
+                                     sizeof(options->pane_request), pane_pid,
+                                     pane_split, &terminal))
+      return 1;
+  } else {
+    snprintf(options->pane_request, sizeof(options->pane_request),
+             "pane %ld %llu", (long)pane_pid, (unsigned long long)pane_split);
+  }
+  options->request = options->pane_request;
+  *index = i;
+  return 0;
+}
+
+static int parse_hook_argument(int argc, char **argv, cli_options_t *options,
+                               int *index) {
+  if (options->request || options->hook_agent) {
+    fprintf(stderr, "Select one control command\n");
+    return 1;
+  }
+  int i = ++*index;
+  if (i >= argc || !agent_hook_valid_agent(argv[i])) {
+    fprintf(stderr, "--hook requires an agent name matching [a-z]{1,8}\n");
+    return 1;
+  }
+  options->hook_agent = argv[i];
+  return 0;
+}
+
+static int parse_hook_event(int argc, char **argv, cli_options_t *options,
+                            int *index) {
+  int i = *index;
+  bool invalid = !options->hook_agent || options->hook_event;
+  if (!invalid)
+    i = ++*index;
+  if (invalid || i >= argc || !argv[i][0] || strlen(argv[i]) >= 64) {
+    fprintf(stderr, "--event requires a name after --hook AGENT\n");
+    return 1;
+  }
+  options->hook_event = argv[i];
+  return 0;
+}
+
 static int parse_arguments(int argc, char **argv, cli_options_t *options) {
   for (int i = 1; i < argc; i++) {
     const char *arg = argv[i];
@@ -458,25 +525,11 @@ static int parse_arguments(int argc, char **argv, cli_options_t *options) {
         monitor_override = argv[i];
       }
     } else if (!strcmp(arg, "--hook")) {
-      if (options->request || options->hook_agent) {
-        fprintf(stderr, "Select one control command\n");
+      if (parse_hook_argument(argc, argv, options, &i))
         return 1;
-      }
-      i++;
-      if (i >= argc || !agent_hook_valid_agent(argv[i])) {
-        fprintf(stderr, "--hook requires an agent name matching [a-z]{1,8}\n");
-        return 1;
-      }
-      options->hook_agent = argv[i];
     } else if (!strcmp(arg, "--event")) {
-      bool invalid = !options->hook_agent || options->hook_event;
-      if (!invalid)
-        i++;
-      if (invalid || i >= argc || !argv[i][0] || strlen(argv[i]) >= 64) {
-        fprintf(stderr, "--event requires a name after --hook AGENT\n");
+      if (parse_hook_event(argc, argv, options, &i))
         return 1;
-      }
-      options->hook_event = argv[i];
     } else if (!strcmp(arg, "--tmux")) {
       if (options->request || options->hook_agent) {
         fprintf(stderr, "Select one control command\n");
@@ -489,38 +542,8 @@ static int parse_arguments(int argc, char **argv, cli_options_t *options) {
       }
       options->request = options->pane_request;
     } else if (!strcmp(arg, "--pane")) {
-      if (options->request || options->hook_agent) {
-        fprintf(stderr, "Select one control command\n");
+      if (parse_pane_argument(argc, argv, options, &i))
         return 1;
-      }
-      if (i + 2 >= argc) {
-        fprintf(stderr, "--pane requires a process and a split\n");
-        return 1;
-      }
-      pid_t pane_pid = 0;
-      uint64_t pane_split = 0;
-      agent_terminal_t terminal;
-      bool tmux = agent_terminal_environment(&terminal) &&
-                  terminal.kind == TERMINAL_TMUX;
-      if (!(tmux ? focus_tmux_pane_fields(argv[i + 1], argv[i + 2], &pane_pid,
-                                          &pane_split)
-                 : focus_pane_fields(argv[i + 1], argv[i + 2], &pane_pid,
-                                     &pane_split))) {
-        fprintf(stderr, "--pane requires a process and a split\n");
-        return 1;
-      }
-      i += 2;
-      if (tmux) {
-        if (!agent_terminal_pane_message(options->pane_request,
-                                         sizeof(options->pane_request),
-                                         pane_pid, pane_split, &terminal))
-          return 1;
-      } else {
-        snprintf(options->pane_request, sizeof(options->pane_request),
-                 "pane %ld %llu", (long)pane_pid,
-                 (unsigned long long)pane_split);
-      }
-      options->request = options->pane_request;
     } else if (!strcmp(arg, "--state") || !strcmp(arg, "--focus")) {
       if (options->request || options->hook_agent) {
         fprintf(stderr, "Select one control command\n");

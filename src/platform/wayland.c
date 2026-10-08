@@ -499,6 +499,87 @@ void wayland_update_config(config_t *config) {
   global_config = config;
   reconcile_pending = true;
 }
+static herdcat_error_t update_overlays(bool flush_blocked, unsigned paws,
+                                       int64_t sign_now, int *timeout_out) {
+  int timeout = *timeout_out;
+  for (size_t i = 0; !flush_blocked && i < MAX_OUTPUTS; i++) {
+    overlay_t *overlay = &overlays[i];
+    if (!overlay->surface) {
+      continue;
+    }
+    activate(overlay);
+    if (overlay->await_configure || !overlay->configured)
+      continue;
+    if (overlay->resize && !resize_buffers(overlay)) {
+      return HERDCAT_ERROR_MEMORY;
+    }
+    if (overlay->tiers.pending) {
+      surface_tier_ready(&overlay->tiers);
+      overlay_signs_capacity(i, overlay->tiers.capacity);
+      // Flip at the promoted capacity before admitting any new sign frame.
+      int old_cat_x = overlay->cat_x, old_cat_y = overlay->cat_y;
+      clamp_position(overlay);
+      overlay_pointer_rebase(overlay, overlay->cat_x - old_cat_x,
+                             overlay->cat_y - old_cat_y);
+    }
+    int cat_h = scale_size_120(overlay->config.cat_height, overlay->scale);
+    int64_t cat_w = scale_size_120(cat_width(overlay), overlay->scale);
+    if (!cat_h || cat_w > INT_MAX) {
+      return HERDCAT_ERROR_MEMORY;
+    }
+    animation_overlay_cache((int)cat_w, cat_h);
+    for (int frame = 0; frame < NUM_FRAMES; frame++) {
+      if (!anim_cached_frames[frame].data) {
+        return HERDCAT_ERROR_MEMORY;
+      }
+    }
+    int next = animation_tick(paws);
+    if (next >= 0 && (timeout < 0 || next < timeout)) {
+      timeout = next;
+    }
+    bool concealed = overlay_hidden(overlay) || !overlay->configured;
+    font_panel_surface_margin(overlay->margin_x, overlay->margin_y);
+    text_set_scale((int)overlay->scale);
+    overlay_signs_width(i, overlay->width);
+    overlay_signs_step_t sign_step = overlay_signs_step(
+        i, &overlay->config, overlay->cat_x, cat_width(overlay),
+        overlay->height, concealed, sign_now);
+    const sign_frame_t *sign_frame = overlay_signs_frame(i);
+    int request = surface_tier_update(
+        &overlay->tiers, sign_step.required_capacity, sign_step.shrink_blocked,
+        sign_frame && sign_frame->transitioning, sign_now);
+    if (request >= 0) {
+      request_size(overlay, request);
+      overlay->damage_all = true;
+      overlay->redraw = true;
+      if (overlay->await_configure)
+        continue;
+      // Equal geometry can still promote capacity. Rebuild at readiness.
+      timeout = 0;
+      continue;
+    }
+    if (overlay->tiers.shrink_at > sign_now) {
+      int64_t wait = overlay->tiers.shrink_at - sign_now;
+      if (wait > INT_MAX)
+        wait = INT_MAX;
+      if (timeout < 0 || wait < timeout)
+        timeout = (int)wait;
+    }
+    if (sign_step.redraw) {
+      overlay->redraw = true;
+    }
+    if (sign_step.timeout_ms > 0 &&
+        (timeout < 0 || sign_step.timeout_ms < timeout)) {
+      timeout = sign_step.timeout_ms;
+    }
+    if (overlay->redraw) {
+      draw_bar();
+    }
+  }
+  *timeout_out = timeout;
+  return HERDCAT_SUCCESS;
+}
+
 herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
   bool flush_blocked = false;
   bool runtime_ready = true;
@@ -533,81 +614,10 @@ herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
         !flush_blocked && pending_paws ? atomic_exchange(pending_paws, 0) : 0;
     int64_t sign_now = overlay_signs_now();
     int timeout = -1;
-    for (size_t i = 0; !flush_blocked && i < MAX_OUTPUTS; i++) {
-      overlay_t *overlay = &overlays[i];
-      if (!overlay->surface) {
-        continue;
-      }
-      activate(overlay);
-      if (overlay->await_configure || !overlay->configured)
-        continue;
-      if (overlay->resize && !resize_buffers(overlay)) {
-        return HERDCAT_ERROR_MEMORY;
-      }
-      if (overlay->tiers.pending) {
-        surface_tier_ready(&overlay->tiers);
-        overlay_signs_capacity(i, overlay->tiers.capacity);
-        // Flip at the promoted capacity before admitting any new sign frame.
-        int old_cat_x = overlay->cat_x, old_cat_y = overlay->cat_y;
-        clamp_position(overlay);
-        overlay_pointer_rebase(overlay, overlay->cat_x - old_cat_x,
-                               overlay->cat_y - old_cat_y);
-      }
-      int cat_h = scale_size_120(overlay->config.cat_height, overlay->scale);
-      int64_t cat_w = scale_size_120(cat_width(overlay), overlay->scale);
-      if (!cat_h || cat_w > INT_MAX) {
-        return HERDCAT_ERROR_MEMORY;
-      }
-      animation_overlay_cache((int)cat_w, cat_h);
-      for (int frame = 0; frame < NUM_FRAMES; frame++) {
-        if (!anim_cached_frames[frame].data) {
-          return HERDCAT_ERROR_MEMORY;
-        }
-      }
-      int next = animation_tick(paws);
-      if (next >= 0 && (timeout < 0 || next < timeout)) {
-        timeout = next;
-      }
-      bool concealed = overlay_hidden(overlay) || !overlay->configured;
-      font_panel_surface_margin(overlay->margin_x, overlay->margin_y);
-      text_set_scale((int)overlay->scale);
-      overlay_signs_width(i, overlay->width);
-      overlay_signs_step_t sign_step = overlay_signs_step(
-          i, &overlay->config, overlay->cat_x, cat_width(overlay),
-          overlay->height, concealed, sign_now);
-      const sign_frame_t *sign_frame = overlay_signs_frame(i);
-      int request = surface_tier_update(
-          &overlay->tiers, sign_step.required_capacity,
-          sign_step.shrink_blocked, sign_frame && sign_frame->transitioning,
-          sign_now);
-      if (request >= 0) {
-        request_size(overlay, request);
-        overlay->damage_all = true;
-        overlay->redraw = true;
-        if (overlay->await_configure)
-          continue;
-        // Equal geometry can still promote capacity. Rebuild at readiness.
-        timeout = 0;
-        continue;
-      }
-      if (overlay->tiers.shrink_at > sign_now) {
-        int64_t wait = overlay->tiers.shrink_at - sign_now;
-        if (wait > INT_MAX)
-          wait = INT_MAX;
-        if (timeout < 0 || wait < timeout)
-          timeout = (int)wait;
-      }
-      if (sign_step.redraw) {
-        overlay->redraw = true;
-      }
-      if (sign_step.timeout_ms > 0 &&
-          (timeout < 0 || sign_step.timeout_ms < timeout)) {
-        timeout = sign_step.timeout_ms;
-      }
-      if (overlay->redraw) {
-        draw_bar();
-      }
-    }
+    herdcat_error_t updated =
+        update_overlays(flush_blocked, paws, sign_now, &timeout);
+    if (updated != HERDCAT_SUCCESS)
+      return updated;
     int next_runtime = runtime_timeout ? runtime_timeout() : -1;
     if (next_runtime >= 0 && (timeout < 0 || next_runtime < timeout)) {
       timeout = next_runtime;

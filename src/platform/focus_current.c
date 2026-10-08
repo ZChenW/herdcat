@@ -247,6 +247,35 @@ int focus_current_seen(uint64_t focused, const focus_window_t *windows,
                              panes, pane_count, 0, 0, keys, capacity, &chosen);
 }
 
+static const tmux_slot_t *
+current_tmux_client(uint64_t focused, const agent_terminal_t *t,
+                    const uint64_t client_windows[FOCUS_PANE_MAX],
+                    const focus_pane_t *panes, size_t pane_count,
+                    int *rank_out) {
+  const tmux_slot_t *best = NULL;
+  int best_rank = -1;
+  for (size_t k = 0; k < FOCUS_PANE_MAX; k++) {
+    const tmux_slot_t *slot = &tmux_slots[k];
+    if (!slot->report.used || client_windows[k] != focused ||
+        (slot->socket[0] ? strcmp(slot->socket, t->socket) != 0
+                         : slot->report.pid != t->client_pid))
+      continue;
+    uint64_t outer = 0;
+    pid_t kitty_pid = slot->socket[0] ? slot->kitty_pid : t->outer_kitty_pid;
+    uint64_t kitty_pane =
+        slot->socket[0] ? slot->kitty_pane : t->outer_kitty_pane;
+    bool known = reported_split(panes, pane_count, kitty_pid, &outer);
+    int rank = known ? (outer == kitty_pane ? 2 : 0) : 1;
+    if (!best || rank > best_rank ||
+        (rank == best_rank && slot->report.seq > best->report.seq)) {
+      best = slot;
+      best_rank = rank;
+    }
+  }
+  *rank_out = best_rank;
+  return best;
+}
+
 int focus_current_query(uint64_t focused, const focus_window_t *windows,
                         size_t windows_count,
                         const agent_session_view_t *sessions, size_t count,
@@ -281,27 +310,9 @@ int focus_current_query(uint64_t focused, const focus_window_t *windows,
       continue;
     const agent_terminal_t *t = &s->terminal;
     if (t->kind == TERMINAL_TMUX) {
-      const tmux_slot_t *best = NULL;
-      int best_rank = -1;
-      for (size_t k = 0; k < FOCUS_PANE_MAX; k++) {
-        const tmux_slot_t *slot = &tmux_slots[k];
-        if (!slot->report.used || client_windows[k] != focused ||
-            (slot->socket[0] ? strcmp(slot->socket, t->socket) != 0
-                             : slot->report.pid != t->client_pid))
-          continue;
-        uint64_t outer = 0;
-        pid_t kitty_pid =
-            slot->socket[0] ? slot->kitty_pid : t->outer_kitty_pid;
-        uint64_t kitty_pane =
-            slot->socket[0] ? slot->kitty_pane : t->outer_kitty_pane;
-        bool known = reported_split(panes, pane_count, kitty_pid, &outer);
-        int rank = known ? (outer == kitty_pane ? 2 : 0) : 1;
-        if (!best || rank > best_rank ||
-            (rank == best_rank && slot->report.seq > best->report.seq)) {
-          best = slot;
-          best_rank = rank;
-        }
-      }
+      int best_rank;
+      const tmux_slot_t *best = current_tmux_client(
+          focused, t, client_windows, panes, pane_count, &best_rank);
       if (best) {
         belongs[i] = true;
         reported[i] = true;

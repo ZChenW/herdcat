@@ -436,6 +436,69 @@ static bool title_path(const char *agent, const agent_hook_scanner_t *scanner,
   return n > 0 && n <= AGENT_TRANSCRIPT_PATH_MAX;
 }
 
+static void send_hook_metadata(const char *agent, const char *event_name,
+                               const agent_adapter_t *adapter,
+                               const agent_hook_scanner_t *scanner, pid_t pid,
+                               agent_event_t event, bool metadata, int sent) {
+  // The raw id is only needed to look a title up, so it travels with the
+  // events that can change one, not with every tool call.
+  if (!sent && (metadata || event == AGENT_EVENT_DONE) &&
+      (scanner->valid_fields & (1U << HOOK_FIELD_SESSION)) &&
+      agent_session_id_valid(scanner->session_id)) {
+    char message[AGENT_SESSION_ID_MAX + 22];
+    snprintf(message, sizeof(message), "sid %016" PRIx64 " %.64s",
+             agent_hook_key(agent, scanner), scanner->session_id);
+    control_request(message);
+  }
+  if (!sent && pid > 1 && event != AGENT_EVENT_END) {
+    agent_terminal_t terminal;
+    char message[384];
+    if (agent_terminal_environment(&terminal) &&
+        agent_terminal_message(message, sizeof(message),
+                               agent_hook_key(agent, scanner), &terminal))
+      control_request(message);
+  }
+  if (!sent && (metadata || event == AGENT_EVENT_DONE)) {
+    if (!strcmp(agent, adapter->name) &&
+        (adapter->interrupt_source == AGENT_SIGNAL_TRANSCRIPT ||
+         adapter->error_source == AGENT_SIGNAL_TRANSCRIPT ||
+         !strcmp(agent, "pi") || !strcmp(agent, "grok"))) {
+      char path[AGENT_TRANSCRIPT_PATH_MAX + 1];
+      if (title_path(agent, scanner, path)) {
+        char message[AGENT_TRANSCRIPT_PATH_MAX + 23];
+        snprintf(message, sizeof(message), "path %016" PRIx64 " %s",
+                 agent_hook_key(agent, scanner), path);
+        control_request(message);
+      }
+    }
+    char name[41], cwd[AGENT_CWD_MAX + 1], encoded[AGENT_CWD_MAX * 2 + 1];
+    if (agent_hook_name(scanner, name) &&
+        decode_path(scanner->cwd, cwd, sizeof(cwd))) {
+      char message[576];
+      path_hex(cwd, encoded);
+      snprintf(message, sizeof(message), "cwd %016" PRIx64 " %s %s",
+               agent_hook_key(agent, scanner), encoded, name);
+      control_request(message);
+    }
+  }
+  if (!sent) {
+    char title[AGENT_TITLE_MAX + 1];
+    if (event != AGENT_EVENT_END && agent_hook_title(scanner, title)) {
+      char message[AGENT_TITLE_MAX + 22];
+      snprintf(message, sizeof(message), "ttl %016" PRIx64 " %s",
+               agent_hook_key(agent, scanner), title);
+      control_request(message);
+    }
+    char prompt[AGENT_TITLE_MAX + 1];
+    if (agent_hook_prompt(scanner, event_name, prompt)) {
+      char message[AGENT_TITLE_MAX + 22];
+      snprintf(message, sizeof(message), "ask %016" PRIx64 " %s",
+               agent_hook_key(agent, scanner), prompt);
+      control_request(message);
+    }
+  }
+}
+
 int agent_hook_run_adapter(const char *agent, const char *event_name,
                            const agent_adapter_t *adapter) {
   if (!agent_hook_valid_agent(agent)) {
@@ -519,62 +582,7 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
     return 0;
   }
   int sent = control_request(request);
-  // The raw id is only needed to look a title up, so it travels with the
-  // events that can change one, not with every tool call.
-  if (!sent && (metadata || event == AGENT_EVENT_DONE) &&
-      (scanner.valid_fields & (1U << HOOK_FIELD_SESSION)) &&
-      agent_session_id_valid(scanner.session_id)) {
-    char message[AGENT_SESSION_ID_MAX + 22];
-    snprintf(message, sizeof(message), "sid %016" PRIx64 " %.64s",
-             agent_hook_key(agent, &scanner), scanner.session_id);
-    control_request(message);
-  }
-  if (!sent && pid > 1 && event != AGENT_EVENT_END) {
-    agent_terminal_t terminal;
-    char message[384];
-    if (agent_terminal_environment(&terminal) &&
-        agent_terminal_message(message, sizeof(message),
-                               agent_hook_key(agent, &scanner), &terminal))
-      control_request(message);
-  }
-  if (!sent && (metadata || event == AGENT_EVENT_DONE)) {
-    if (!strcmp(agent, adapter->name) &&
-        (adapter->interrupt_source == AGENT_SIGNAL_TRANSCRIPT ||
-         adapter->error_source == AGENT_SIGNAL_TRANSCRIPT ||
-         !strcmp(agent, "pi") || !strcmp(agent, "grok"))) {
-      char path[AGENT_TRANSCRIPT_PATH_MAX + 1];
-      if (title_path(agent, &scanner, path)) {
-        char message[AGENT_TRANSCRIPT_PATH_MAX + 23];
-        snprintf(message, sizeof(message), "path %016" PRIx64 " %s",
-                 agent_hook_key(agent, &scanner), path);
-        control_request(message);
-      }
-    }
-    char name[41], cwd[AGENT_CWD_MAX + 1], encoded[AGENT_CWD_MAX * 2 + 1];
-    if (agent_hook_name(&scanner, name) &&
-        decode_path(scanner.cwd, cwd, sizeof(cwd))) {
-      char message[576];
-      path_hex(cwd, encoded);
-      snprintf(message, sizeof(message), "cwd %016" PRIx64 " %s %s",
-               agent_hook_key(agent, &scanner), encoded, name);
-      control_request(message);
-    }
-  }
-  if (!sent) {
-    char title[AGENT_TITLE_MAX + 1];
-    if (event != AGENT_EVENT_END && agent_hook_title(&scanner, title)) {
-      char message[AGENT_TITLE_MAX + 22];
-      snprintf(message, sizeof(message), "ttl %016" PRIx64 " %s",
-               agent_hook_key(agent, &scanner), title);
-      control_request(message);
-    }
-    char prompt[AGENT_TITLE_MAX + 1];
-    if (agent_hook_prompt(&scanner, event_name, prompt)) {
-      char message[AGENT_TITLE_MAX + 22];
-      snprintf(message, sizeof(message), "ask %016" PRIx64 " %s",
-               agent_hook_key(agent, &scanner), prompt);
-      control_request(message);
-    }
-  }
+  send_hook_metadata(agent, event_name, adapter, &scanner, pid, event, metadata,
+                     sent);
   return 0;
 }

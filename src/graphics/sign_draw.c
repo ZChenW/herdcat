@@ -361,6 +361,67 @@ static int build_svg(char *svg, int bw, int bh, const sign_shape_t *shape,
     return -1;
   return 0;
 }
+typedef struct {
+  int bw;
+  int bh;
+  double x;
+  double y;
+  double w;
+  double h;
+  double radius;
+  double stroke;
+  double rot_x;
+  double rot_y;
+  int left;
+  int top;
+} shape_raster_t;
+
+static uint8_t *raster_shape(const sign_shape_t *shape,
+                             const shape_raster_t *drawing) {
+  char svg[SVG_BYTES];
+  sign_shape_t source = *shape;
+  double sy = drawing->y - drawing->top, oy = drawing->rot_y - drawing->top;
+  if (shape->reflected) {
+    source.rotation = -source.rotation;
+    sy = drawing->bh - (sy + drawing->h);
+    oy = drawing->bh - oy;
+  }
+  if (build_svg(svg, drawing->bw, drawing->bh, &source,
+                drawing->x - drawing->left, sy, drawing->w, drawing->h,
+                drawing->radius, drawing->stroke,
+                drawing->rot_x - drawing->left, oy))
+    return NULL;
+  NSVGrasterizer *r = raster();
+  NSVGimage *image = nsvgParse(svg, "px", 96);
+  if (!r || !image) {
+    nsvgDelete(image);
+    return NULL;
+  }
+  uint8_t *pixels = calloc((size_t)drawing->bw * (size_t)drawing->bh, 4);
+  if (!pixels) {
+    nsvgDelete(image);
+    return NULL;
+  }
+  nsvgRasterize(r, image, 0, 0, 1, pixels, drawing->bw, drawing->bh,
+                drawing->bw * 4);
+  nsvgDelete(image);
+  // NanoSVG's scanline samples are asymmetric about pixel centers. Reflect
+  // the original bitmap so both sides retain precisely the same edge ink.
+  if (shape->reflected) {
+    for (int row = 0; row < drawing->bh / 2; row++) {
+      for (int column = 0; column < drawing->bw * 4; column++) {
+        size_t one = (size_t)row * drawing->bw * 4 + column;
+        size_t two = (size_t)(drawing->bh - 1 - row) * drawing->bw * 4 + column;
+        uint8_t byte = pixels[one];
+        pixels[one] = pixels[two];
+        pixels[two] = byte;
+      }
+    }
+  }
+  premultiply(pixels, drawing->bw * drawing->bh);
+  return pixels;
+}
+
 void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
                 double scale, pix_t bounds, bool store) {
   double x = shape->x * scale, y = shape->y * scale;
@@ -445,44 +506,20 @@ void draw_shape(uint8_t *dst, int dw, int dh, const sign_shape_t *shape,
 #endif
   uint8_t *pixels = slot ? slot->pixels : NULL;
   if (!pixels) {
-    char svg[SVG_BYTES];
-    sign_shape_t source = *shape;
-    double sy = y - top, oy = rot_y - top;
-    if (shape->reflected) {
-      source.rotation = -source.rotation;
-      sy = bh - (sy + h);
-      oy = bh - oy;
-    }
-    if (build_svg(svg, bw, bh, &source, x - left, sy, w, h, radius, stroke,
-                  rot_x - left, oy))
+    pixels = raster_shape(shape, &(shape_raster_t){.bw = bw,
+                                                   .bh = bh,
+                                                   .x = x,
+                                                   .y = y,
+                                                   .w = w,
+                                                   .h = h,
+                                                   .radius = radius,
+                                                   .stroke = stroke,
+                                                   .rot_x = rot_x,
+                                                   .rot_y = rot_y,
+                                                   .left = left,
+                                                   .top = top});
+    if (!pixels)
       return;
-    NSVGrasterizer *r = raster();
-    NSVGimage *image = nsvgParse(svg, "px", 96);
-    if (!r || !image) {
-      nsvgDelete(image);
-      return;
-    }
-    pixels = calloc((size_t)bw * (size_t)bh, 4);
-    if (!pixels) {
-      nsvgDelete(image);
-      return;
-    }
-    nsvgRasterize(r, image, 0, 0, 1, pixels, bw, bh, bw * 4);
-    nsvgDelete(image);
-    // NanoSVG's scanline samples are asymmetric about pixel centers. Reflect
-    // the original bitmap so both sides retain precisely the same edge ink.
-    if (shape->reflected) {
-      for (int row = 0; row < bh / 2; row++) {
-        for (int column = 0; column < bw * 4; column++) {
-          size_t one = (size_t)row * bw * 4 + column;
-          size_t two = (size_t)(bh - 1 - row) * bw * 4 + column;
-          uint8_t byte = pixels[one];
-          pixels[one] = pixels[two];
-          pixels[two] = byte;
-        }
-      }
-    }
-    premultiply(pixels, bw * bh);
     if (cacheable)
       cache_store(key, pixels, bw, bh, shape->pixel_snap);
   }

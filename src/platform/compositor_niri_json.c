@@ -285,6 +285,61 @@ static int take_id_field(json_t *j, focus_watch_event_t *event) {
   return take(j, '}') ? 0 : -1;
 }
 
+static int parse_windows_changed(json_t *j, focus_watch_event_t *event,
+                                 focus_window_t *out, size_t capacity) {
+  if (!take(j, '{')) {
+    return -1;
+  }
+  const char *key;
+  size_t kn;
+  if (!key_string(j, &key, &kn) || !same(key, kn, "windows") || !take(j, ':') ||
+      !take(j, '[')) {
+    return -1;
+  }
+  int count = 0;
+  space(j);
+  if (!(j->p < j->end && *j->p == ']')) {
+    do {
+      uint64_t id = 0, pid = 0;
+      bool has_pid = false, is_focused = false;
+      char title[AGENT_TERMINAL_TITLE_MAX + 1];
+      if (window_fields(j, &id, &pid, &has_pid, &is_focused, title) < 0) {
+        return -1;
+      }
+      if (is_focused && id) {
+        event->has_focused = true;
+        event->focused = id;
+      }
+      if (has_pid && pid && out && (size_t)count < capacity) {
+        out[count] = (focus_window_t){.id = id, .pid = (pid_t)pid};
+        memcpy(out[count].title, title, sizeof(title));
+      }
+      if (has_pid && pid) {
+        count++;
+      }
+      space(j);
+      if (j->p < j->end && *j->p == ']') {
+        j->p++;
+        break;
+      }
+      if (!take(j, ',')) {
+        return -1;
+      }
+    } while (true);
+  } else {
+    j->p++;
+  }
+  if (!take(j, '}')) {
+    return -1;
+  }
+  if ((size_t)count > capacity) {
+    return -1;
+  }
+  event->kind = FOCUS_WATCH_WINDOWS;
+  event->count = count;
+  return 1;
+}
+
 int focus_watch_parse(const char *line, size_t length,
                       focus_watch_event_t *event, focus_window_t *out,
                       size_t capacity) {
@@ -337,57 +392,9 @@ int focus_watch_parse(const char *line, size_t length,
     event->pid = has_pid ? (pid_t)pid : 0;
     result = 1;
   } else if (same(name, n, "WindowsChanged")) {
-    if (!take(&j, '{')) {
+    result = parse_windows_changed(&j, event, out, capacity);
+    if (result < 0)
       return -1;
-    }
-    const char *key;
-    size_t kn;
-    if (!key_string(&j, &key, &kn) || !same(key, kn, "windows") ||
-        !take(&j, ':') || !take(&j, '[')) {
-      return -1;
-    }
-    int count = 0;
-    space(&j);
-    if (!(j.p < j.end && *j.p == ']')) {
-      do {
-        uint64_t id = 0, pid = 0;
-        bool has_pid = false, is_focused = false;
-        char title[AGENT_TERMINAL_TITLE_MAX + 1];
-        if (window_fields(&j, &id, &pid, &has_pid, &is_focused, title) < 0) {
-          return -1;
-        }
-        if (is_focused && id) {
-          event->has_focused = true;
-          event->focused = id;
-        }
-        if (has_pid && pid && out && (size_t)count < capacity) {
-          out[count] = (focus_window_t){.id = id, .pid = (pid_t)pid};
-          memcpy(out[count].title, title, sizeof(title));
-        }
-        if (has_pid && pid) {
-          count++;
-        }
-        space(&j);
-        if (j.p < j.end && *j.p == ']') {
-          j.p++;
-          break;
-        }
-        if (!take(&j, ',')) {
-          return -1;
-        }
-      } while (true);
-    } else {
-      j.p++;
-    }
-    if (!take(&j, '}')) {
-      return -1;
-    }
-    if ((size_t)count > capacity) {
-      return -1;
-    }
-    event->kind = FOCUS_WATCH_WINDOWS;
-    event->count = count;
-    result = 1;
   } else if (!value(&j, 0)) {
     return -1;
   }

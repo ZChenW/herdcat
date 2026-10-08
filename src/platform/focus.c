@@ -325,155 +325,115 @@ static void finish(focus_result_t value) {
     result = value;
   start_next();
 }
-static void job_completed(int done) {
-  // Preserve kitty's existing best-effort result after niri succeeds.
-  if (job_kind == JOB_KITTY) {
-    if (kitty_client) {
-      kitty_client = false;
-      if (!start_tmux_switch())
-        finish(FOCUS_UNAVAILABLE);
-    } else {
-      finish(FOCUS_SUCCESS);
+static void complete_failed_job(void) {
+  // Lua-configured Hyprland explicitly rejects the legacy dispatcher.
+  // Retry once with a typed selector, sharing the original job deadline.
+  if (job_kind == JOB_NIRI && compositor_selected() == &COMPOSITOR_HYPRLAND &&
+      job.exited && WIFEXITED(job.status) && WEXITSTATUS(job.status) != 0 &&
+      strstr(job.buffer,
+             "dispatch in lua is a shorthand for hl.dispatch(...)")) {
+    int64_t deadline = job.deadline;
+    char text[80];
+    int n = snprintf(text, sizeof(text),
+                     "hl.dsp.focus({window=\"address:0x%" PRIx64 "\"})",
+                     terminal.window);
+    const char *args[] = {"hyprctl", "dispatch", text, NULL};
+    if (now_ms() < deadline && n > 0 && (size_t)n < sizeof(text) &&
+        start_kind(JOB_HYPR_LUA, args)) {
+      job.deadline = deadline;
+      return;
     }
+  }
+  if (job_kind == JOB_WEZ_CURRENT && current_note)
+    current_note(target_pid, current_window, terminal.socket, NULL, 0);
+  finish(FOCUS_UNAVAILABLE);
+}
+
+static void complete_tmux_session(void) {
+  size_t n = job.used;
+  while (n && (job.buffer[n - 1] == '\n' || job.buffer[n - 1] == '\r'))
+    n--;
+  if (!n || n >= sizeof(tmux_session) || memchr(job.buffer, '\n', n)) {
+    finish(FOCUS_NOT_FOUND);
     return;
   }
-  if (done < 0) {
-    // Lua-configured Hyprland explicitly rejects the legacy dispatcher.
-    // Retry once with a typed selector, sharing the original job deadline.
-    if (job_kind == JOB_NIRI && compositor_selected() == &COMPOSITOR_HYPRLAND &&
-        job.exited && WIFEXITED(job.status) && WEXITSTATUS(job.status) != 0 &&
-        strstr(job.buffer,
-               "dispatch in lua is a shorthand for hl.dispatch(...)")) {
-      int64_t deadline = job.deadline;
-      char text[80];
-      int n = snprintf(text, sizeof(text),
-                       "hl.dsp.focus({window=\"address:0x%" PRIx64 "\"})",
-                       terminal.window);
-      const char *args[] = {"hyprctl", "dispatch", text, NULL};
-      if (now_ms() < deadline && n > 0 && (size_t)n < sizeof(text) &&
-          start_kind(JOB_HYPR_LUA, args)) {
-        job.deadline = deadline;
-        return;
-      }
-    }
-    if (job_kind == JOB_WEZ_CURRENT && current_note)
-      current_note(target_pid, current_window, terminal.socket, NULL, 0);
+  memcpy(tmux_session, job.buffer, n);
+  tmux_session[n] = 0;
+  const char *args[] = {
+      "tmux",
+      "-S",
+      terminal.socket,
+      "list-clients",
+      "-F",
+      "#{client_pid} #{client_session} #{client_tty} #{client_activity}",
+      NULL};
+  if (!start_kind(JOB_TMUX_CLIENTS, args))
+    finish(FOCUS_UNAVAILABLE);
+}
+
+static void complete_tmux_clients(void) {
+  terminal.client_pid = 0;
+  bool found = focus_tmux_client(job.buffer, tmux_session, &terminal.client_pid,
+                                 tmux_tty, sizeof(tmux_tty));
+  // An empty successful reply means no clients. Malformed output is not
+  // evidence of detachment and must not change the last known state.
+  if (!found && job.used && strspn(job.buffer, "\r\n \t") != job.used) {
     finish(FOCUS_UNAVAILABLE);
     return;
   }
-  if (job_kind == JOB_TMUX_SESSION) {
-    size_t n = job.used;
-    while (n && (job.buffer[n - 1] == '\n' || job.buffer[n - 1] == '\r'))
-      n--;
-    if (!n || n >= sizeof(tmux_session) || memchr(job.buffer, '\n', n)) {
-      finish(FOCUS_NOT_FOUND);
-      return;
-    }
-    memcpy(tmux_session, job.buffer, n);
-    tmux_session[n] = 0;
-    const char *args[] = {
-        "tmux",
-        "-S",
-        terminal.socket,
-        "list-clients",
-        "-F",
-        "#{client_pid} #{client_session} #{client_tty} #{client_activity}",
-        NULL};
-    if (!start_kind(JOB_TMUX_CLIENTS, args))
-      finish(FOCUS_UNAVAILABLE);
-    return;
-  }
-  if (job_kind == JOB_TMUX_CLIENTS) {
-    terminal.client_pid = 0;
-    bool found =
-        focus_tmux_client(job.buffer, tmux_session, &terminal.client_pid,
-                          tmux_tty, sizeof(tmux_tty));
-    // An empty successful reply means no clients. Malformed output is not
-    // evidence of detachment and must not change the last known state.
-    if (!found && job.used && strspn(job.buffer, "\r\n \t") != job.used) {
-      finish(FOCUS_UNAVAILABLE);
-      return;
-    }
-    terminal.detached = !found;
-    char kitty_socket[AGENT_TERMINAL_LISTEN_MAX + 1];
-    terminal.outer_kitty_pid = 0;
-    terminal.outer_kitty_pane = 0;
-    if (found)
-      agent_terminal_lookup("/proc", terminal.client_pid,
-                            &terminal.outer_kitty_pane, kitty_socket,
-                            sizeof(kitty_socket), &terminal.outer_kitty_pid);
-    if (terminal_note)
-      terminal_note(target_pid, &terminal);
-    if (!found) {
-      finish(FOCUS_NOT_FOUND);
-    } else if (!foreground) {
-      finish(FOCUS_SUCCESS);
-    } else if (!start_windows()) {
-      finish(FOCUS_UNAVAILABLE);
-    }
-    return;
-  }
-  if (job_kind == JOB_WEZ_ACTIVATE) {
-    if (!start_terminal(false))
-      finish(FOCUS_UNAVAILABLE);
-    return;
-  }
-  if (job_kind == JOB_WEZ_LIST || job_kind == JOB_WEZ_CURRENT) {
-    focus_wezterm_pane_t panes[256];
-    int count = focus_parse_wezterm(job.buffer, job.used,
-                                    job_kind == JOB_WEZ_CURRENT, panes, 256);
-    if (job_kind == JOB_WEZ_CURRENT) {
-      if (current_note)
-        current_note(target_pid, current_window, terminal.socket, panes,
-                     count > 0 ? (size_t)count : 0);
-      finish(count >= 0 ? FOCUS_SUCCESS : FOCUS_UNAVAILABLE);
-      return;
-    }
-    bool found = false;
-    for (int i = 0; i < count; i++) {
-      if (panes[i].pane == terminal.pane) {
-        memcpy(terminal.title, panes[i].title, sizeof(terminal.title));
-        terminal.native_window = panes[i].window;
-        terminal.native_window_known = panes[i].has_window;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      finish(count < 0 ? FOCUS_UNAVAILABLE : FOCUS_NOT_FOUND);
-    } else {
-      if (terminal_note)
-        terminal_note(target_pid, &terminal);
-      if (!foreground)
-        finish(FOCUS_SUCCESS);
-      else if (!start_windows())
-        finish(FOCUS_UNAVAILABLE);
-    }
-    return;
-  }
-  if (job_kind == JOB_TMUX_SWITCH) {
-    if (terminal_note)
-      terminal_note(target_pid, &terminal);
+  terminal.detached = !found;
+  char kitty_socket[AGENT_TERMINAL_LISTEN_MAX + 1];
+  terminal.outer_kitty_pid = 0;
+  terminal.outer_kitty_pane = 0;
+  if (found)
+    agent_terminal_lookup("/proc", terminal.client_pid,
+                          &terminal.outer_kitty_pane, kitty_socket,
+                          sizeof(kitty_socket), &terminal.outer_kitty_pid);
+  if (terminal_note)
+    terminal_note(target_pid, &terminal);
+  if (!found) {
+    finish(FOCUS_NOT_FOUND);
+  } else if (!foreground) {
     finish(FOCUS_SUCCESS);
+  } else if (!start_windows()) {
+    finish(FOCUS_UNAVAILABLE);
+  }
+}
+
+static void complete_wezterm_list(void) {
+  focus_wezterm_pane_t panes[256];
+  int count = focus_parse_wezterm(job.buffer, job.used,
+                                  job_kind == JOB_WEZ_CURRENT, panes, 256);
+  if (job_kind == JOB_WEZ_CURRENT) {
+    if (current_note)
+      current_note(target_pid, current_window, terminal.socket, panes,
+                   count > 0 ? (size_t)count : 0);
+    finish(count >= 0 ? FOCUS_SUCCESS : FOCUS_UNAVAILABLE);
     return;
   }
-  if (job_kind == JOB_NIRI || job_kind == JOB_HYPR_LUA) {
-    if (terminal.kind == TERMINAL_WEZTERM) {
-      terminal.current_known = true;
-      terminal.current_pane = terminal.pane;
-      if (terminal_note)
-        terminal_note(target_pid, &terminal);
+  bool found = false;
+  for (int i = 0; i < count; i++) {
+    if (panes[i].pane == terminal.pane) {
+      memcpy(terminal.title, panes[i].title, sizeof(terminal.title));
+      terminal.native_window = panes[i].window;
+      terminal.native_window_known = panes[i].has_window;
+      found = true;
+      break;
     }
-    if (terminal.kind == TERMINAL_TMUX) {
-      if (start_kitty())
-        kitty_client = true;
-      else if (!start_tmux_switch())
-        finish(FOCUS_UNAVAILABLE);
-    } else if (!start_kitty()) {
+  }
+  if (!found) {
+    finish(count < 0 ? FOCUS_UNAVAILABLE : FOCUS_NOT_FOUND);
+  } else {
+    if (terminal_note)
+      terminal_note(target_pid, &terminal);
+    if (!foreground)
       finish(FOCUS_SUCCESS);
-    }
-    return;
+    else if (!start_windows())
+      finish(FOCUS_UNAVAILABLE);
   }
+}
+
+static void complete_window_lookup(void) {
   focus_window_t windows[256];
   uint64_t id;
   const compositor_ops_t *ops = compositor_selected();
@@ -501,6 +461,65 @@ static void job_completed(int done) {
   }
   if (terminal.kind == TERMINAL_NONE)
     job.deadline = focus_deadline;
+}
+
+static void job_completed(int done) {
+  // Preserve kitty's existing best-effort result after niri succeeds.
+  if (job_kind == JOB_KITTY) {
+    if (kitty_client) {
+      kitty_client = false;
+      if (!start_tmux_switch())
+        finish(FOCUS_UNAVAILABLE);
+    } else {
+      finish(FOCUS_SUCCESS);
+    }
+    return;
+  }
+  if (done < 0) {
+    complete_failed_job();
+    return;
+  }
+  if (job_kind == JOB_TMUX_SESSION) {
+    complete_tmux_session();
+    return;
+  }
+  if (job_kind == JOB_TMUX_CLIENTS) {
+    complete_tmux_clients();
+    return;
+  }
+  if (job_kind == JOB_WEZ_ACTIVATE) {
+    if (!start_terminal(false))
+      finish(FOCUS_UNAVAILABLE);
+    return;
+  }
+  if (job_kind == JOB_WEZ_LIST || job_kind == JOB_WEZ_CURRENT) {
+    complete_wezterm_list();
+    return;
+  }
+  if (job_kind == JOB_TMUX_SWITCH) {
+    if (terminal_note)
+      terminal_note(target_pid, &terminal);
+    finish(FOCUS_SUCCESS);
+    return;
+  }
+  if (job_kind == JOB_NIRI || job_kind == JOB_HYPR_LUA) {
+    if (terminal.kind == TERMINAL_WEZTERM) {
+      terminal.current_known = true;
+      terminal.current_pane = terminal.pane;
+      if (terminal_note)
+        terminal_note(target_pid, &terminal);
+    }
+    if (terminal.kind == TERMINAL_TMUX) {
+      if (start_kitty())
+        kitty_client = true;
+      else if (!start_tmux_switch())
+        finish(FOCUS_UNAVAILABLE);
+    } else if (!start_kitty()) {
+      finish(FOCUS_SUCCESS);
+    }
+    return;
+  }
+  complete_window_lookup();
 }
 void focus_poll(void) {
   if (!job.pid) {

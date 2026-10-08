@@ -456,6 +456,57 @@ static void emit_below_card(signs_t *model, const sign_input_t *in,
     include_bounds(frame, card.bounds_x, card.bounds_y, card.bounds_w,
                    card.bounds_h);
 }
+static void layout_post(signs_t *model, const sign_input_t *in,
+                        sign_frame_t *frame, size_t count, double desk_clear,
+                        double scale, const sign_palette_t *palette) {
+  int shown = 0;
+  for (size_t i = 0; i < count; i++)
+    if (show_session(in, agent_sign_state(&in->sessions[i])))
+      shown++;
+  int row = shown;
+  for (size_t i = 0; i < count; i++) {
+    sign_slot_t *slot = claim_slot(model, &in->sessions[i], 100);
+    if (!slot)
+      continue;
+    slot->present = true;
+    slot->session = in->sessions[i];
+    bool visible = show_session(in, agent_sign_state(&slot->session));
+    double bottom = 100;
+    if (visible)
+      bottom = 100 + --row * 30;
+    aim(&slot->bottom, bottom, MOVE_MS, &BEZIER_MOVE, in, frame);
+  }
+  double pole_x = in->cat_x + 150 * scale;
+  double cat_bottom = in->cat_y + in->cat_height;
+  double pole = aim(&model->pole, shown ? 106 + 30.0 * shown : 50, MOVE_MS,
+                    &BEZIER_MOVE, in, frame) *
+                scale;
+  pole += desk_clear * scale;
+  // Outer width 6, centered on the same axis. The cap sits 6px above the
+  // pole top: its padding edge is 2px in, and CSS top is -8.
+  add_shape(frame, SIGN_RECT, pole_x - 3 * scale, cat_bottom - pole, 6 * scale,
+            pole, 3 * scale, 2 * scale, palette->paper, palette->ink);
+  add_shape(frame, SIGN_RECT, pole_x - 5 * scale, cat_bottom - pole - 6 * scale,
+            10 * scale, 10 * scale, 5 * scale, 2 * scale, palette->paper,
+            palette->ink);
+  for (int pass = 0; pass < 2; pass++) {
+    for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
+      sign_slot_t *slot = &model->slots[i];
+      if (!slot->used)
+        continue;
+      bool hovered = in->has_hover && in->hover_key == slot->session.key;
+      if (hovered != (pass == 1))
+        continue;
+      layout_board(slot, in, frame, pole_x, cat_bottom, scale, desk_clear);
+    }
+  }
+  double extra = shown > 5 ? (shown - 5) * 30 : 0;
+  frame->pad =
+      cover(in->cat_x - 70 * scale, in->cat_y - (160 + extra) * scale,
+            (150 + 17 + POST_BOARD_MAX + 70) * scale, (270 + extra) * scale);
+  frame->has_pad = true;
+}
+
 static void build_frame(signs_t *model, const sign_input_t *in,
                         sign_frame_t *frame, double desk_clear) {
   memset(frame, 0, sizeof(*frame));
@@ -520,53 +571,7 @@ static void build_frame(signs_t *model, const sign_input_t *in,
   if (in->style == SIGN_STYLE_FAN) {
     layout_fan(model, in, frame, count, desk_clear);
   } else {
-    int shown = 0;
-    for (size_t i = 0; i < count; i++)
-      if (show_session(in, agent_sign_state(&in->sessions[i])))
-        shown++;
-    int row = shown;
-    for (size_t i = 0; i < count; i++) {
-      sign_slot_t *slot = claim_slot(model, &in->sessions[i], 100);
-      if (!slot)
-        continue;
-      slot->present = true;
-      slot->session = in->sessions[i];
-      bool visible = show_session(in, agent_sign_state(&slot->session));
-      double bottom = 100;
-      if (visible)
-        bottom = 100 + --row * 30;
-      aim(&slot->bottom, bottom, MOVE_MS, &BEZIER_MOVE, in, frame);
-    }
-    double pole_x = in->cat_x + 150 * scale;
-    double cat_bottom = in->cat_y + in->cat_height;
-    double pole = aim(&model->pole, shown ? 106 + 30.0 * shown : 50, MOVE_MS,
-                      &BEZIER_MOVE, in, frame) *
-                  scale;
-    pole += desk_clear * scale;
-    // Outer width 6, centered on the same axis. The cap sits 6px above the
-    // pole top: its padding edge is 2px in, and CSS top is -8.
-    add_shape(frame, SIGN_RECT, pole_x - 3 * scale, cat_bottom - pole,
-              6 * scale, pole, 3 * scale, 2 * scale, palette->paper,
-              palette->ink);
-    add_shape(frame, SIGN_RECT, pole_x - 5 * scale,
-              cat_bottom - pole - 6 * scale, 10 * scale, 10 * scale, 5 * scale,
-              2 * scale, palette->paper, palette->ink);
-    for (int pass = 0; pass < 2; pass++) {
-      for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
-        sign_slot_t *slot = &model->slots[i];
-        if (!slot->used)
-          continue;
-        bool hovered = in->has_hover && in->hover_key == slot->session.key;
-        if (hovered != (pass == 1))
-          continue;
-        layout_board(slot, in, frame, pole_x, cat_bottom, scale, desk_clear);
-      }
-    }
-    double extra = shown > 5 ? (shown - 5) * 30 : 0;
-    frame->pad =
-        cover(in->cat_x - 70 * scale, in->cat_y - (160 + extra) * scale,
-              (150 + 17 + POST_BOARD_MAX + 70) * scale, (270 + extra) * scale);
-    frame->has_pad = true;
+    layout_post(model, in, frame, count, desk_clear, scale, palette);
   }
   // The desk stays on the unshifted cat. The pivot above already moved.
   if (in->orientation == SIGN_BELOW) {

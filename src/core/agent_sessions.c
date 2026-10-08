@@ -357,6 +357,46 @@ void drop_same_process(const agent_session_t *keep) {
   }
 }
 
+static void apply_session_event(agent_session_t *s, uint64_t key,
+                                agent_event_t event, int64_t now_ms,
+                                int done_timeout_s) {
+  agent_state_t previous = s->state;
+  switch (event) {
+  case AGENT_EVENT_INTERRUPT:
+  case AGENT_EVENT_IDLE:
+    s->state = AGENT_STATE_IDLE;
+    break;
+  case AGENT_EVENT_WORKING:
+    s->state = AGENT_STATE_WORKING;
+    break;
+  case AGENT_EVENT_WAITING:
+    s->state = AGENT_STATE_WAITING;
+    break;
+  case AGENT_EVENT_FAIL:
+  case AGENT_EVENT_DONE: {
+    bool seen = s->parent_order || !done_sticky || key_is_focused(key);
+    s->state = event == AGENT_EVENT_FAIL ? AGENT_STATE_ERROR : AGENT_STATE_DONE;
+    s->unread = !seen;
+    s->done_until_ms =
+        seen && done_timeout_s > 0 ? deadline(now_ms, done_timeout_s) : 0;
+    break;
+  }
+  case AGENT_EVENT_REST:
+    if (s->state == AGENT_STATE_WORKING) {
+      s->state = AGENT_STATE_IDLE;
+    }
+    break;
+  default:
+    break;
+  }
+  if (s->state != previous)
+    s->state_since_ms = now_ms;
+  if (!finished(s->state)) {
+    s->done_until_ms = 0;
+    s->unread = false;
+  }
+}
+
 int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
                          pid_t pid, int64_t now_ms, int done_timeout_s,
                          bool *is_new) {
@@ -428,41 +468,7 @@ int agent_sessions_apply(uint64_t key, const char *agent, agent_event_t event,
     s->watched = false;
     memset(s->terminals, 0, sizeof(s->terminals));
   }
-  agent_state_t previous = s->state;
-  switch (event) {
-  case AGENT_EVENT_INTERRUPT:
-  case AGENT_EVENT_IDLE:
-    s->state = AGENT_STATE_IDLE;
-    break;
-  case AGENT_EVENT_WORKING:
-    s->state = AGENT_STATE_WORKING;
-    break;
-  case AGENT_EVENT_WAITING:
-    s->state = AGENT_STATE_WAITING;
-    break;
-  case AGENT_EVENT_FAIL:
-  case AGENT_EVENT_DONE: {
-    bool seen = s->parent_order || !done_sticky || key_is_focused(key);
-    s->state = event == AGENT_EVENT_FAIL ? AGENT_STATE_ERROR : AGENT_STATE_DONE;
-    s->unread = !seen;
-    s->done_until_ms =
-        seen && done_timeout_s > 0 ? deadline(now_ms, done_timeout_s) : 0;
-    break;
-  }
-  case AGENT_EVENT_REST:
-    if (s->state == AGENT_STATE_WORKING) {
-      s->state = AGENT_STATE_IDLE;
-    }
-    break;
-  default:
-    break;
-  }
-  if (s->state != previous)
-    s->state_since_ms = now_ms;
-  if (!finished(s->state)) {
-    s->done_until_ms = 0;
-    s->unread = false;
-  }
+  apply_session_event(s, key, event, now_ms, done_timeout_s);
   if (created || s->pid != previous_pid) {
     drop_same_process(s);
   }

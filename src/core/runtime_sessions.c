@@ -295,6 +295,107 @@ static int focus_command(const char *key) {
   return !found || focus_session_window(pid) < 0;
 }
 
+static int status_response(char *response, size_t capacity) {
+  const compositor_ops_t *backend = compositor_selected();
+  const char *input = input_status_name(
+      input_child_is_alive(), input_device_count(), input_denied_count());
+  int length = snprintf(
+      response, capacity,
+      "running pid=%ld hidden=%s paused=%s input=%s input-helper=%s "
+      "devices=%u denied=%u "
+      "config=%s agent=%s sessions=%d compositor=%s focus-watch=%s\n%s",
+      (long)getpid(), (int)hidden ? "yes" : "no", (int)paused ? "yes" : "no",
+      input, input_mode_name(), input_device_count(), input_denied_count(),
+      config_path, agent_state_name(animation_get_agent_state()),
+      agent_sessions_count(), backend ? backend->name : "unavailable",
+      focus_watch_available() ? "ready" : "unavailable", input_mode_hint());
+  if (strcmp(input, "denied") == 0 && length > 0 && (size_t)length < capacity) {
+    snprintf(response + length, capacity - (size_t)length,
+             "\nNo keyboard readable: %s", input_access_hint());
+  }
+  return 0;
+}
+
+static void reconcile_metadata(const char *request) {
+  const char *space = strchr(request, ' ');
+  uint64_t key = strtoull(space + 1, NULL, 16);
+  pid_t before[AGENT_SESSIONS_MAX], after[AGENT_SESSIONS_MAX];
+  int n = agent_sessions_pids(before, AGENT_SESSIONS_MAX);
+  agent_sessions_process(key, 0, true, "/proc");
+  int m = agent_sessions_pids(after, AGENT_SESSIONS_MAX);
+  for (int i = 0; i < n; i++)
+    if (!has_pid(after, m, before[i]))
+      agent_watch_remove(before[i]);
+  pid_t pid = agent_sessions_pid(key);
+  if (pid > 0) {
+    int watched = agent_watch_add(pid);
+    agent_sessions_set_watched(key, watched == 0);
+    if (watched < 0 && errno == ESRCH)
+      agent_sessions_remove_pid(pid);
+  }
+  agent_refresh();
+}
+
+static int terminal_command(const char *request) {
+  int result = 0;
+  uint64_t key;
+  agent_terminal_t terminal, previous;
+  if (!agent_terminal_request(request, &key, &terminal) ||
+      agent_sessions_terminal_pid(key) <= 1) {
+    result = 1;
+  } else {
+    pid_t pid = agent_sessions_terminal_pid(key);
+    bool changed = !agent_sessions_terminal(pid, &previous, NULL, 0) ||
+                   previous.kind != terminal.kind ||
+                   previous.pane != terminal.pane ||
+                   strcmp(previous.socket, terminal.socket);
+    agent_sessions_set_terminal(key, &terminal);
+    if (changed)
+      focus_terminal_resolve(pid);
+    if (terminal.kind == TERMINAL_WEZTERM)
+      try_deferred_wezterm_focus();
+  }
+  return result;
+}
+
+static int state_command(const char *request) {
+  int result = 0;
+  agent_state_t state;
+  if (agent_state_parse(request + 6, &state) == 0) {
+    agent_event_t event = AGENT_EVENT_FAIL;
+    agent_event_parse(request + 6, &event);
+    // An error only replaces a turn in progress, so start one first.
+    if (state == AGENT_STATE_ERROR)
+      agent_apply(0, "manual", AGENT_EVENT_WORKING, 0, 0, false, 0);
+    result = agent_apply(0, "manual",
+                         state == AGENT_STATE_IDLE ? AGENT_EVENT_END : event, 0,
+                         0, false, 0);
+  } else {
+    result = 1;
+  }
+  return result;
+}
+
+static int pane_command(const char *request) {
+  int result = 0;
+  agent_terminal_t report;
+  if (agent_terminal_pane_request(request, &report)) {
+    result = !focus_tmux_pane_set_socket(report.client_pid, report.pane,
+                                         report.socket);
+    if (!result)
+      agent_sessions_tmux_attached(report.socket);
+  } else {
+    pid_t pane_pid = 0;
+    uint64_t pane_split = 0;
+    // Keep kitty's original protocol and validation unchanged.
+    result = !focus_pane_parse(request, &pane_pid, &pane_split) ||
+             !focus_pane_set(pane_pid, pane_split);
+  }
+  if (!result)
+    note_window_focus();
+  return result;
+}
+
 int command(const char *request, char *response, size_t capacity) {
   int result = 0;
   if (strcmp(request, "stop") == 0) {
@@ -320,39 +421,11 @@ int command(const char *request, char *response, size_t capacity) {
   } else if (strcmp(request, "reload") == 0) {
     { result = reload(); }
   } else if (strncmp(request, "state ", 6) == 0) {
-    agent_state_t state;
-    if (agent_state_parse(request + 6, &state) == 0) {
-      agent_event_t event = AGENT_EVENT_FAIL;
-      agent_event_parse(request + 6, &event);
-      // An error only replaces a turn in progress, so start one first.
-      if (state == AGENT_STATE_ERROR)
-        agent_apply(0, "manual", AGENT_EVENT_WORKING, 0, 0, false, 0);
-      result = agent_apply(0, "manual",
-                           state == AGENT_STATE_IDLE ? AGENT_EVENT_END : event,
-                           0, 0, false, 0);
-    } else {
-      result = 1;
-    }
+    result = state_command(request);
   } else if (strncmp(request, "ev ", 3) == 0) {
     result = agent_command(request);
   } else if (strncmp(request, "term ", 5) == 0) {
-    uint64_t key;
-    agent_terminal_t terminal, previous;
-    if (!agent_terminal_request(request, &key, &terminal) ||
-        agent_sessions_terminal_pid(key) <= 1) {
-      result = 1;
-    } else {
-      pid_t pid = agent_sessions_terminal_pid(key);
-      bool changed = !agent_sessions_terminal(pid, &previous, NULL, 0) ||
-                     previous.kind != terminal.kind ||
-                     previous.pane != terminal.pane ||
-                     strcmp(previous.socket, terminal.socket);
-      agent_sessions_set_terminal(key, &terminal);
-      if (changed)
-        focus_terminal_resolve(pid);
-      if (terminal.kind == TERMINAL_WEZTERM)
-        try_deferred_wezterm_focus();
-    }
+    result = terminal_command(request);
   } else if (strncmp(request, "tmux ", 5) == 0) {
     agent_terminal_t terminal;
     if (!agent_terminal_tmux_request(request, &terminal)) {
@@ -385,21 +458,7 @@ int command(const char *request, char *response, size_t capacity) {
   } else if (strncmp(request, "focus ", 6) == 0) {
     result = focus_command(request + 6);
   } else if (strncmp(request, "pane ", 5) == 0) {
-    agent_terminal_t report;
-    if (agent_terminal_pane_request(request, &report)) {
-      result = !focus_tmux_pane_set_socket(report.client_pid, report.pane,
-                                           report.socket);
-      if (!result)
-        agent_sessions_tmux_attached(report.socket);
-    } else {
-      pid_t pane_pid = 0;
-      uint64_t pane_split = 0;
-      // Keep kitty's original protocol and validation unchanged.
-      result = !focus_pane_parse(request, &pane_pid, &pane_split) ||
-               !focus_pane_set(pane_pid, pane_split);
-    }
-    if (!result)
-      note_window_focus();
+    result = pane_command(request);
   } else if (strcmp(request, "sessions") == 0) {
     if (agent_sessions_format(response, capacity, monotonic_ms()) == 0) {
       snprintf(response, capacity, "No agent sessions");
@@ -407,25 +466,7 @@ int command(const char *request, char *response, size_t capacity) {
     window_session_diagnostics(response, capacity);
     return 0;
   } else if (strcmp(request, "status") == 0) {
-    const compositor_ops_t *backend = compositor_selected();
-    const char *input = input_status_name(
-        input_child_is_alive(), input_device_count(), input_denied_count());
-    int length = snprintf(
-        response, capacity,
-        "running pid=%ld hidden=%s paused=%s input=%s input-helper=%s "
-        "devices=%u denied=%u "
-        "config=%s agent=%s sessions=%d compositor=%s focus-watch=%s\n%s",
-        (long)getpid(), (int)hidden ? "yes" : "no", (int)paused ? "yes" : "no",
-        input, input_mode_name(), input_device_count(), input_denied_count(),
-        config_path, agent_state_name(animation_get_agent_state()),
-        agent_sessions_count(), backend ? backend->name : "unavailable",
-        focus_watch_available() ? "ready" : "unavailable", input_mode_hint());
-    if (strcmp(input, "denied") == 0 && length > 0 &&
-        (size_t)length < capacity) {
-      snprintf(response + length, capacity - (size_t)length,
-               "\nNo keyboard readable: %s", input_access_hint());
-    }
-    return 0;
+    return status_response(response, capacity);
   } else {
     { result = 1; }
   }
@@ -434,23 +475,7 @@ int command(const char *request, char *response, size_t capacity) {
       (!strncmp(request, "sid ", 4) || !strncmp(request, "cwd ", 4) ||
        !strncmp(request, "name ", 5) || !strncmp(request, "path ", 5) ||
        !strncmp(request, "ttl ", 4) || !strncmp(request, "ask ", 4))) {
-    const char *space = strchr(request, ' ');
-    uint64_t key = strtoull(space + 1, NULL, 16);
-    pid_t before[AGENT_SESSIONS_MAX], after[AGENT_SESSIONS_MAX];
-    int n = agent_sessions_pids(before, AGENT_SESSIONS_MAX);
-    agent_sessions_process(key, 0, true, "/proc");
-    int m = agent_sessions_pids(after, AGENT_SESSIONS_MAX);
-    for (int i = 0; i < n; i++)
-      if (!has_pid(after, m, before[i]))
-        agent_watch_remove(before[i]);
-    pid_t pid = agent_sessions_pid(key);
-    if (pid > 0) {
-      int watched = agent_watch_add(pid);
-      agent_sessions_set_watched(key, watched == 0);
-      if (watched < 0 && errno == ESRCH)
-        agent_sessions_remove_pid(pid);
-    }
-    agent_refresh();
+    reconcile_metadata(request);
   }
   snprintf(response, capacity, "%s", result ? "request failed" : "ok");
   return result;
