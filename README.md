@@ -11,7 +11,7 @@ A desktop cat for Wayland that herds your coding agents: it types along with you
 
 - 🪧 One sign per agent session, with its project, session title and state
 - 🚦 Working, waiting for approval, done, stopped on error and idle at a glance
-- 🖱️ Click a sign to jump to that session's terminal (niri; pane focus in kitty, tmux and WezTerm)
+- 🖱️ Click a sign to jump to that session's terminal (niri and Sway; experimental Hyprland; pane focus in kitty, tmux and WezTerm)
 - 🔔 Finished sessions stay up until you have looked at them
 - ⌨️ The sign of the terminal you type in comes down under the paws
 - 🎴 Two styles, fan and signpost; right-click to switch style, language, font and theme
@@ -212,7 +212,13 @@ herdcat --watch-config
 <details>
 <summary>Clicking a sign does not focus the terminal</summary>
 
-Jumping to a window needs niri; pane focus supports kitty, tmux and WezTerm. Ghostty supports window focus only. See [docs/signs.md](docs/signs.md) for setup and limits.
+Jumping to a window supports niri and Sway (`SWAYSOCK`, no opt-in). Hyprland
+still needs `compositor_experimental=1`. Sway is verified on headless 1.12;
+real pointer clicks, multiple outputs and XWayland remain untested. See
+[compositor support](docs/compositors.md).
+
+Pane focus supports kitty, tmux and WezTerm. Ghostty supports window focus only.
+See [docs/signs.md](docs/signs.md) for setup and limits.
 
 </details>
 

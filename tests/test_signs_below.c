@@ -89,7 +89,8 @@ static void transform_geometry(void) {
   a.texts[1] = (sign_text_t){
       .anchor_y = 60, .px = 12.5, .tag_scale = .96, .back = 0xffffffff};
   a.hit_count = 1;
-  a.hits[0] = (sign_hit_t){10, 20, 30, 40, 123, 42};
+  a.hits[0] =
+      (sign_hit_t){.x = 10, .y = 20, .w = 30, .h = 40, .key = 123, .pid = 42};
   a.has_pad = true;
   a.pad = (sign_rect_t){10, 0, 100, 100};
   a.bounds_y = 10;

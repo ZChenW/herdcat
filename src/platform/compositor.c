@@ -14,7 +14,7 @@ const compositor_ops_t *compositor_detect(bool experimental) {
     return experimental ? &COMPOSITOR_HYPRLAND : NULL;
   value = getenv("SWAYSOCK");
   if (value && *value)
-    return experimental ? &COMPOSITOR_SWAY : NULL;
+    return &COMPOSITOR_SWAY;
   return NULL;
 }
 const compositor_ops_t *compositor_selected(void) {
@@ -23,7 +23,10 @@ const compositor_ops_t *compositor_selected(void) {
 void compositor_configure(bool experimental) {
   if (experimental == experimental_enabled)
     return;
+  const compositor_ops_t *previous = compositor_selected();
+  experimental_enabled = experimental;
+  if (previous == compositor_selected())
+    return;
   focus_watch_cleanup();
   focus_cleanup();
-  experimental_enabled = experimental;
 }

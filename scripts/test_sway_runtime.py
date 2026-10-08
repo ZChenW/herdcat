@@ -224,13 +224,13 @@ class SwayTest:
             'hotplug_scan_interval=3600\nmonitor=HEADLESS-1\nfps=30\n'
             'overlay_opacity=0\nsign_style=fan\nsign_theme=light\n'
             'sign_done=sticky\nagent_done_timeout=30\n'
-            'compositor_experimental=1\n')
+            'compositor_experimental=0\n')
         self.app = self.spawn('herdcat', [str(BINARY), '-c', str(cat_config)],
                               env=dict(self.env, WAYLAND_DEBUG='client'))
         self.wait('herdcat control socket', lambda:
                   (self.directory / 'herdcat.sock').exists())
         self.wait('Sway backend ready', lambda:
-                  'compositor=Sway (experimental) focus-watch=ready'
+                  'compositor=Sway focus-watch=ready'
                   in self.cli('--status'))
         for key, client in zip(KEYS, clients):
             self.wire(f'ev claude working {key} {client.pid}')
@@ -240,7 +240,7 @@ class SwayTest:
                   'new layer surface: namespace herdcat-overlay'
                   in self.logs['sway'].read_text(errors='replace'))
         print('PASS 1: layer created, configured, buffer committed and frame replied', flush=True)
-        print('PASS 2: --status selects Sway (experimental), focus-watch=ready', flush=True)
+        print('PASS 2: --status selects Sway, focus-watch=ready', flush=True)
         self.wait('initial tree/PID discovery', lambda:
                   self.mapped(KEYS[0], a, 'no') and self.mapped(KEYS[1], b, 'yes'))
         for key, client in zip(KEYS, clients):
@@ -288,23 +288,32 @@ class SwayTest:
         self.wait('pidfd removes closed session', lambda: not self.session(KEYS[1]))
         print('PASS 6: IPC close clears con_id while PID lives; PID exit removes session', flush=True)
 
-        # Verify the opt-in gate on the same real compositor, then reconnect
-        # and rediscover without restarting herdcat or changing default values.
+        # Sway works at the default zero value. Toggling the Hyprland-only
+        # setting and reloading must preserve subscription/focus handling.
+        # A new ordinary window supplies real WINDOW focus events; switching
+        # to an empty workspace would emit only WORKSPACE events.
+        reload_client = self.spawn('reload-client', [str(CLIENT), 'Reload fixture'],
+                                   stdin=subprocess.PIPE)
+        c = self.wait('reload fixture window', lambda:
+                      next((node['id'] for node in nodes(self.tree())
+                            if node.get('pid') == reload_client.pid), 0))
+        self.sway_command(f'[con_id={a}] focus')
+        self.wait('focus before reload', lambda: self.mapped(KEYS[0], a, 'yes'))
         text = cat_config.read_text()
-        cat_config.write_text(text.replace('compositor_experimental=1',
-                                           'compositor_experimental=0'))
-        self.cli('--reload')
-        self.check('compositor=unavailable focus-watch=unavailable' in
-                   self.cli('--status'), 'disabled opt-in still selects a backend')
-        self.check('window-session' not in self.cli('--sessions'),
-                   'disabled opt-in still exposes Sway tracking')
-        rejected = self.run([str(BINARY), '--focus', KEYS[0]], required=False)
-        self.check(rejected.returncode != 0, 'disabled opt-in accepts focus')
-        cat_config.write_text(text)
-        self.cli('--reload')
-        self.wait('opt-in reconnect/initial focused tree', lambda:
-                  'compositor=Sway (experimental) focus-watch=ready' in
-                  self.cli('--status') and self.mapped(KEYS[0], a, 'yes'))
+        for experimental in (1, 0):
+            cat_config.write_text(text.replace('compositor_experimental=0',
+                                               f'compositor_experimental={experimental}'))
+            self.cli('--reload')
+            self.check('compositor=Sway focus-watch=ready' in
+                       self.cli('--status'), 'reload interrupted Sway subscription')
+            self.check(self.mapped(KEYS[0], a, 'yes'),
+                       'reload lost Sway window/focus mapping')
+            self.sway_command(f'[con_id={c}] focus')
+            self.wait('subscription sees background session after reload', lambda:
+                      self.focused() == c and self.mapped(KEYS[0], a, 'no'))
+            self.cli('--focus', KEYS[0])
+            self.wait('focus/subscription after config reload', lambda:
+                      self.focused() == a and self.mapped(KEYS[0], a, 'yes'))
         children_path = Path(f'/proc/{self.app.pid}/task/{self.app.pid}/children')
         children = children_path.read_text().split()
         self.cli('--toggle')
@@ -314,7 +323,7 @@ class SwayTest:
                    'herdcat control socket survived shutdown')
         self.check(all(not Path(f'/proc/{pid}').exists() for pid in children),
                    f'herdcat children survived shutdown: {children}')
-        print('PASS 7: disabled opt-in, re-enable/reconnect and clean shutdown', flush=True)
+        print('PASS 7: Sway works with opt-in=0, reload preserves subscription and clean shutdown', flush=True)
         print(f'Sway runtime: all 7 checks passed ({version}; headless/pixman).', flush=True)
 
     def diagnostics(self):

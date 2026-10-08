@@ -3,6 +3,12 @@
 #include "../src/platform/wayland.c"
 #include "test_helpers.h"
 
+uint32_t __wrap_wl_proxy_get_version(struct wl_proxy *proxy);
+struct wl_proxy *
+__wrap_wl_proxy_marshal_flags(struct wl_proxy *proxy, uint32_t opcode,
+                              const struct wl_interface *interface,
+                              uint32_t version, uint32_t flags, ...);
+
 static unsigned acknowledgements;
 uint32_t __wrap_wl_proxy_get_version(struct wl_proxy *proxy) {
   (void)proxy;

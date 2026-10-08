@@ -87,7 +87,7 @@ typedef struct {
 
   // Animation timing
   int idle_frame;
-  int compositor_experimental;  // Opt-in unverified compositor backends
+  int compositor_experimental;  // Opt-in experimental Hyprland focus backend
   int agent_interrupt_detect;   // Event-driven transcript monitoring
   int agent_stale_timeout;      // Seconds; 0 disables stale session expiry
   int agent_done_timeout;  // Seconds; 0 keeps done until the next session event

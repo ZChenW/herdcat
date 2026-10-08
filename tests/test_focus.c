@@ -54,8 +54,8 @@ int main(int argc, char **argv) {
   TEST_ASSERT(parse(" [] \n", windows) == 0);
   TEST_ASSERT(focus_parse_windows(json, strlen(json), windows, 0) == -1);
   uint64_t id = 0;
-  windows[0] = (focus_window_t){100, getppid()};
-  windows[1] = (focus_window_t){200, getpid()};
+  windows[0] = (focus_window_t){.id = 100, .pid = getppid()};
+  windows[1] = (focus_window_t){.id = 200, .pid = getpid()};
   TEST_ASSERT(focus_find_window(getpid(), windows, 2, &id) && id == 200);
   TEST_ASSERT(focus_find_window(getpid(), windows, 1, &id) && id == 100);
   TEST_ASSERT(!focus_find_window(getpid(), windows, 0, &id));

@@ -48,16 +48,26 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Sway is now supported without opt-in whenever `SWAYSOCK` is advertised;
+  status reports `Sway`. `compositor_experimental` now controls only
+  Hyprland. Verified on headless Sway 1.12; real pointer clicks, multiple
+  outputs and XWayland remain untested. Reloading the flag preserves Sway's
+  focus subscription.
+- Test compilation treats warnings as errors; existing initializer,
+  signed-comparison and wrapper-prototype warnings are fixed.
+- English and Chinese README demo animations use the current sign renderer,
+  preserving their scenes and timing.
+
 - Transparent sign surfaces now allocate buffers for the current board count:
   none, up to five, or the configured maximum. Growth waits for compositor
   configure and new buffers before entry; shrink waits ten seconds after exit
   and pauses during hover, menus, font browsing and dragging. Cat and typing
   desk positions stay fixed, including at fractional scales. Signs-off and
   translucent output-wide bars retain their existing geometry.
-- The experimental Sway backend is now exercised against a real headless
+- The Sway backend is exercised against a real headless
   Sway in CI: layer surface, window discovery, focus events, focusing a
-  session's window, window close and the opt-in switch. It stays opt-in
-  (`compositor_experimental=1`). Under Sway and Hyprland, `herdcat
+  session's window, window close, configuration reload and clean shutdown.
+  Under Sway and Hyprland, `herdcat
   --sessions` adds a `window-session` line per session with the window it
   was matched to.
 

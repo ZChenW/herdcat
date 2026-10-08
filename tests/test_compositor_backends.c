@@ -38,20 +38,35 @@ static void detection(void) {
   unsetenv("SWAYSOCK");
   TEST_ASSERT(!compositor_detect(false) && !compositor_detect(true));
   setenv("SWAYSOCK", "/unreachable-test-sway", 1);
-  TEST_ASSERT(!compositor_detect(false));
+  TEST_ASSERT(compositor_detect(false) == &COMPOSITOR_SWAY);
   TEST_ASSERT(compositor_detect(true) == &COMPOSITOR_SWAY);
+  TEST_ASSERT(!strcmp(COMPOSITOR_SWAY.name, "Sway"));
+  TEST_ASSERT(compositor_selected() == &COMPOSITOR_SWAY);
   TEST_ASSERT(COMPOSITOR_SWAY.connect() == 0);
-  TEST_ASSERT(COMPOSITOR_SWAY.timeout() == -1);
+  TEST_ASSERT(COMPOSITOR_SWAY.timeout() >= 0);
+  // The advertised socket is deliberately absent, so focus is unavailable.
   TEST_ASSERT(!focus_available());
+  TEST_ASSERT(socket_calls == 1 && connect_calls == 0);
+  // Reloading the Hyprland-only flag must retain Sway's pending retry.
+  compositor_configure(true);
+  TEST_ASSERT(compositor_selected() == &COMPOSITOR_SWAY);
+  TEST_ASSERT(COMPOSITOR_SWAY.timeout() >= 0);
+  compositor_configure(false);
+  TEST_ASSERT(compositor_selected() == &COMPOSITOR_SWAY);
+  TEST_ASSERT(COMPOSITOR_SWAY.timeout() >= 0);
+  TEST_ASSERT(socket_calls == 1 && connect_calls == 0);
+  COMPOSITOR_SWAY.cleanup();
   setenv("HYPRLAND_INSTANCE_SIGNATURE", "test-only", 1);
   TEST_ASSERT(!compositor_detect(false));
   TEST_ASSERT(compositor_detect(true) == &COMPOSITOR_HYPRLAND);
   TEST_ASSERT(COMPOSITOR_HYPRLAND.connect() == 0);
   TEST_ASSERT(COMPOSITOR_HYPRLAND.timeout() == -1);
+  TEST_ASSERT(!focus_available());
+  TEST_ASSERT(socket_calls == 1 && connect_calls == 0);
   setenv("NIRI_SOCKET", "/unreachable-test-niri", 1);
   TEST_ASSERT(compositor_detect(false) == &COMPOSITOR_NIRI);
   TEST_ASSERT(compositor_detect(true) == &COMPOSITOR_NIRI);
-  // No connect is called after enabling; all paths above test the gate only.
+  // Disabled Hyprland never opens IPC, even when Sway is advertised.
   setenv("XDG_RUNTIME_DIR", "/tmp", 1);
   char path[128];
   TEST_ASSERT(compositor_hyprland_path(path, sizeof(path)));
@@ -155,9 +170,9 @@ static void commands(void) {
 }
 int main(void) {
   detection();
-  TEST_ASSERT(socket_calls == 0 && connect_calls == 0);
+  TEST_ASSERT(socket_calls == 1 && connect_calls == 0);
   parsers();
   commands();
-  puts("Compositor parsers, commands and experimental gate passed");
+  puts("Compositor parsers, commands, Sway reload and Hyprland gate passed");
   return 0;
 }

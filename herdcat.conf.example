@@ -144,7 +144,7 @@ sign_idle=hover          # hover | always | never
 sign_font=               # Fontconfig family; empty selects system sans-serif
 sign_font_size=13        # 10..20; metadata and desk text scale proportionally
 sign_animations=full     # full | reduced (transitions only) | off
-# Experimental Hyprland/Sway focus backends: unverified on real compositors.
+# Opt in to the experimental Hyprland focus backend; Sway needs no opt-in.
 # Existing Hyprland fullscreen detection is independent of this setting.
 compositor_experimental=0
 sign_theme=light        # light | auto | dark (auto follows XDG portal)

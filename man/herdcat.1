@@ -155,9 +155,15 @@ Each output saves its own logical x and vertical margin on release to ${XDG_STAT
 
 .SH SESSION SIGNS
 All sign options are global and apply on reload. The cat keeps its typing and
-sleep frames when signs are enabled. Click a sign to focus its terminal on niri;
-drag from a sign to move the cat. Labels use the last directory component from
+sleep frames when signs are enabled. Click a sign to focus its terminal on
+niri or Sway; drag from a sign to move the cat. Labels use the last directory component from
 the hook's cwd, falling back to the agent and a short session key.
+.TP
+.B compositor_experimental=0|1
+Global, default 0. Enables only the experimental Hyprland focus backend.
+Sway is selected whenever SWAYSOCK is advertised and needs no opt-in.
+Sway support is verified on headless Sway 1.12; real pointer clicks,
+multiple outputs and XWayland windows remain untested.
 .TP
 .B sign_style=fan|post|off
 Default fan: raised plates with individual hover labels. Post: a pole with

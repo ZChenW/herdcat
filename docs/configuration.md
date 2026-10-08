@@ -35,6 +35,7 @@
 | `sleep_begin`              | HH:MM             | 00:00    | Sleep schedule start time            |
 | `sleep_end`                | HH:MM             | 00:00    | Sleep schedule end time              |
 | `disable_fullscreen_hide`  | 0/1               | 0        | Keep overlay visible in fullscreen   |
+| `compositor_experimental` | 0/1               | 0        | Opt in to Hyprland focus only; Sway needs no opt-in |
 | `enable_debug`             | 0/1               | 0        | Enable debug logging                 |
 | `test_animation_duration`  | ms                | 200      | Test animation frame duration        |
 | `test_animation_interval`  | seconds                | 0        | Test animation repeat interval       |
@@ -49,7 +50,11 @@ Supported overrides: `cat_height`, `overlay_height`, `overlay_opacity`,
 `cat_x_offset`, `cat_y_offset`, `layer`, `overlay_position`, `cat_align`,
 `mirror_x`, `mirror_y`, `cat_draggable`, `enable_antialiasing`, and
 `disable_fullscreen_hide`.
-Input selectors and animation timing remain global.
+Input selectors, animation timing and `compositor_experimental` remain global.
+The latter enables only the experimental Hyprland focus backend. Sway is
+supported whenever `SWAYSOCK` is advertised, including with this setting at 0.
+It is verified on headless Sway 1.12; real pointer clicks, multiple outputs
+and XWayland remain uncovered. See [compositor support](compositors.md).
 
 ```ini
 monitor=eDP-1,HDMI-A-1

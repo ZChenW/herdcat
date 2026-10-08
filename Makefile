@@ -263,7 +263,7 @@ compiledb: clean
 # TEST TARGETS
 # =============================================================================
 
-TEST_CFLAGS = $(BASE_CFLAGS) -g3 -O0 -DDEBUG -DTEST_BUILD
+TEST_CFLAGS = $(BASE_CFLAGS) -Werror -g3 -O0 -DDEBUG -DTEST_BUILD
 TEST_LDFLAGS = $(TEXT_LIBS) -lm -lpthread
 # Set here rather than passed down: re-quoting flags on a command line
 # loses the quotes inside string-valued -D options.
@@ -379,12 +379,12 @@ $(BUILDDIR)/test_session_recovery: TEST_WRAPS = -Wl,--wrap=signs_frame
 
 # These tests embed a source implementation with their own defines/flags.
 $(BUILDDIR)/test_input_helper: tests/test_input_helper.c $(TEST_LIB)
-	$(CC) -std=c2x -Iinclude -Itests -g -O0 -Wall -Wextra \
+	$(CC) -std=c2x -Iinclude -Itests -g -O0 -Wall -Wextra -Werror \
 	  -MMD -MP -MF $@.d $< $(TEST_LIB) -o $@ \
 	  -Wl,--wrap=open,--wrap=openat,--wrap=fstat,--wrap=setresgid,--wrap=getresgid
 
 $(BUILDDIR)/test_nanosvg: tests/test_nanosvg.c $(TEST_LIB)
-	$(CC) -std=c2x -Ilib -Itests $(filter -fsanitize=%,$(TEST_CFLAGS)) \
+	$(CC) -std=c2x -Ilib -Itests -Wall -Wextra -Wpedantic -Werror $(filter -fsanitize=%,$(TEST_CFLAGS)) \
 	  -MMD -MP -MF $@.d $< $(TEST_LIB) -o $@ $(TEST_LDFLAGS)
 
 -include $(TEST_OBJECTS:.o=.d) $(TEST_BINARIES:=.d)
@@ -451,7 +451,7 @@ compositor-test-build:
 	wayland-scanner server-header protocols/viewporter.xml $(BUILDDIR)/compositor/viewport-server.h
 	wayland-scanner server-header protocols/fractional-scale-v1.xml $(BUILDDIR)/compositor/scale-server.h
 	wayland-scanner server-header protocols/wlr-foreign-toplevel-management-unstable-v1.xml $(BUILDDIR)/compositor/fullscreen-server.h
-	$(CC) -std=c2x -g -Wall -Wextra -I$(BUILDDIR)/compositor tests/test_compositor.c tests/test_compositor_pointer.c protocols/zwlr-layer-shell-v1-protocol.c protocols/xdg-shell-protocol.c protocols/viewporter-protocol.c protocols/fractional-scale-v1-protocol.c protocols/wlr-foreign-toplevel-management-v1-protocol.c -o $(BUILDDIR)/compositor/server -lwayland-server
+	$(CC) -std=c2x -g -Wall -Wextra -Werror -I$(BUILDDIR)/compositor tests/test_compositor.c tests/test_compositor_pointer.c protocols/zwlr-layer-shell-v1-protocol.c protocols/xdg-shell-protocol.c protocols/viewporter-protocol.c protocols/fractional-scale-v1-protocol.c protocols/wlr-foreign-toplevel-management-v1-protocol.c -o $(BUILDDIR)/compositor/server -lwayland-server
 
 .PHONY: test-runtime
 test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent_children_fixture
@@ -489,7 +489,7 @@ $(BUILDDIR)/sway-fixture/xdg-shell-client.h: protocols/xdg-shell.xml
 
 $(BUILDDIR)/sway_toplevel_fixture: tests/sway_toplevel_fixture.c protocols/xdg-shell-protocol.c $(BUILDDIR)/sway-fixture/xdg-shell-client.h
 	mkdir -p $(BUILDDIR)
-	$(CC) -std=c2x -g -Wall -Wextra -Wpedantic -I$(BUILDDIR)/sway-fixture \
+	$(CC) -std=c2x -g -Wall -Wextra -Wpedantic -Werror -I$(BUILDDIR)/sway-fixture \
 	  tests/sway_toplevel_fixture.c protocols/xdg-shell-protocol.c \
 	  -o $@ $$(pkg-config --cflags --libs wayland-client)
 

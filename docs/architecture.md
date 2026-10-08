@@ -334,7 +334,8 @@ and cleanup/reaping. Its descriptor and deadline join the renderer poll loop.
 The nearest matching process ancestor (up to 16) supplies the terminal window.
 `--focus` accepts a full session key or a unique eight-character prefix; a
 successful command response means queued, with the job result consumed later.
-The default backend is niri. Experimental Hyprland/Sway backends are opt-in.
+The default backend is niri. Sway requires no opt-in; experimental Hyprland
+remains opt-in.
 No shell commands are constructed.
 
 ## Session sign rendering and focus tracking
@@ -567,18 +568,19 @@ explicit light/dark terminate them. `sign_theme_effective` resolves the palette
 while the card retains its automatic selection. Missing busctl uses light.
 
 `platform/compositor.c` selects niri, Hyprland or Sway in environment order;
-the latter two require compositor_experimental. The ops table supplies stream
-lifecycle, window parsing and argv construction. `compositor_niri_json.c` and
+only Hyprland requires compositor_experimental. Reloading that flag preserves
+Sway and niri subscriptions when the selected backend is unchanged. The ops
+table supplies stream lifecycle, window parsing and argv construction. `compositor_niri_json.c` and
 `compositor_niri_windows.c` retain the original niri parsers; the shared map and
 session matching remain in focus_watch. `compositor_stream.c` supplies bounded
-nonblocking experimental transports: Hyprland socket2 plus event-triggered
+nonblocking compositor transports: Hyprland socket2 plus event-triggered
 client/activewindow jobs, or Sway native-endian i3 IPC with subscription/tree
-requests. These backends are unverified on real compositors. The existing
-hyprland.c fullscreen fallback stays independent and unchanged.
+requests. Sway is verified on headless 1.12; Hyprland remains experimental.
+The existing hyprland.c fullscreen fallback stays independent and unchanged.
 
 The headless Sway acceptance script uses real xdg-toplevel clients and Sway IPC;
-execution is pending outside the implementation sandbox. `runtime_sessions.c`
-reports the selected backend and stream readiness in status, and appends Sway
+all seven checks pass on headless Sway 1.12 with private sockets.
+`runtime_sessions.c` reports the selected backend and stream readiness in status, and appends Sway
 session con_id/seen diagnostics from the existing focus map. It stores no new
 session metadata and adds no event source or polling deadline. Layer submission
 is checked with Sway debug logs and a Wayland frame callback roundtrip because

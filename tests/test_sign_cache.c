@@ -192,7 +192,7 @@ static void cache_limits(void) {
   TEST_ASSERT(sign_draw_cache_stats().misses == 1);
   // Another scale adds its own bitmap and leaves the others alone; cleanup
   // releases their bytes.
-  size_t held = sign_draw_cache_stats().entries;
+  int held = sign_draw_cache_stats().entries;
   sign_draw_cache_reset_stats();
   draw(pixels, W, H, 150, &frame);
   TEST_ASSERT(sign_draw_cache_stats().misses == 1);

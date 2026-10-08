@@ -168,7 +168,7 @@ static bool sway_focus(uint64_t id, const char **args, char *text,
   memcpy((void *)args, (const void *)a, sizeof(a));
   return true;
 }
-const compositor_ops_t COMPOSITOR_SWAY = {.name = "Sway (experimental)",
+const compositor_ops_t COMPOSITOR_SWAY = {.name = "Sway",
                                           .detect = sway_detect,
                                           .connect = sway_connect,
                                           .events = compositor_stream_events,

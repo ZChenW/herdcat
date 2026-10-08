@@ -1,9 +1,10 @@
 # Compositor focus backends
 
 niri remains the default supported backend. `NIRI_SOCKET` takes precedence over
-`HYPRLAND_INSTANCE_SIGNATURE`, then `SWAYSOCK`. An advertised experimental
-compositor is unavailable unless `compositor_experimental=1` is set globally;
-no focus subprocess or event connection is attempted for it by default. No
+`HYPRLAND_INSTANCE_SIGNATURE`, then `SWAYSOCK`. Sway is selected whenever
+`SWAYSOCK` is advertised, without an experimental opt-in. Only Hyprland is
+unavailable unless `compositor_experimental=1` is set globally; no Hyprland
+focus subprocess or event connection is attempted by default. No
 advertised compositor leaves signs available, but focus, typing-desk tracking
 and read acknowledgements unavailable.
 
@@ -13,8 +14,9 @@ surface's buffer before its initial configure acknowledgement. The six IPC
 checks pass, but the overlay frame callback does not return; full nested
 acceptance remains incomplete. CI does not cover Hyprland. Sway:
 **已在无头 Sway 1.12 上验证** (2026-10-07, headless/pixman).
-All seven Sway real-compositor runtime assertions passed. Both experimental
-backends remain opt-in. Unit fixtures additionally check payloads, argv and gating.
+All seven Sway real-compositor runtime assertions passed. Sway is supported without opt-in;
+Hyprland remains experimental and opt-in.
+Real Sway pointer clicks, multiple outputs and XWayland remain uncovered. Unit fixtures additionally check payloads, argv and gating.
 niri CLI arguments, EventStream parsing,
 terminal ancestry/selection and all previous niri test expectations are retained.
 
@@ -22,7 +24,7 @@ terminal ancestry/selection and all previous niri test expectations are retained
 |---|---|---|---|
 | niri | `niri msg -j windows` for clicks; EventStream initial list for tracking | `"EventStream"` on NIRI_SOCKET | `niri msg action focus-window --id ID` |
 | Hyprland (experimental) | `hyprctl -j clients` then `hyprctl -j activewindow` | `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock` | `hyprctl dispatch focuswindow address:0xHEX`; Lua syntax fallback on its explicit rejection |
-| Sway (experimental) | IPC GET_TREE; `swaymsg -r -t get_tree` for clicks | IPC SUBSCRIBE `["window"]` | `swaymsg -r '[con_id=ID] focus'` |
+| Sway | IPC GET_TREE; `swaymsg -r -t get_tree` for clicks | IPC SUBSCRIBE `["window"]` | `swaymsg -r '[con_id=ID] focus'` |
 
 Commands use separate argv entries, never a shell. Lua-configured Hyprland
 0.56.2 explicitly rejects legacy dispatch syntax. Only that diagnostic permits
@@ -40,7 +42,7 @@ messages to 64 KiB and the map to 128 windows, with one-second setup/query
 limits, partial sends, reconnect backoff and shutdown/reaping.
 
 The old `src/platform/hyprland.c` detects fullscreen state, and is independent
-of this experimental focus layer. Its implementation, activation policy and
+of the compositor focus layer. Its implementation, activation policy and
 regressions have not changed. Legacy Hyprland socket directories are not probed;
 the experimental backend implements the current documented XDG runtime path.
 
@@ -52,7 +54,7 @@ window-event JSON samples; its test strings instantiate those layouts. The Sway
 fixtures project the manual's WINDOW example (id 12, pid 19787, null name) and
 GET_TREE example (urxvt id 5, pid 23959), with separate regression variants.
 
-Before promoting either backend, a reviewer with that compositor must explicitly
+Before promoting Hyprland, a reviewer with that compositor must explicitly
 enable it in an isolated test config and verify initial focus, window lifecycle,
 title changes, click focus, unread acknowledgement, typing desk, reconnection,
 shutdown and disabled opt-in. Stage 34 exercised a private headless Sway 1.12
@@ -149,7 +151,7 @@ non-null buffer attach, surface commit and returned frame callback. It does not
 infer successful presentation from an outgoing commit alone. This is the
 observability adjustment to stage 34's proposed IPC-only layer assertion.
 
-`--status` reports `compositor=Sway (experimental) focus-watch=ready` when the
+`--status` reports `compositor=Sway focus-watch=ready` when the
 subscription and initial tree are ready. With Sway or Hyprland selected, `--sessions` adds
 `window-session KEY8 window=ID seen=yes|no` lines from the live focus map; zero
 means no matching live window. Sway uses decimal con_ids; Hyprland uses
@@ -160,8 +162,10 @@ All seven assertions passed against the installed **sway version 1.12** using
 private sockets under `/tmp`. The test also passed through `make test-runtime`.
 Real pointer clicks/hit geometry, typing input/desk rendering, physical displays,
 multiple outputs, XWayland, title updates and compositor-process restart remain
-uncovered. Reload tests subscription reconnection to the same running Sway;
-it does not claim recovery from restarting Sway and its Wayland server.
-`compositor_experimental` still defaults to zero. See
-[the report](performance/sway-headless-report.md) for actual results and local
-verification limits.
+uncovered. Sway works with `compositor_experimental=0`; toggling the flag and
+reloading preserves its subscription and handles new focus events. This does
+not claim recovery from restarting Sway and its Wayland server.
+`compositor_experimental` still defaults to zero and controls only Hyprland. See
+[the original report](performance/sway-headless-report.md) and the
+[Sway promotion report](performance/sway-stable-and-test-warnings-report.md)
+for actual results and local verification limits.
