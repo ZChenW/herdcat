@@ -392,50 +392,32 @@ $(BUILDDIR)/test_nanosvg: tests/test_nanosvg.c $(TEST_LIB)
   input_helper_fixture.d input_fallback_fixture.d)
 -include $(BUILDDIR)/test/input_fallback.d
 
+# Test execution concurrency is independent of make's compilation jobserver.
+# Ubuntu ASan/UBSan stays serial until verified on that runner (see report).
+ifdef TEST_SANITIZE
+TEST_JOBS ?= 1
+else
+TEST_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+endif
+TEST_PYTHON = tests/test_input_helper.py tests/test_theme_watch.py \
+  tests/test_terminal_commands.py tests/test_kitty_watcher.py \
+  scripts/test_measure_scenarios.py scripts/test_runtime_helpers.py \
+  scripts/test_surface_tier_runtime_geometry.py scripts/test_setup.py \
+  tests/test_completions.py scripts/test_test_runner.py
+TEST_NODE = $(if $(shell command -v node 2>/dev/null),tests/test_opencode_titles.mjs)
+# No unit suites need serialization: real writes use mkdtemp/mkstemp or
+# runner-private XDG directories; fixed path literals are fakes/parser inputs.
+TEST_EXCLUSIVE =
+
 # The completion test asks the program itself for its options.
 test: $(TEST_BINARIES) $(TARGET) $(BUILDDIR)/herdcat-input
 	@echo "Running tests..."
-	@ulimit -n 1024 2>/dev/null || :; \
-	failures=0; \
-	for t in $(TEST_BINARIES); do \
-		echo "--- $$(basename $$t) ---"; \
-		$$t || failures=$$((failures + 1)); \
-	done; \
-	echo "--- test_input_helper.py ---"; \
-	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_input_helper.py || failures=$$((failures + 1)); \
-	echo "--- test_theme_watch.py ---"; \
-	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_theme_watch.py || failures=$$((failures + 1)); \
-	echo "--- test_terminal_commands.py ---"; \
-	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_terminal_commands.py || \
-		failures=$$((failures + 1)); \
-	echo "--- test_kitty_watcher.py ---"; \
-	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_kitty_watcher.py || \
-		failures=$$((failures + 1)); \
-	echo "--- test_measure_scenarios.py ---"; \
-	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_measure_scenarios.py || \
-		failures=$$((failures + 1)); \
-	echo "--- test_runtime_helpers.py ---"; \
-	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_runtime_helpers.py || \
-		failures=$$((failures + 1)); \
-	echo "--- test_surface_tier_runtime_geometry.py ---"; \
-	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_surface_tier_runtime_geometry.py || \
-		failures=$$((failures + 1)); \
-	echo "--- test_setup.py ---"; \
-	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_setup.py || \
-		failures=$$((failures + 1)); \
-	echo "--- test_completions.py ---"; \
-	PYTHONDONTWRITEBYTECODE=1 python3 tests/test_completions.py || \
-		failures=$$((failures + 1)); \
-	if command -v node >/dev/null 2>&1; then \
-		node tests/test_opencode_titles.mjs || failures=$$((failures + 1)); \
-	else \
-		echo "SKIP test_opencode_titles.mjs: node is unavailable"; \
-	fi; \
-	if [ $$failures -gt 0 ]; then \
-		echo "$$failures test suite(s) failed"; \
-		exit 1; \
-	fi; \
-	echo "All tests passed."
+	@$(if $(TEST_NODE),:,echo "SKIP test_opencode_titles.mjs: node is unavailable")
+	@python3 scripts/run_tests.py --jobs $(TEST_JOBS) \
+	  $(foreach t,$(filter-out $(TEST_EXCLUSIVE),$(TEST_BINARIES)),--test './$(t)') \
+	  $(foreach t,$(TEST_PYTHON),--test 'python3 $(t)') \
+	  $(foreach t,$(TEST_NODE),--test 'node $(t)') \
+	  $(foreach t,$(TEST_EXCLUSIVE),--exclusive './$(t)')
 
 .PHONY: compiledb test test-sanitize
 
@@ -453,31 +435,30 @@ compositor-test-build:
 	wayland-scanner server-header protocols/wlr-foreign-toplevel-management-unstable-v1.xml $(BUILDDIR)/compositor/fullscreen-server.h
 	$(CC) -std=c2x -g -Wall -Wextra -Werror -I$(BUILDDIR)/compositor tests/test_compositor.c tests/test_compositor_pointer.c protocols/zwlr-layer-shell-v1-protocol.c protocols/xdg-shell-protocol.c protocols/viewporter-protocol.c protocols/fractional-scale-v1-protocol.c protocols/wlr-foreign-toplevel-management-v1-protocol.c -o $(BUILDDIR)/compositor/server -lwayland-server
 
+# Candidates (including the three drag styles below) must pass five
+# concurrent runs. Drag asserts settled geometry, not frame-time bounds.
+RUNTIME_PARALLEL = scripts/test_subagent_badge_runtime.py \
+  scripts/test_subagent_visibility_runtime.py scripts/test_pointer_hover_runtime.py \
+  scripts/test_agent_detached.py scripts/test_sign_rows_runtime.py \
+  scripts/test_agent_children_runtime.py scripts/test_agent_children_hook.py \
+  scripts/test_runtime.py scripts/test_hook_client.py \
+  scripts/test_transcript_runtime.py scripts/test_focus_client.py \
+  scripts/test_font_panel_runtime.py scripts/test_below_runtime.py
+# Sway/Hyprland invoke make internally and mutate shared build artifacts.
+# Tier matrices assert 10s shrink deadlines; quiet/focus check 1s sampling;
+# sign options measures idle CPU/wakes.
+# These commands drain the parallel group, then run one at a time.
+RUNTIME_EXCLUSIVE = scripts/test_sway_runtime.py scripts/test_hyprland_runtime.py \
+  scripts/test_surface_tiers_runtime.py scripts/test_agent_quiet_runtime.py \
+  scripts/test_focus_runtime.py scripts/test_sign_options.py
+
 .PHONY: test-runtime
 test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent_children_fixture
-	python3 scripts/test_sway_runtime.py
-	python3 scripts/test_hyprland_runtime.py
-	python3 scripts/test_surface_tiers_runtime.py
-	python3 scripts/test_subagent_badge_runtime.py
-	python3 scripts/test_subagent_visibility_runtime.py
-	python3 scripts/test_pointer_hover_runtime.py
-	python3 scripts/test_agent_detached.py
-	python3 scripts/test_sign_rows_runtime.py
-	python3 scripts/test_agent_children_runtime.py
-	python3 scripts/test_agent_children_hook.py
-	python3 scripts/test_runtime.py
-	python3 scripts/test_hook_client.py
-	python3 scripts/test_transcript_runtime.py
-	python3 scripts/test_agent_quiet_runtime.py
-	python3 scripts/test_agent_quiet_runtime.py --agent grok
-	python3 scripts/test_focus_client.py
-	python3 scripts/test_focus_runtime.py
-	python3 scripts/test_sign_options.py
-	python3 scripts/test_drag_runtime.py --sign-style fan
-	python3 scripts/test_drag_runtime.py --sign-style post
-	python3 scripts/test_drag_runtime.py --sign-style off
-	python3 scripts/test_font_panel_runtime.py
-	python3 scripts/test_below_runtime.py
+	@python3 scripts/run_tests.py --jobs $(TEST_JOBS) \
+	  $(foreach t,$(RUNTIME_PARALLEL),--test 'python3 $(t)') \
+	  $(foreach style,fan post off,--test 'python3 scripts/test_drag_runtime.py --sign-style $(style)') \
+	  $(foreach t,$(RUNTIME_EXCLUSIVE),--exclusive 'python3 $(t)') \
+	  --exclusive 'python3 scripts/test_agent_quiet_runtime.py --agent grok'
 
 # A real xdg-shell client for headless Sway; no terminal emulator is needed.
 .PHONY: sway-runtime-build

@@ -132,7 +132,15 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
                                           ('TEST-2', 1024, 240)):
             wait_for(lambda: local_regions().get(name, (0,) * 4)[2] ==
                      cat_height * 500 // 277)
-            x, y, w, h = local_regions()[name]
+            # Width can be ready while the initial entry/flip still moves y.
+            # Use a settled committed cat before choosing pointer coordinates.
+            _, cats = wait_settled(
+                lambda: (placements(), local_regions()), seconds=6,
+                ready=lambda data: data[1].get(name, (0,) * 4)[2] ==
+                cat_height * 500 // 277,
+                description='drag hover target',
+                diagnostics=lambda: server_log.read_text()[-5000:])
+            x, y, w, h = cats[name]
             send(f'hover {name} {x + w // 2} {y + h // 2}')
             wait_for(lambda: placements()[name][4] ==
                      surface_width(cat_height, output_width, scale))

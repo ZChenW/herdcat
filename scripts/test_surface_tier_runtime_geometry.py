@@ -7,6 +7,10 @@ The font/drag rectangles are the review logs' actual committed snapshots.
 import ast
 from pathlib import Path
 import unittest
+from unittest.mock import patch
+
+import runtime_test_helpers as helpers
+from test_runtime_helpers import Clock
 
 SCRIPTS = Path(__file__).resolve().parent
 
@@ -54,6 +58,44 @@ class GeometryTests(unittest.TestCase):
                                           regions=lambda: {'TEST-1': card},
                                           wait_for=wait_for, wait_settled=settled))
             self.assertEqual(function('TEST-1', below=below), card)
+
+    def test_drag_hover_uses_settled_cat_after_initial_flip(self):
+        clock = Clock()
+        widths = {'TEST-1': 80, 'TEST-2': 78}
+        sent = []
+
+        def cats():
+            # Actual failure trace: TEST-1 ended at y=138, width still 72.
+            return {'TEST-1': (4, 0 if clock.now < .2 else 138, 72, 40),
+                    'TEST-2': (3, 0, 72, 40)}
+
+        def placements():
+            return {name: (0, 0, 0, 0, width, 179)
+                    for name, width in widths.items()}
+
+        def send(line):
+            if line.startswith('hover '):
+                _, name, x, y = line.split()
+                # Deliver a queued configure/flip before this pointer event.
+                clock.now = max(clock.now, .2)
+                rect = cats()[name]
+                self.assertEqual((int(x), int(y)),
+                                 (rect[0] + rect[2] // 2,
+                                  rect[1] + rect[3] // 2),
+                                 'hover missed the cat after its initial flip')
+                widths[name] = 300 if name == 'TEST-1' else 299
+                sent.append(name)
+
+        namespace = dict(style='post', local_regions=cats, placements=placements,
+                         send=send, surface_width=lambda height, output, scale:
+                         300 if output == 800 else 299,
+                         wait_for=lambda ready: self.assertTrue(ready()),
+                         wait_settled=helpers.wait_settled)
+        # Use the real readiness helper with a clock-controlled committed trace.
+        reserve = load_function('test_drag_runtime.py', 'reserve_expanded', namespace)
+        with patch.object(helpers, 'time', clock):
+            reserve()
+        self.assertEqual(sent, ['TEST-1', 'TEST-2'])
 
     def test_drag_tracks_output_cat_not_margin(self):
         check = load_function('test_drag_runtime.py', 'vertical_travel')
