@@ -193,16 +193,10 @@ static bool same(const char *key, size_t n, const char *literal) {
   size_t length = strlen(literal);
   return n == length && !memcmp(key, literal, length);
 }
-// Claude Code's title is "✳ name" at rest and a spinner glyph while working.
-static bool rest_mark(const char *title, size_t n) {
-  return (n >= 3 && !memcmp(title, "\xe2\x9c\xb3", 3)) ||
-         (n >= 6 && !memcmp(title, "\\u2733", 6));
-}
 static int window_fields(json_t *j, uint64_t *id, uint64_t *pid, bool *has_pid,
-                         bool *is_focused, bool *resting, char *stored_title) {
+                         bool *is_focused, char *stored_title) {
   stored_title[0] = 0;
   *id = 0;
-  *resting = false;
   *pid = 0;
   *has_pid = false;
   bool has_id = false;
@@ -243,7 +237,6 @@ static int window_fields(json_t *j, uint64_t *id, uint64_t *pid, bool *has_pid,
         size_t length;
         if (!key_string(j, &title, &length))
           return -1;
-        *resting = rest_mark(title, length);
         json_string_copy(title, length, stored_title,
                          AGENT_TERMINAL_TITLE_MAX + 1);
       } else if (!value(j, 1)) {
@@ -332,14 +325,12 @@ int focus_watch_parse(const char *line, size_t length,
       return -1;
     }
     uint64_t id = 0, pid = 0;
-    bool has_pid = false, is_focused = false, resting = false;
-    if (window_fields(&j, &id, &pid, &has_pid, &is_focused, &resting,
-                      event->title) < 0 ||
+    bool has_pid = false, is_focused = false;
+    if (window_fields(&j, &id, &pid, &has_pid, &is_focused, event->title) < 0 ||
         !take(&j, '}')) {
       return -1;
     }
     event->kind = FOCUS_WATCH_UPSERT;
-    event->resting = resting;
     event->has_focused = is_focused;
     event->focused = is_focused ? id : 0;
     event->id = id;
@@ -360,10 +351,9 @@ int focus_watch_parse(const char *line, size_t length,
     if (!(j.p < j.end && *j.p == ']')) {
       do {
         uint64_t id = 0, pid = 0;
-        bool has_pid = false, is_focused = false, resting = false;
+        bool has_pid = false, is_focused = false;
         char title[AGENT_TERMINAL_TITLE_MAX + 1];
-        if (window_fields(&j, &id, &pid, &has_pid, &is_focused, &resting,
-                          title) < 0) {
+        if (window_fields(&j, &id, &pid, &has_pid, &is_focused, title) < 0) {
           return -1;
         }
         if (is_focused && id) {
@@ -371,8 +361,7 @@ int focus_watch_parse(const char *line, size_t length,
           event->focused = id;
         }
         if (has_pid && pid && out && (size_t)count < capacity) {
-          out[count] = (focus_window_t){
-              .id = id, .pid = (pid_t)pid, .resting_since_ms = resting ? 1 : 0};
+          out[count] = (focus_window_t){.id = id, .pid = (pid_t)pid};
           memcpy(out[count].title, title, sizeof(title));
         }
         if (has_pid && pid) {

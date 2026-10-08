@@ -132,6 +132,16 @@ def run(binary, agent, measure, baseline=False):
                     while time.monotonic() < until:
                         assert state('working'), 'continuous output was interrupted'
                         time.sleep(.15)
+                if not measure and not baseline:
+                    # Stop between sparse pairs, long after the last hook.
+                    time.sleep(2.2)
+                    os.kill(worker.pid, signal.SIGUSR1)
+                    stopped = time.monotonic()
+                    wait_until(lambda: state('idle'), 3,
+                               description='long-turn cancellation puts sign away')
+                    results['long_cancel_latency_seconds'] = time.monotonic() - stopped
+                    assert worker.poll() is None
+                    os.kill(worker.pid, signal.SIGUSR2)
                 # A fresh submission exercises the fast cancellation path.
                 hook('UserPromptSubmit')
                 time.sleep(.5)  # Reviewer's just-submitted cancellation timing.

@@ -494,17 +494,16 @@ waiting and unread completion are independent. Failed reads disable sampling
 until a new hook. Unsupported agents, PID-less/headless sessions and disabling
 interruption detection have no quiet deadline.
 
-Samples run once per second for ten seconds after a hook/recognized recording
-event, then as five-second baseline/window pairs. An initially quiet window
-adds an adjacent one-second confirmation: two increments below 256 bytes use
-the existing idempotent interrupt operation. Dispatch delays beyond 250 ms
-discard that window. No periodic wake exists without an eligible working
-session. A quiet guess may keep the existing Claude recording watch for
-event-only recovery; a recognized user/assistant record resumes working and
-restarts recent sampling. Other idle sessions release their watches as before.
-The renderer no longer invokes terminal-title rest detection: Claude 2.1.292
-keeps the same title while working. Legacy focus parsing helpers remain
-available but do not schedule runtime deadlines or change session state.
+Samples run once per second throughout each eligible working turn. Two
+adjacent one-second increments below 256 bytes use the existing idempotent
+interrupt operation. Dispatch delays beyond 250 ms discard that window. No
+periodic wake exists without an eligible working session. A quiet guess may
+keep the existing Claude recording watch for event-only recovery; a recognized
+user/assistant record resumes working and restarts sampling. Other idle sessions
+release their watches as before. Terminal-title rest classification and its
+state have been removed: Claude 2.1.292 keeps the same title while working.
+Ordinary window titles remain available for session display and focus matching.
+
 
 
 ## Terminal locations
@@ -539,7 +538,6 @@ permitting pane zero and retaining kitty's original nonzero report rules and wir
 form. Every query resolves reported client ancestry against the current niri
 windows; multiple attached clients and identical pane IDs on different servers
 remain distinct.
-Title-based cancellation is disabled for tmux.
 
 ## System theme and compositor backends
 

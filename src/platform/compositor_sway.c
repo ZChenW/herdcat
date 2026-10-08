@@ -27,8 +27,6 @@ static bool sway_window(json_span_t item, focus_window_t *out, bool *focused) {
   }
   if (json_field(item, "name", &v))
     json_text(v, out->title, sizeof(out->title));
-  if (!strncmp(out->title, "\xe2\x9c\xb3", 3))
-    out->resting_since_ms = 1;
   *focused = json_field(item, "focused", &v) && v.end - v.p == 4 &&
              !memcmp(v.p, "true", 4);
   return true;
@@ -118,7 +116,6 @@ int compositor_sway_event(const char *text, size_t length,
   event->kind = close ? FOCUS_WATCH_CLOSE : FOCUS_WATCH_UPSERT;
   event->id = window.id;
   event->pid = window.pid;
-  event->resting = window.resting_since_ms != 0;
   memcpy(event->title, window.title, sizeof(event->title));
   event->has_focused = focus || focused;
   event->focused = event->has_focused ? window.id : 0;

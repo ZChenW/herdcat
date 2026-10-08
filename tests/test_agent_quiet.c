@@ -84,24 +84,25 @@ int main(void) {
   sample(2100, 256);
   TEST_ASSERT(state() == AGENT_STATE_WORKING);
 
-  start("claude");
-  for (int64_t now = 1100; now <= 10100; now += 1000) {
-    sample(now, 369);  // Reviewer's minimum working half-second output.
+  // Long turns retain the same adjacent one-second cancellation windows.
+  const char *quiet_agents[] = {"claude", "grok"};
+  for (size_t i = 0; i < sizeof(quiet_agents) / sizeof(quiet_agents[0]); i++) {
+    start(quiet_agents[i]);
+    for (int64_t now = 1100; now <= 60100; now += 1000) {
+      sample(now, 369);  // Reviewer's minimum working half-second output.
+      TEST_ASSERT(state() == AGENT_STATE_WORKING);
+      TEST_ASSERT(agent_quiet_deadline() == now + 1000);
+      before = reads;
+      sample(now + 999, 0);
+      TEST_ASSERT(reads == before);
+    }
+    sample(61100, 16);
     TEST_ASSERT(state() == AGENT_STATE_WORKING);
+    TEST_ASSERT(agent_quiet_deadline() == 62100);
+    sample(62100, 16);
+    TEST_ASSERT(state() == AGENT_STATE_IDLE);
+    TEST_ASSERT(agent_quiet_deadline() == 0);
   }
-  TEST_ASSERT(agent_quiet_deadline() == 11100);
-  sample(11100, 15000);
-  TEST_ASSERT(agent_quiet_deadline() == 15100);
-  before = reads;
-  sample(15099, 0);
-  TEST_ASSERT(reads == before);
-  sample(15100, 15000);  // Baseline of the next sparse pair.
-  TEST_ASSERT(agent_quiet_deadline() == 16100);
-  sample(16100, 16);
-  TEST_ASSERT(state() == AGENT_STATE_WORKING);
-  TEST_ASSERT(agent_quiet_deadline() == 17100);
-  sample(17100, 16);  // Adjacent confirmation, never a four-second gap.
-  TEST_ASSERT(state() == AGENT_STATE_IDLE);
 
   const agent_event_t events[] = {AGENT_EVENT_WAITING, AGENT_EVENT_DONE,
                                   AGENT_EVENT_IDLE};

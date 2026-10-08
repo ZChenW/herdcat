@@ -10,9 +10,6 @@
 typedef struct {
   uint64_t id;
   pid_t pid;
-  // Nonzero while the title starts with the mark an agent shows at rest.
-  // The parser stores 1; focus_watch replaces it with when that began.
-  int64_t resting_since_ms;
   char title[AGENT_TERMINAL_TITLE_MAX + 1];
 } focus_window_t;
 typedef enum {

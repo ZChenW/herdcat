@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Claude and Grok quiet-output cancellation detection now samples every second
+  throughout working turns, keeping the normal 2–3 second response for long
+  turns too. The unused terminal-title cancellation classifier was removed;
+  ordinary title display and focus matching are preserved.
+
 - The truncation ellipsis no longer touches the letter before it: it stands
   as far from the text as its dots stand from each other, and the dots keep
   the font's own spacing.

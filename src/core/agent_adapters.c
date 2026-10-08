@@ -245,7 +245,6 @@ static const agent_adapter_t ADAPTERS[] = {
      .json_stdout = false,
      .stop_guard = true,
      .explicit_pid = false,
-     .rest_title = true,
      .continuous_output = true,
      .process_name = "claude",
      .owner_pid_env = "CLAUDE_PID"},

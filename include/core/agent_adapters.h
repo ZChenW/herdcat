@@ -52,8 +52,6 @@ typedef struct {
   bool stop_guard;
   bool explicit_pid;
   bool no_pid;
-  // The terminal title starts with "✳" whenever the agent is not working.
-  bool rest_title;
   // Measured interactive agents keep writing throughout their own work.
   bool continuous_output;
   // Exact /proc comm. NULL when that process cannot be identified.

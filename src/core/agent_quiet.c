@@ -11,8 +11,6 @@
 
 #define QUIET_BYTES 256
 #define WINDOW_MS   1000
-#define RECENT_MS   10000
-#define PAIR_MS     5000
 // Scheduler delay must not turn an arbitrary gap into a quiet window.
 #define WINDOW_MAX_MS 1250
 
@@ -139,16 +137,8 @@ void agent_quiet_sync(bool enabled, int64_t now_ms) {
           sample->updated_ms = now_ms;
           continue;
         }
-        bool recent = sample->sampled_ms - sample->event_ms < RECENT_MS;
-        // Sparse pairs: baseline, then a one-second window. A quiet first
-        // window adds one adjacent confirmation instead of counting the gap.
-        if (recent || sample->baseline || quiet || !window) {
-          sample->due_ms = now_ms + WINDOW_MS;
-          sample->baseline = false;
-        } else {
-          sample->due_ms = now_ms + PAIR_MS - WINDOW_MS;
-          sample->baseline = true;
-        }
+        sample->due_ms = now_ms + WINDOW_MS;
+        sample->baseline = false;
         sample->sampled_ms = now_ms;
         sample->wchar = wchar;
       }

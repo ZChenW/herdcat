@@ -64,8 +64,6 @@ int compositor_hyprland_windows(const char *text, size_t length,
     out[count] = (focus_window_t){.id = id, .pid = (pid_t)pid};
     if (json_field(item, "title", &v))
       json_text(v, out[count].title, sizeof(out[count].title));
-    if (!strncmp(out[count].title, "\xe2\x9c\xb3", 3))
-      out[count].resting_since_ms = 1;
     count++;
   }
   return count;

@@ -106,7 +106,7 @@ static void test_titles(void) {
                         "\"pid\":42,\"title\":\"\\u2733 repo\"}}}";
   TEST_ASSERT(focus_watch_parse(upsert, strlen(upsert), &event, windows, 3) ==
               1);
-  TEST_ASSERT(event.resting && !strcmp(event.title, "✳ repo"));
+  TEST_ASSERT(!strcmp(event.title, "✳ repo"));
 }
 static void test_identifiers(void) {
   uint64_t pane = 99;

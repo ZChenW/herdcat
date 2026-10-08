@@ -84,7 +84,7 @@ static void parsers(void) {
                         "\"title\":\"✳ notes\",\"workspace\":{\"id\":2}}]";
   TEST_ASSERT(
       compositor_hyprland_windows(clients, strlen(clients), windows, 4) == 1);
-  TEST_ASSERT(windows[0].pid == 23959 && windows[0].resting_since_ms == 1);
+  TEST_ASSERT(windows[0].pid == 23959 && !strcmp(windows[0].title, "✳ notes"));
   TEST_ASSERT(
       compositor_hyprland_windows(clients, strlen(clients), windows, 0) == -1);
   for (size_t i = 0; i < strlen(clients); i++)
@@ -100,7 +100,8 @@ static void parsers(void) {
   TEST_ASSERT(sway("{\"change\":\"focus\",\"container\":{\"id\":12,\"pid\":"
                    "19787,\"name\":\"✳ notes\"}}",
                    &event) == 1);
-  TEST_ASSERT(event.has_focused && event.focused == 12 && event.resting);
+  TEST_ASSERT(event.has_focused && event.focused == 12 &&
+              !strcmp(event.title, "✳ notes"));
   TEST_ASSERT(
       sway("{\"change\":\"close\",\"container\":{\"id\":12}}", &event) == 1);
   TEST_ASSERT(event.kind == FOCUS_WATCH_CLOSE);

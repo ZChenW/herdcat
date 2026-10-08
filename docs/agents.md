@@ -411,19 +411,18 @@ with fewer than 256 bytes each return working to idle, preserving the process
 and session. The first second after an event is protected. Waiting, unread
 done/error and the display state derived from active children are unaffected.
 
-Within ten seconds of a hook or recognized user/assistant record, sampling is
-once per second. Afterwards, each five-second cycle samples a baseline and a
-counter one second later. An initially quiet window adds one adjacent sample
-to confirm the second window. No eligible working session means no quiet
-detection timer. Non-terminal stdout, unreadable process I/O and other agents
-skip detection; a read failure retries only after another hook. Disabling the
-option removes the timer and recovery watches immediately.
+Eligible working sessions are sampled once per second throughout the turn,
+regardless of time since the last hook or recognized user/assistant record.
+No eligible working session means no quiet detection timer. Non-terminal stdout,
+unreadable process I/O and other agents skip detection; a read failure retries
+only after another hook. Disabling the option removes the timer and recovery
+watches immediately.
 
-Early cancellation normally takes 2–3 seconds to put the sign away. After
-sampling slows, cancellation can take up to about seven seconds, and bursts
-can delay it further. A truly working process with two quiet windows can be
-misclassified. Its next working hook corrects the guess; a newly appended
-recognized Claude user/assistant record can also correct it. Only sessions
+Cancellation normally takes 2–3 seconds to put the sign away, including during
+long turns. Bursts or delayed event-loop dispatch can delay it further. A truly
+working process with two quiet windows can be misclassified. Its next working
+hook corrects the guess; a newly appended recognized Claude user/assistant
+record can also correct it. Only sessions
 made idle by quiet detection retain their existing event-driven recording
 watch for that recovery; ordinary idle sessions do not. No record or hook
 means the guess cannot be corrected automatically. Headless runs and unmeasured
@@ -451,6 +450,27 @@ misclassified if the record is read after the one-second guard. Very early real
 Claude interruptions inside that guard can be missed. No file-based detection
 is enabled for other agents. Copilot's observed Ctrl+C remains without a reliable
 interrupt event; opencode still lacks terminal focus and process-liveness mapping.
+
+### Reviewer cancellation observations (2026-10-07)
+
+The reviewer measured these agents in tmux panes; sign states came from the
+running herdcat's `--sessions`. These are supplied observations, separate from
+this implementation's synthetic tests.
+
+| Agent (version where recorded) | Idle terminal output | Working output | Mid-reply interruption | Cancel 0.5 s after submission | Finding |
+| --- | --- | --- | --- | --- | --- |
+| Kimi Code | About 0–16 bytes/s | 2–17 KB/s | Esc → immediately idle (Interrupt hook) | Esc → immediately idle | Quiet detection unnecessary |
+| Pi | 0 | 20–50 KB/s | Esc → immediately idle | Esc → immediately idle | Unnecessary |
+| Codex | 0–0.5 KB/s | At least 3 KB/s | Esc → immediately idle | Esc → immediately idle | Unnecessary |
+| Cursor Agent 2026.10.01 | Usually 0–16 bytes/0.5 s, with a 1–10 KB burst every 1–2 s | 5–10 KB/s | Ctrl+C → immediately idle; Esc does not cancel | Ctrl+C → idle | Unnecessary; idle bursts also make the current criterion unsuitable |
+| GitHub Copilot CLI 1.0.27 | Not measured | Not measured | Not measured | Not measured | Request blocked: configured model rejected by the server (`400 The requested model is not supported`) |
+| opencode | About 30–60 bytes/s | About 40 KB/s | One Esc does not interrupt; UI asks for a second press | Not successfully measured | Undetermined |
+
+Quiet detection remains enabled only for Claude and Grok, the two agents
+confirmed to leave no signal after early cancellation. Other measured agents
+already signal interruption; unsuccessful probes do not establish support.
+Copilot needs another probe once it can send a request. No real agent sessions
+were started for this implementation.
 
 ## Agents launched by another session
 
