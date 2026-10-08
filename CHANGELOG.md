@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-08
+
 ### Added
 
 - **Qwen Code and Antigravity CLI** - Two more agents, connected by `herdcat
@@ -12,22 +14,15 @@ All notable changes to this project will be documented in this file.
   (`agy`, the successor of Gemini CLI) has no hook for approval or cancel;
   herdcat reads those from the log agy keeps for itself, and the first prompt
   stands in for the title agy does not give a session.
-
 - **Sway** - Clicking a sign, focus tracking and the typing desk work on Sway
   without the experimental switch. The backend is checked against a real
   headless Sway 1.12 in CI. Not covered there: real pointer clicks, several
   outputs and XWayland windows. `compositor_experimental` remains, for
   Hyprland alone.
+- `herdcat --status` ends with a line naming the installed agents whose
+  integration is missing or was written by an older version.
 
 ### Changed
-
-- `herdcat --status` adds a setup reminder for installed integrations that
-  are outdated or not connected. Missing or slow setup tools are skipped.
-- Waiting signs repaint the moving plates, rods and nameplates instead of
-  the full sign lane and cat. Shapes outside the repaint area skip bitmap
-  lookup and rasterization. Settled waiting nameplates reuse their complete
-  bitmap, and opaque spans in signs and the cat copy in bulk. Animation timing
-  and pixels are unchanged.
 
 - **Less memory** - The transparent surface follows what is on screen instead
   of always holding room for `sign_max` boards. With a 110 pixel cat on a 2x
@@ -37,6 +32,10 @@ All notable changes to this project will be documented in this file.
   panel or a drag ask for the larger surface first, so names appear a few
   milliseconds later; it shrinks again ten seconds after it is no longer
   needed. The cat and the typing desk keep their place throughout.
+- **Less CPU while waiting** - A sign that waits for approval repaints only
+  the parts that move. One waiting sign on a 2x output costs about 1.0% of a
+  core as a fan and 0.8% as a signpost, down from 1.3%. The wobble looks the
+  same, frame for frame.
 - **Flipping** - Dragging the cat upward turns the signs below it only as near
   the top as the signs themselves need: 114 pixels for a fan of up to five
   with a 110 pixel cat, where it used to be 273. When the switch card does
@@ -47,17 +46,17 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Cancelled prompts** - A prompt cancelled before Claude Code, Grok or
+  Copilot CLI starts to answer leaves no trace: no hook fires and nothing is
+  written, and Copilot says nothing when cancelled in mid-reply either. The
+  sign stayed on "working" until the next prompt. herdcat now notices that
+  the agent has stopped writing to its terminal and lowers the sign within
+  about three seconds, at any point in a turn. The other agents report a
+  cancel themselves; all ten were checked.
 - **Names after a restart** - A session that herdcat first hears of in the
   middle of a turn, because the cat was restarted or started after the agent,
   showed a placeholder such as `codex e86e` until the next prompt. It now
   gets its project name and title with the first event.
-- **Cancelled prompts** - A prompt cancelled before Claude Code, Grok or Copilot
-  starts to answer can leave no trace: no hook fires and nothing is written.
-  Copilot can also leave no hook when cancelled during a reply. The sign
-  stayed on "working" until the next prompt. herdcat now notices that the
-  agent has stopped writing to its terminal and lowers the sign within about
-  three seconds, at any point in a turn. Kimi, Pi, Codex and Cursor report a
-  cancel themselves and needed nothing.
 - **Ellipsis** - A shortened name ends in three dots on the baseline, set off
   from the text, in every font. CJK fonts used to centre the dots, level with
   the " · " separator beside them.
@@ -74,6 +73,7 @@ All notable changes to this project will be documented in this file.
   200 lines and 100 statements. The test sources build with `-Werror`.
 - `make test` and `make test-runtime` run their tests in parallel
   (`TEST_JOBS`), each under the 1024 open-file limit of an ordinary shell.
+  The runtime tests take about six and a half minutes instead of fourteen.
 - The Arch `-git` package takes its version from the release tags.
 
 ## [0.3.0] - 2026-10-07

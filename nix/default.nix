@@ -9,7 +9,7 @@
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "herdcat";
-  version = "0.3.0";
+  version = "0.4.0";
   src = ../.;
 
   # Build toolchain and dependencies
