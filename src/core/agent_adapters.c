@@ -300,6 +300,7 @@ static const agent_adapter_t ADAPTERS[] = {
      .interrupt_source = AGENT_SIGNAL_NONE,
      .error_source = AGENT_SIGNAL_HOOK,
      .display_name = "Copilot",
+     .continuous_output = true,
      .aliases = COPILOT_FIELDS,
      .alias_count = COUNT(COPILOT_FIELDS),
      .rules = COPILOT_RULES,

@@ -41,8 +41,81 @@ static void sample(int64_t now, uint64_t bytes) {
   agent_quiet_sync(true, now);
 }
 
+static void quiet_contract(const char *agent) {
+  start(agent);
+  TEST_ASSERT(agent_quiet_deadline() == 1100 && reads == 1);
+  sample(1099, 0);
+  TEST_ASSERT(reads == 1 && state() == AGENT_STATE_WORKING);
+  sample(1100, 8);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+  sample(2100, 8);
+  TEST_ASSERT(state() == AGENT_STATE_IDLE);
+  TEST_ASSERT(agent_quiet_deadline() == 0);
+  TEST_ASSERT(agent_sessions_apply(1, agent, AGENT_EVENT_WORKING, 123, 2200, 5,
+                                   NULL) == 0);
+  agent_quiet_sync(true, 2200);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+  TEST_ASSERT(agent_quiet_deadline() == 3200);
+
+  start(agent);
+  sample(1100, 8);
+  sample(2100, 8000);  // The measured cancellation burst resets the streak.
+  sample(3100, 8);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+  sample(4100, 8);
+  TEST_ASSERT(state() == AGENT_STATE_IDLE);
+  TEST_ASSERT(agent_quiet_deadline() == 0);
+
+  start(agent);
+  sample(1100, 256);
+  sample(2100, 256);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+
+  const agent_event_t events[] = {AGENT_EVENT_WAITING, AGENT_EVENT_DONE,
+                                  AGENT_EVENT_IDLE};
+  for (size_t i = 0; i < sizeof(events) / sizeof(events[0]); i++) {
+    start(agent);
+    TEST_ASSERT(agent_sessions_apply(1, agent, events[i], 123, 200, 5, NULL) ==
+                0);
+    agent_quiet_sync(true, 200);
+    TEST_ASSERT(agent_quiet_deadline() == 0);
+    unsigned before = reads;
+    sample(10000, 0);
+    TEST_ASSERT(reads == before);
+    TEST_ASSERT(state() ==
+                (events[i] == AGENT_EVENT_WAITING ? AGENT_STATE_WAITING
+                 : events[i] == AGENT_EVENT_DONE  ? AGENT_STATE_DONE
+                                                  : AGENT_STATE_IDLE));
+  }
+
+  start(agent);
+  readable = false;  // The boundary also rejects non-terminal stdout.
+  sample(1100, 0);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+  TEST_ASSERT(agent_quiet_deadline() == 0);
+  unsigned before = reads;
+  sample(10000, 0);
+  TEST_ASSERT(reads == before);
+}
+
 int main(void) {
   unsigned before;
+  const char *quiet_agents[] = {"claude", "grok", "copilot"};
+  for (size_t i = 0; i < sizeof(quiet_agents) / sizeof(quiet_agents[0]); i++)
+    quiet_contract(quiet_agents[i]);
+  // Copilot's measured thinking output: 300 bytes every half second for 20s.
+  start("copilot");
+  for (int64_t now = 600; now <= 20100; now += 500) {
+    sample(now, 300);
+    TEST_ASSERT(state() == AGENT_STATE_WORKING);
+    TEST_ASSERT(agent_quiet_deadline() ==
+                100 + ((now - 100) / 1000 + 1) * 1000);
+  }
+  sample(21100, 8);
+  TEST_ASSERT(state() == AGENT_STATE_WORKING);
+  sample(22100, 8);
+  TEST_ASSERT(state() == AGENT_STATE_IDLE);
+  TEST_ASSERT(agent_quiet_deadline() == 0);
   start("claude");
   readable = false;
   agent_quiet_reset();
@@ -85,7 +158,6 @@ int main(void) {
   TEST_ASSERT(state() == AGENT_STATE_WORKING);
 
   // Long turns retain the same adjacent one-second cancellation windows.
-  const char *quiet_agents[] = {"claude", "grok"};
   for (size_t i = 0; i < sizeof(quiet_agents) / sizeof(quiet_agents[0]); i++) {
     start(quiet_agents[i]);
     for (int64_t now = 1100; now <= 60100; now += 1000) {
@@ -122,7 +194,8 @@ int main(void) {
   }
   for (size_t i = 0; i < agent_adapter_count(); i++) {
     const char *name = agent_adapter_at(i)->name;
-    if (!strcmp(name, "claude") || !strcmp(name, "grok"))
+    if (!strcmp(name, "claude") || !strcmp(name, "grok") ||
+        !strcmp(name, "copilot"))
       continue;
     start(name);
     TEST_ASSERT(agent_quiet_deadline() == 0 && reads == 0);

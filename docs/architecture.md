@@ -505,9 +505,10 @@ unsupported input silently falls back to existing stale deadlines. No new
 runtime dependency is required.
 
 `core/agent_quiet.c` uses the existing renderer tick/deadline mechanism for
-Claude and Grok's measured continuous terminal output. `platform/agent_output.c`
-checks `/proc/<pid>/fd/1` for a numeric `/dev/pts/` target and interprets only
-`wchar` from a bounded `/proc/<pid>/io` read. No terminal content is opened.
+Claude, Grok and Copilot's measured continuous terminal output.
+`platform/agent_output.c` checks `/proc/<pid>/fd/1` for a numeric `/dev/pts/`
+target and interprets only `wchar` from a bounded `/proc/<pid>/io` read. No
+terminal content is opened.
 Only a session's own working state qualifies; parent display aggregation,
 waiting and unread completion are independent. Failed reads disable sampling
 until a new hook. Unsupported agents, PID-less/headless sessions and disabling

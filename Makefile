@@ -458,7 +458,8 @@ test-runtime: all compositor-test-build $(BUILDDIR)/test_focus $(BUILDDIR)/agent
 	  $(foreach t,$(RUNTIME_PARALLEL),--test 'python3 $(t)') \
 	  $(foreach style,fan post off,--test 'python3 scripts/test_drag_runtime.py --sign-style $(style)') \
 	  $(foreach t,$(RUNTIME_EXCLUSIVE),--exclusive 'python3 $(t)') \
-	  --exclusive 'python3 scripts/test_agent_quiet_runtime.py --agent grok'
+	  --exclusive 'python3 scripts/test_agent_quiet_runtime.py --agent grok' \
+	  --exclusive 'python3 scripts/test_agent_quiet_runtime.py --agent copilot'
 
 # A real xdg-shell client for headless Sway; no terminal emulator is needed.
 .PHONY: sway-runtime-build

@@ -262,8 +262,13 @@ returning to working. No account addresses or real payloads are used as fixtures
 
 ## GitHub Copilot CLI
 
-Copilot CLI 1.0.27 normal turns, permission callbacks and cancellation were
-observed. Merge [copilot.hooks.json](../integrations/hooks/copilot.hooks.json) into
+Copilot CLI 1.0.27 normal turns and permission callbacks were observed. The
+reviewer's October 8 capture of 1.0.93 verified cancellation during a reply
+and 0.5 seconds after submission: pressing Esc twice cancelled the turn, but
+neither path emitted a later hook and the sign stayed working for over 15
+seconds. Quiet detection now handles both paths for terminal processes. See
+[the observations](agent-hook-observations.md#copilot-cancellation-and-terminal-output-2026-10-08).
+Merge [copilot.hooks.json](../integrations/hooks/copilot.hooks.json) into
 `~/.copilot/hooks/hooks.json`, retaining existing hooks, then restart Copilot.
 Commands use `bash` and `timeoutSec`, with `--event` on every entry: most
 payloads do not identify the event. Stdout is `{}` plus newline.
@@ -283,9 +288,10 @@ permissionRequest occurs even for auto-allowed tools, so it never means waiting.
 Only the observed permission_prompt notification maps to waiting. Submission
 can precede sessionStart; that later start does not reset working. Only end_turn
 has been verified as a successful stop reason; missing/new reasons do not turn
-the sign green. Running-command Escape produced no hook during the four-second
-observation, so interruption detection remains a limitation. The
-aborted/interrupted stop-reason mappings are defensive and were not exercised.
+the sign green. The absence of cancellation hooks in 1.0.93 confirms the earlier
+four-second observation in 1.0.27. Single Esc did not cancel in the reviewer's
+tmux capture; two presses were required. The aborted/interrupted stop-reason
+mappings are defensive and were not exercised.
 errorOccurred was observed on a rejected model request (HTTP 400). Other stop reasons are ignored.
 
 ## Pi
@@ -400,15 +406,17 @@ within one second of submission are ignored. Codex `event_msg` records with
 Stop hooks retain ownership of normal completion and unread signs. Duplicate
 interruptions cannot clear done or recreate an ended session.
 
-Claude Esc and Grok Ctrl+C shortly after submission can leave no later hook or
+Claude Esc and Grok Ctrl+C shortly after submission, and Copilot double Esc
+both shortly after submission and during a reply, can leave no later hook or
 interruption record. Claude Code 2.1.292 kept `✳` in its title even while
 working, so the renderer no longer infers interruption from that title.
-With `agent_interrupt_detect=1`, Claude and Grok sessions whose own state is
-working and whose registered process stdout points to `/dev/pts/<number>` are
-also checked for quiet output. Only the `wchar` counter in `/proc/<pid>/io` is
-interpreted; terminal contents are never read. Two adjacent one-second windows
-with fewer than 256 bytes each return working to idle, preserving the process
-and session. The first second after an event is protected. Waiting, unread
+With `agent_interrupt_detect=1`, Claude, Grok and Copilot sessions whose own
+state is working and whose registered process stdout points to
+`/dev/pts/<number>` are also checked for quiet output. Only the `wchar` counter
+in `/proc/<pid>/io` is interpreted; terminal contents are never read. Two
+adjacent one-second windows with fewer than 256 bytes each return working to
+idle, preserving the process and session. The first second after an event is
+protected. Waiting, unread
 done/error and the display state derived from active children are unaffected.
 
 Eligible working sessions are sampled once per second throughout the turn,
@@ -448,10 +456,11 @@ existing stale timeout. Rotation/truncation requires another path handoff to
 retry. A user literally submitting Claude's interruption marker can still be
 misclassified if the record is read after the one-second guard. Very early real
 Claude interruptions inside that guard can be missed. No file-based detection
-is enabled for other agents. Copilot's observed Ctrl+C remains without a reliable
-interrupt event; opencode still lacks terminal focus and process-liveness mapping.
+is enabled for other agents. Copilot cancellation uses terminal quiet detection
+only; headless Copilot retains its hooks and stale timeout. opencode still lacks
+terminal focus and process-liveness mapping.
 
-### Reviewer cancellation observations (2026-10-07)
+### Reviewer cancellation observations (2026-10-07 and 2026-10-08)
 
 The reviewer measured these agents in tmux panes; sign states came from the
 running herdcat's `--sessions`. These are supplied observations, separate from
@@ -463,14 +472,15 @@ this implementation's synthetic tests.
 | Pi | 0 | 20–50 KB/s | Esc → immediately idle | Esc → immediately idle | Unnecessary |
 | Codex | 0–0.5 KB/s | At least 3 KB/s | Esc → immediately idle | Esc → immediately idle | Unnecessary |
 | Cursor Agent 2026.10.01 | Usually 0–16 bytes/0.5 s, with a 1–10 KB burst every 1–2 s | 5–10 KB/s | Ctrl+C → immediately idle; Esc does not cancel | Ctrl+C → idle | Unnecessary; idle bursts also make the current criterion unsuitable |
-| GitHub Copilot CLI 1.0.27 | Not measured | Not measured | Not measured | Not measured | Request blocked: configured model rejected by the server (`400 The requested model is not supported`) |
+| GitHub Copilot CLI 1.0.93 (October 8) | 0–8 bytes/0.5 s; after cancellation, an approximately 8 KB burst lasting about 1 s every 7 s | Thinking: 294–383 bytes/0.5 s; replying: 2.6–50 KB/0.5 s | Double Esc → cancelled, no later hook; previously stayed working for over 15 s | Double Esc → prompt returned to input box, no later hook; previously stayed working | Quiet detection applies; supersedes the blocked 1.0.27 probe |
 | opencode | About 30–60 bytes/s | About 40 KB/s | One Esc does not interrupt; UI asks for a second press | Not successfully measured | Undetermined |
 
-Quiet detection remains enabled only for Claude and Grok, the two agents
-confirmed to leave no signal after early cancellation. Other measured agents
-already signal interruption; unsuccessful probes do not establish support.
-Copilot needs another probe once it can send a request. No real agent sessions
-were started for this implementation.
+Quiet detection is enabled only for Claude, Grok and Copilot, measured agents
+confirmed to leave no signal after cancellation. Other measured agents already
+signal interruption; unsuccessful probes do not establish support. Copilot's
+October 8 evidence supersedes the blocked October 7 probe. No real agent
+sessions were started for this implementation; the reviewer will repeat the
+Copilot check before merging.
 
 ## Agents launched by another session
 

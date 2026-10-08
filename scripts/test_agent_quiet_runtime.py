@@ -31,18 +31,31 @@ def resume(*args):
     active = True
 signal.signal(signal.SIGUSR1, pause)
 signal.signal(signal.SIGUSR2, resume)
+interval = .5 if sys.argv[2] == 'copilot' else .05
+bytes_per_write = 300 if sys.argv[2] == 'copilot' else 750
+next_write = time.monotonic()
 while True:
     if select.select([sys.stdin], [], [], .05)[0]:
         line = sys.stdin.readline()
         if not line:
             break
-        result = subprocess.run([sys.argv[1], '--hook', sys.argv[2]],
-                                input=line, text=True, capture_output=True,
+        request = json.loads(line)
+        if 'burst' in request:
+            os.write(1, b'x' * request['burst'])
+            print('burst', file=sys.stderr, flush=True)
+            continue
+        args = [sys.argv[1], '--hook', sys.argv[2]]
+        if sys.argv[2] == 'copilot':
+            args.extend(['--event', request['event']])
+        result = subprocess.run(args,
+                                input=json.dumps(request['payload']),
+                                text=True, capture_output=True,
                                 timeout=3)
         print(json.dumps([result.returncode, result.stdout, result.stderr]),
               file=sys.stderr, flush=True)
-    if active:
-        os.write(1, b'x' * 750)
+    if active and time.monotonic() >= next_write:
+        os.write(1, b'x' * bytes_per_write)
+        next_write = time.monotonic() + interval
 '''
 
 
@@ -100,12 +113,28 @@ def run(binary, agent, measure, baseline=False):
                 processes.append(worker)
 
                 def hook(event):
-                    worker.stdin.write(json.dumps(dict(hook_event_name=event,
-                                                      session_id='quiet-test',
-                                                      transcript_path=str(transcript))) + '\n')
+                    payload = dict(hook_event_name=event,
+                                   session_id='quiet-test',
+                                   transcript_path=str(transcript))
+                    if agent == 'copilot':
+                        request_event = event
+                        event = dict(UserPromptSubmit='userPromptSubmitted',
+                                     PreToolUse='preToolUse',
+                                     PermissionRequest='notification',
+                                     Stop='agentStop', SessionEnd='sessionEnd',
+                                     Interrupt='agentStop')[event]
+                        payload = dict(sessionId='quiet-test')
+                        if event == 'notification':
+                            payload['notification_type'] = 'permission_prompt'
+                        if event == 'agentStop':
+                            payload['stopReason'] = ('interrupted' if
+                                                     request_event == 'Interrupt'
+                                                     else 'end_turn')
+                    worker.stdin.write(json.dumps(dict(event=event,
+                                                      payload=payload)) + '\n')
                     worker.stdin.flush()
                     assert select.select([worker.stderr], [], [], 4)[0]
-                    expected = '{}\n' if agent == 'grok' else ''
+                    expected = '{}\n' if agent in ('grok', 'copilot') else ''
                     assert json.loads(worker.stderr.readline()) == [0, expected, '']
 
                 def state(value):
@@ -128,18 +157,36 @@ def run(binary, agent, measure, baseline=False):
                         results[label] = result.stdout
                         assert state('working')
                 else:
-                    until = time.monotonic() + 15
+                    until = time.monotonic() + (20 if agent == 'copilot' else 15)
                     while time.monotonic() < until:
                         assert state('working'), 'continuous output was interrupted'
                         time.sleep(.15)
                 if not measure and not baseline:
-                    # Stop between sparse pairs, long after the last hook.
+                    # Stop long after the last hook.
                     time.sleep(2.2)
                     os.kill(worker.pid, signal.SIGUSR1)
                     stopped = time.monotonic()
                     wait_until(lambda: state('idle'), 3,
                                description='long-turn cancellation puts sign away')
                     results['long_cancel_latency_seconds'] = time.monotonic() - stopped
+                    assert worker.poll() is None
+                    os.kill(worker.pid, signal.SIGUSR2)
+                    # A cancellation-time burst must delay the quiet streak.
+                    hook('UserPromptSubmit')
+                    time.sleep(.5)
+                    os.kill(worker.pid, signal.SIGUSR1)
+                    worker.stdin.write(json.dumps(dict(burst=8000)) + '\n')
+                    worker.stdin.flush()
+                    assert select.select([worker.stderr], [], [], 4)[0]
+                    assert worker.stderr.readline().strip() == 'burst'
+                    burst = time.monotonic()
+                    while time.monotonic() - burst < 1.25:
+                        assert state('working'), 'burst did not reset quiet streak'
+                        time.sleep(.03)
+                    wait_until(lambda: state('idle'),
+                               3 - (time.monotonic() - burst),
+                               description='quiet windows after cancellation burst')
+                    results['burst_cancel_latency_seconds'] = time.monotonic() - burst
                     assert worker.poll() is None
                     os.kill(worker.pid, signal.SIGUSR2)
                 # A fresh submission exercises the fast cancellation path.
@@ -204,7 +251,8 @@ def run(binary, agent, measure, baseline=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default=str(ROOT / 'build/herdcat'))
-    parser.add_argument('--agent', choices=['claude', 'grok'], default='claude')
+    parser.add_argument('--agent', choices=['claude', 'grok', 'copilot'],
+                        default='claude')
     parser.add_argument('--measure', action='store_true')
     parser.add_argument('--baseline', action='store_true')
     args = parser.parse_args()

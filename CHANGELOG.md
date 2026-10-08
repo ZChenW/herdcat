@@ -32,8 +32,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- **Cancelled prompts** - A prompt cancelled before Claude Code or Grok starts
-  to answer leaves no trace: no hook fires and nothing is written. The sign
+- **Cancelled prompts** - A prompt cancelled before Claude Code, Grok or Copilot
+  starts to answer can leave no trace: no hook fires and nothing is written.
+  Copilot can also leave no hook when cancelled during a reply. The sign
   stayed on "working" until the next prompt. herdcat now notices that the
   agent has stopped writing to its terminal and lowers the sign within about
   three seconds, at any point in a turn. Kimi, Pi, Codex and Cursor report a
