@@ -41,9 +41,8 @@ double text_baseline_family(const char *family, double line_top, double line_h,
 // the stored UTF-8 string and middle-dot separators remain unchanged.
 // A null or empty family uses the main face. text_set_family keeps the
 // previous face when the new one cannot be matched.
-int text_measure(const char *utf8, float px, bool bold);
-int text_measure_family(const char *family, const char *utf8, float px,
-                        bool bold);
+int text_measure(const char *s, float px, bool bold);
+int text_measure_family(const char *family, const char *s, float px, bool bold);
 int text_set_family(const char *family);
 // Cached glyphs. The cache stays at or below its fixed cap.
 // Fontconfig lookups so far. Redrawing text already drawn must not add any.
@@ -77,20 +76,19 @@ int text_family_spacing(const char *name);
 // dir is +1 or -1 and wraps. -1 means text is not ready.
 int text_family_step(const char *lang, const char *current, int dir,
                      const char **out);
-bool text_has_glyph(uint32_t codepoint, bool bold);
+bool text_has_glyph(uint32_t cp, bool bold);
 // Destination, positions, clipping and max_w use physical pixels.
 // Color is straight ARGB; destination is premultiplied BGRA.
-void text_draw(uint8_t *dst, int dst_w, int dst_h, int x, int baseline_y,
-               const char *utf8, float px, bool bold, uint32_t color,
-               int max_w);
-void text_draw_family(uint8_t *dst, int dst_w, int dst_h, int x, int baseline_y,
-                      const char *family, const char *utf8, float px, bool bold,
+void text_draw(uint8_t *dst, int dw, int dh, int x, int baseline_y,
+               const char *s, float px, bool bold, uint32_t color, int max_w);
+void text_draw_family(uint8_t *dst, int dw, int dh, int x, int baseline_y,
+                      const char *family, const char *s, float px, bool bold,
                       uint32_t color, int max_w);
-void text_draw_clip(uint8_t *dst, int dst_w, int dst_h, int x, int baseline_y,
-                    const char *utf8, float px, bool bold, uint32_t color,
+void text_draw_clip(uint8_t *dst, int dw, int dh, int x, int baseline_y,
+                    const char *s, float px, bool bold, uint32_t color,
                     int max_w, text_clip_t clip);
-void text_draw_clip_family(uint8_t *dst, int dst_w, int dst_h, int x,
-                           int baseline_y, const char *family, const char *utf8,
-                           float px, bool bold, uint32_t color, int max_w,
+void text_draw_clip_family(uint8_t *dst, int dw, int dh, int x, int baseline_y,
+                           const char *family, const char *s, float px,
+                           bool bold, uint32_t color, int max_w,
                            text_clip_t clip);
 #endif

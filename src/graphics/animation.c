@@ -2,6 +2,8 @@
 #include "config/config.h"
 #include "core/agent_state.h"
 #include "core/herdcat.h"
+#include "graphics/pixel_rect.h"
+#include "platform/input_protocol.h"
 #include "utils/error.h"
 
 #include <stdatomic.h>
@@ -170,11 +172,12 @@ static void anim_select_frame(animation_state_t *state,
         frame_from_paw_state(left_live, right_live, current_config->idle_frame);
   } else if (agent_frames && agent_state_frame(agent_state) >= 0) {
     new_frame = agent_state_frame(agent_state);
-  } else if (current_config->idle_sleep_timeout_sec > 0 &&
-             state->last_key_pressed_timestamp > 0 &&
-             current_time_us - state->last_key_pressed_timestamp >=
-                 current_config->idle_sleep_timeout_sec * 1000000L) {
-    new_frame = HERDCAT_FRAME_SLEEPING;
+  } else {
+    if (current_config->idle_sleep_timeout_sec > 0 &&
+        state->last_key_pressed_timestamp > 0 &&
+        current_time_us - state->last_key_pressed_timestamp >=
+            current_config->idle_sleep_timeout_sec * 1000000L)
+      new_frame = HERDCAT_FRAME_SLEEPING;
   }
   if (new_frame != anim_index && current_config->enable_debug) {
     herdcat_log_debug("Frame -> %d (left=%d right=%d)", new_frame,

@@ -1,5 +1,8 @@
 #include "platform/compositor.h"
 
+#include "platform/focus.h"
+#include "platform/focus_watch.h"
+
 #include <stdlib.h>
 static bool experimental_enabled;
 const compositor_ops_t *compositor_detect(bool experimental) {

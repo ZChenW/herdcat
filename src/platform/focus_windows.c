@@ -1,11 +1,14 @@
 #define _GNU_SOURCE
 #include "core/agent_hook.h"
+#include "platform/agent_terminal.h"
 #include "platform/focus.h"
 
 #include <fcntl.h>
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #ifdef TEST_BUILD

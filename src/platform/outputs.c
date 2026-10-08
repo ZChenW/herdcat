@@ -22,7 +22,6 @@ static void update(output_ref_t *ref) {
 }
 
 // Wayland requires this callback signature, including all ten parameters.
-// NOLINTNEXTLINE(readability-function-size)
 static void geometry(void *data, struct wl_output *object, int32_t x, int32_t y,
                      int32_t pw, int32_t ph, int32_t subpixel, const char *make,
                      const char *model, int32_t transform) {

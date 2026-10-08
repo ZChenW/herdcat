@@ -34,7 +34,7 @@ typedef struct {
 
 // 0 ignored, 1 parsed, -1 malformed or longer than 65536 bytes.
 int focus_watch_parse(const char *line, size_t length,
-                      focus_watch_event_t *event, focus_window_t *windows,
+                      focus_watch_event_t *event, focus_window_t *out,
                       size_t capacity);
 
 // Subscribes on the agent_watch epoll. Missing niri is silent.
@@ -55,11 +55,11 @@ uint64_t focus_watch_focused_id(void);
 uint64_t focus_watch_focused_session(const agent_session_view_t *sessions,
                                      size_t count);
 // Newest session whose process owns the focused window, or 0.
-uint64_t focus_watch_match(uint64_t focused, const focus_window_t *windows,
+uint64_t focus_watch_match(uint64_t focused, const focus_window_t *wins,
                            size_t windows_count,
                            const agent_session_view_t *sessions, size_t count);
 // Every session whose process owns that window. Returns how many were written.
-int focus_watch_matching(uint64_t focused, const focus_window_t *windows,
+int focus_watch_matching(uint64_t focused, const focus_window_t *wins,
                          size_t windows_count,
                          const agent_session_view_t *sessions, size_t count,
                          uint64_t *keys, size_t capacity);
@@ -71,7 +71,7 @@ int focus_watch_matching(uint64_t focused, const focus_window_t *windows,
 // pressed before it starts to answer. Only agents whose adapter sets
 // rest_title, and only when the title can belong to no other session.
 // *next_ms is the delay until a pending case matures, or -1.
-int focus_watch_rested(const focus_window_t *windows, size_t windows_count,
+int focus_watch_rested(const focus_window_t *wins, size_t windows_count,
                        const agent_session_view_t *sessions, size_t count,
                        const focus_pane_t *panes, size_t pane_count,
                        int64_t now_ms, uint64_t *keys, size_t capacity,

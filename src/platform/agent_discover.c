@@ -1,16 +1,20 @@
 #define _GNU_SOURCE
 #include "platform/agent_discover.h"
 
+#include "core/agent_adapters.h"
 #include "core/agent_hook.h"
 #include "core/agent_sessions.h"
 #include "platform/agent_terminal.h"
+#include "platform/focus.h"
 
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 static bool pid_text(const char *text, pid_t *pid) {

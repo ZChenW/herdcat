@@ -13,8 +13,8 @@ static inline unsigned paw_apply_mirror(unsigned paws, bool mirror) {
   if (!mirror) {
     return paws;
   }
-  return ((paws & PAW_LEFT) ? PAW_RIGHT : 0u) |
-         ((paws & PAW_RIGHT) ? PAW_LEFT : 0u);
+  return ((paws & PAW_LEFT) ? PAW_RIGHT : 0U) |
+         ((paws & PAW_RIGHT) ? PAW_LEFT : 0U);
 }
 
 static inline int frame_from_paw_state(bool left_live, bool right_live,

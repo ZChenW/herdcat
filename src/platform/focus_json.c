@@ -1,4 +1,9 @@
 #include "focus_json_internal.h"
+#include "platform/focus.h"
+#include "utils/json_string.h"
+
+#include <stddef.h>
+#include <string.h>
 int focus_parse_wezterm(const char *json, size_t length, bool clients,
                         focus_wezterm_pane_t *out, size_t capacity) {
   if (!json || !out || length > 65535 || memchr(json, 0, length))

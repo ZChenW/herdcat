@@ -1,14 +1,18 @@
 #define _POSIX_C_SOURCE 200809L
 #include "compositor_internal.h"
 #include "platform/compositor.h"
+#include "platform/focus.h"
+#include "platform/focus_watch.h"
 #include "utils/json.h"
 
 #include <inttypes.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 bool compositor_hyprland_address(const char *text, uint64_t *id) {
   if (!text || !id)
@@ -141,7 +145,7 @@ static int hypr_connect(void) {
 }
 static void hypr_windows(const char **args) {
   const char *a[] = {"hyprctl", "-j", "clients", NULL};
-  memcpy(args, a, sizeof(a));
+  memcpy((void *)args, (const void *)a, sizeof(a));
 }
 static bool hypr_focus(uint64_t id, const char **args, char *text,
                        size_t size) {
@@ -151,7 +155,7 @@ static bool hypr_focus(uint64_t id, const char **args, char *text,
   if (n < 0 || (size_t)n >= size)
     return false;
   const char *a[] = {"hyprctl", "dispatch", "focuswindow", text, NULL};
-  memcpy(args, a, sizeof(a));
+  memcpy((void *)args, (const void *)a, sizeof(a));
   return true;
 }
 const compositor_ops_t COMPOSITOR_HYPRLAND = {

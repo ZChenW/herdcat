@@ -1,15 +1,15 @@
 #define _POSIX_C_SOURCE 200809L
+#include "config/config.h"
 #include "config/sign_options.h"
-#include "core/agent_sessions.h"
+#include "core/herdcat.h"
+#include "graphics/signs.h"
 #include "graphics/text.h"
 #include "overlay_signs_internal.h"
-#include "platform/drag.h"
-#include "platform/focus_current.h"
-#include "platform/focus_watch.h"
 #include "platform/font_panel.h"
 #include "platform/overlay_signs.h"
 
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>

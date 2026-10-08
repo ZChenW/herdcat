@@ -1,4 +1,13 @@
 #include "focus_json_internal.h"
+#include "platform/agent_terminal.h"
+#include "platform/focus.h"
+#include "utils/json_string.h"
+
+#include <limits.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <sys/types.h>
 int focus_parse_windows(const char *json, size_t length, focus_window_t *out,
                         size_t capacity) {
   if (!json || !out || length > 65535 || memchr(json, 0, length))

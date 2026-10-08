@@ -1,6 +1,11 @@
 #define _POSIX_C_SOURCE 200809L
+#include "core/agent_hook.h"
+
 #include "agent_hook_internal.h"
+#include "core/agent_adapters.h"
+#include "core/agent_sessions.h"
 #include "core/agent_title.h"
+#include "core/agent_transcript.h"
 #include "core/control.h"
 #include "platform/agent_terminal.h"
 #include "utils/path_wire.h"
@@ -12,10 +17,12 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 // Decode JSON escapes for paths and title text. Identity and event fields
@@ -183,7 +190,16 @@ int agent_hook_parse_stat(const char *line, char *comm, size_t capacity,
     return -1;
   }
   const char *p = end + 1;
-  if (*p++ != ' ' || !*p++ || *p++ != ' ' || !digit((unsigned char)*p)) {
+  if (*p != ' ')
+    return -1;
+  p++;
+  if (!*p)
+    return -1;
+  p++;
+  if (*p != ' ')
+    return -1;
+  p++;
+  if (!digit((unsigned char)*p)) {
     return -1;
   }
   errno = 0;
@@ -209,7 +225,10 @@ int agent_hook_stat_tty(const char *line, unsigned long *tty_nr) {
   while (*p && *p != ' ')
     p++;
   for (int field = 0; field < 4; field++) {
-    if (*p++ != ' ' || !digit((unsigned char)*p))
+    if (*p != ' ')
+      return -1;
+    p++;
+    if (!digit((unsigned char)*p))
       return -1;
     errno = 0;
     char *tail = NULL;
@@ -255,7 +274,9 @@ pid_t agent_hook_front_process(const char *root, const char *comm,
   pid_t found = 0;
   int seen = 0;
   struct dirent *entry;
-  while ((entry = readdir(dir)) && seen < 4096) {
+  while ((entry = readdir(dir))) {
+    if (seen >= 4096)
+      break;
     char *tail;
     errno = 0;
     long value = strtol(entry->d_name, &tail, 10);
@@ -283,6 +304,8 @@ pid_t agent_hook_front_process(const char *root, const char *comm,
     ssize_t n = readlink(path, where, sizeof(where) - 1);
     if (n <= 0)
       continue;
+    // readlink() returns at most sizeof(where) - 1 bytes on success.
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
     where[n] = '\0';
     if (strcmp(where, cwd))
       continue;
@@ -328,7 +351,7 @@ pid_t agent_hook_owner_pid(const char *root, pid_t pid) {
       char *end = memchr(data + at, 0, (size_t)got - at);
       if (!end)
         break;
-      size_t size = (size_t)(end - data - at), length = strlen(name);
+      size_t size = (end - data - at), length = strlen(name);
       if (size > length && !memcmp(data + at, name, length) &&
           data[at + length] == '=')
         return owner_number(data + at + length + 1);
@@ -340,7 +363,7 @@ pid_t agent_hook_owner_pid(const char *root, pid_t pid) {
 
 static pid_t agent_parent(void) {
   pid_t pid = getppid();
-  static const char *const SHELLS[] = {"sh",   "bash", "zsh",    "dash",
+  static const char *const shells[] = {"sh",   "bash", "zsh",    "dash",
                                        "fish", "env",  "timeout"};
   for (int depth = 0; depth < 8 && pid > 1; depth++) {
     char path[64], stat[512], comm[64];
@@ -360,8 +383,8 @@ static pid_t agent_parent(void) {
       return 0;
     }
     bool shell = false;
-    for (size_t i = 0; i < sizeof(SHELLS) / sizeof(SHELLS[0]); i++) {
-      shell |= strcmp(comm, SHELLS[i]) == 0;
+    for (size_t i = 0; i < sizeof(shells) / sizeof(shells[0]); i++) {
+      shell |= strcmp(comm, shells[i]) == 0;
     }
     if (!shell) {
       return pid;
@@ -450,15 +473,14 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
     return 0;
   }
   pid_t pid = adapter->no_pid ? 0 : agent_parent();
-  if (adapter->explicit_pid) {
-    // The bridge runs in Pi itself. Never watch an arbitrary supplied PID or
-    // revive work after that parent has exited while a hook was queued.
-    if (!(scanner.valid_fields & (1U << HOOK_FIELD_PID)) ||
-        scanner.pid != pid) {
-      if (event != AGENT_EVENT_END)
-        return 0;
-      pid = 0;
-    }
+  // The bridge runs in Pi itself. Never watch an arbitrary supplied PID or
+  // revive work after that parent has exited while a hook was queued.
+  if (adapter->explicit_pid &&
+      (!(scanner.valid_fields & (1U << HOOK_FIELD_PID)) ||
+       scanner.pid != pid)) {
+    if (event != AGENT_EVENT_END)
+      return 0;
+    pid = 0;
   }
   pid_t candidate = pid;
   // A daemon with no controlling terminal must not keep a sign forever.
@@ -473,11 +495,11 @@ int agent_hook_run_adapter(const char *agent, const char *event_name,
       pid = agent_hook_front_process("/proc", adapter->process_name, cwd);
   }
   char request[96];
-  static const char *const EVENTS[] = {"idle", "working",   "waiting",
+  static const char *const events[] = {"idle", "working",   "waiting",
                                        "done", "start",     "rest",
                                        "end",  "interrupt", "fail"};
   snprintf(request, sizeof(request), "ev %s %s %016" PRIx64 " %jd", agent,
-           EVENTS[event], agent_hook_key(agent, &scanner), (intmax_t)pid);
+           events[event], agent_hook_key(agent, &scanner), (intmax_t)pid);
   pid_t owner = agent_hook_owner_pid("/proc", candidate);
   if (candidate > 1 && (candidate != pid || owner > 1)) {
     size_t used = strlen(request);

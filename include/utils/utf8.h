@@ -18,6 +18,8 @@ static inline size_t utf8_decode(const char *text, uint32_t *codepoint) {
     return 0;
   uint32_t cp = p[0] & (n == 1 ? 0x7fU : (1U << (7 - n)) - 1);
   for (unsigned i = 1; i < n; i++) {
+    // A NUL fails this range check before the next byte can be read.
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
     if (p[i] < 0x80 || p[i] > 0xbf)
       return 0;
     cp = (cp << 6) | (p[i] & 0x3f);

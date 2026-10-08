@@ -45,7 +45,7 @@ uint64_t focus_current_choose(uint64_t focused, const focus_window_t *windows,
                               size_t windows_count,
                               const agent_session_view_t *sessions,
                               size_t count, const focus_pane_t *panes,
-                              size_t pane_count, uint64_t clicked_window,
+                              size_t pane_count, uint64_t clicked_id,
                               uint64_t clicked_key);
 // A split report narrows this to that split. Otherwise every session in
 // the window. The click is ignored.
@@ -61,7 +61,7 @@ int focus_current_query(uint64_t focused, const focus_window_t *windows,
                         size_t windows_count,
                         const agent_session_view_t *sessions, size_t count,
                         const focus_pane_t *panes, size_t pane_count,
-                        uint64_t clicked_window, uint64_t clicked_key,
+                        uint64_t clicked_id, uint64_t clicked_key,
                         uint64_t *keys, size_t capacity, uint64_t *chosen);
 
 // Unique current pane among CLI clients; known system-window mappings resolve

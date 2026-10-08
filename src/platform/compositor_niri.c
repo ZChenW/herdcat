@@ -2,17 +2,20 @@
 #include "compositor_internal.h"
 #include "platform/agent_watch.h"
 #include "platform/compositor.h"
+#include "platform/focus.h"
 #include "platform/focus_watch.h"
 
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
+#include <sys/epoll.h>  // IWYU pragma: keep
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -203,7 +206,7 @@ static bool niri_detect(void) {
 }
 static void niri_windows(const char **args) {
   const char *a[] = {"niri", "msg", "-j", "windows", NULL};
-  memcpy(args, a, sizeof(a));
+  memcpy((void *)args, (const void *)a, sizeof(a));
 }
 static bool niri_focus(uint64_t id, const char **args, char *text,
                        size_t size) {
@@ -212,7 +215,7 @@ static bool niri_focus(uint64_t id, const char **args, char *text,
     return false;
   const char *a[] = {"niri", "msg", "action", "focus-window",
                      "--id", text,  NULL};
-  memcpy(args, a, sizeof(a));
+  memcpy((void *)args, (const void *)a, sizeof(a));
   return true;
 }
 const compositor_ops_t COMPOSITOR_NIRI = {.name = "niri",

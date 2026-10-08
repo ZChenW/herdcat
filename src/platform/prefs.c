@@ -1,7 +1,7 @@
 #define _GNU_SOURCE
 #include "platform/prefs.h"
 
-#include "utils/error.h"
+#include "config/sign_options.h"
 
 #include <errno.h>
 #include <fcntl.h>

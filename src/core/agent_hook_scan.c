@@ -1,19 +1,17 @@
 #define _POSIX_C_SOURCE 200809L
 #include "agent_hook_internal.h"
-#include "core/control.h"
-#include "platform/agent_terminal.h"
-#include "utils/utf8.h"
+#include "core/agent_adapters.h"
+#include "core/agent_hook.h"
+#include "core/agent_sessions.h"
 
-#include <dirent.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
-#include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 enum {
@@ -423,6 +421,8 @@ uint64_t agent_hook_key(const char *agent, const agent_hook_scanner_t *s) {
       agent, ":",
       s->valid_fields & (1U << HOOK_FIELD_SESSION) ? s->session_id : "default"};
   for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
+    // Every part is NUL-terminated; the loop stops at ':'s trailing NUL too.
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
     for (const unsigned char *p = (const unsigned char *)parts[i]; *p; p++) {
       hash ^= *p;
       hash *= UINT64_C(1099511628211);

@@ -1,7 +1,13 @@
 #include "agent_sessions_internal.h"
+#include "core/agent_sessions.h"
+#include "core/agent_title.h"
+#include "utils/utf8.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
 
 int agent_sessions_set_title(uint64_t key, const char *title) {
   agent_session_t *s = find_session(key);
@@ -85,13 +91,11 @@ void agent_sessions_refresh_title(uint64_t key) {
   if (!s || s->parent_order)
     return;
   char title[AGENT_TITLE_MAX + 1];
-  if (!strcmp(s->agent, "claude") || !strcmp(s->agent, "codex") ||
-      !strcmp(s->agent, "kimi") || !strcmp(s->agent, "pi") ||
-      !strcmp(s->agent, "grok") || !strcmp(s->agent, "copilot")) {
-    if (agent_title_read(s->agent, s->session_id, s->transcript, title) &&
-        *title)
-      agent_sessions_set_title(key, title);
-  }
+  if ((!strcmp(s->agent, "claude") || !strcmp(s->agent, "codex") ||
+       !strcmp(s->agent, "kimi") || !strcmp(s->agent, "pi") ||
+       !strcmp(s->agent, "grok") || !strcmp(s->agent, "copilot")) &&
+      agent_title_read(s->agent, s->session_id, s->transcript, title) && *title)
+    agent_sessions_set_title(key, title);
 }
 bool agent_sessions_title(pid_t pid, char *out, size_t capacity) {
   if (!out || !capacity)

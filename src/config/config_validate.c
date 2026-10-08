@@ -1,16 +1,11 @@
 #define _POSIX_C_SOURCE 200809L
 #include "config/config.h"
-#include "config/sign_options.h"
 #include "config_internal.h"
 #include "core/herdcat.h"
 #include "utils/error.h"
 
-#include <errno.h>
 #include <limits.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 
 static void config_clamp_int(int *value, int min, int max, const char *name) {
   if (*value < min || *value > max) {

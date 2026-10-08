@@ -1,23 +1,17 @@
 #define _GNU_SOURCE
 #include "platform/focus.h"
 
-#include "core/agent_hook.h"
 #include "platform/agent_terminal.h"
 #include "platform/command_job.h"
 #include "platform/compositor.h"
 
-#include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
-#include <signal.h>
-#include <spawn.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
+#include <sys/types.h>
 #include <time.h>
-#include <unistd.h>
 static int64_t now_ms(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -41,12 +35,12 @@ static pid_t target_pid;
 static int job_kind;
 static bool dispatching;
 static focus_result_t result;
-static focus_kitty_fn kitty_lookup;
-static focus_terminal_fn terminal_lookup;
-static focus_title_fn title_lookup;
+static focus_kitty_fn_t kitty_lookup;
+static focus_terminal_fn_t terminal_lookup;
+static focus_title_fn_t title_lookup;
 static char target_title[97];
-static focus_terminal_note_fn terminal_note;
-static focus_current_fn current_note;
+static focus_terminal_note_fn_t terminal_note;
+static focus_current_fn_t current_note;
 static agent_terminal_t terminal;
 static char target_name[48], tmux_session[256], tmux_tty[128];
 static bool foreground;
@@ -70,13 +64,14 @@ static void start_next(void);
 static bool start_windows(void);
 static bool start_tmux_switch(void);
 
-void focus_set_title(focus_title_fn lookup) {
+void focus_set_title(focus_title_fn_t lookup) {
   title_lookup = lookup;
 }
-void focus_set_current(focus_current_fn note) {
+void focus_set_current(focus_current_fn_t note) {
   current_note = note;
 }
-void focus_set_terminal(focus_terminal_fn lookup, focus_terminal_note_fn note) {
+void focus_set_terminal(focus_terminal_fn_t lookup,
+                        focus_terminal_note_fn_t note) {
   terminal_lookup = lookup;
   terminal_note = note;
 }
@@ -118,7 +113,7 @@ void focus_wezterm_current(pid_t pid, uint64_t window) {
   queue_request(pid, window, true);
 }
 
-void focus_set_kitty(focus_kitty_fn fn) {
+void focus_set_kitty(focus_kitty_fn_t fn) {
   kitty_lookup = fn;
 }
 bool focus_kitty_target(const char *window_text, const char *listen,

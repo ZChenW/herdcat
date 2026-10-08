@@ -1,8 +1,10 @@
 #include "graphics/post_text_layout.h"
 
+#include "graphics/signs.h"
 #include "graphics/text.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 

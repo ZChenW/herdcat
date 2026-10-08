@@ -6,6 +6,7 @@
 #include "utils/json.h"
 #include "utils/utf8.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -240,7 +241,7 @@ bool agent_prompt_read(const char *agent, const char *path,
   int fd = transcript_watch_open(path);
   if (fd < 0)
     return false;
-  const size_t limit = 256 * 1024;
+  const size_t limit = 256UL * 1024UL;
   char *head = malloc(limit);
   if (!head) {
     close(fd);
@@ -253,7 +254,7 @@ bool agent_prompt_read(const char *agent, const char *path,
     const char *end = memchr(head + at, '\n', (size_t)got - at);
     if (!end)
       break;
-    size_t n = (size_t)(end - head - at);
+    size_t n = (end - head - at);
     found = agent_prompt_line(agent, head + at, n, out);
     at += n + 1;
   }

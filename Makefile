@@ -246,7 +246,7 @@ format-check:
 # Static analysis with clang-tidy (uses .clang-tidy config)
 lint:
 	@echo "Running static analysis..."
-	@clang-tidy $(PROJECT_SOURCES) -- $(CFLAGS)
+	@clang-tidy --quiet $(PROJECT_SOURCES) -- $(CFLAGS)
 	@echo "Static analysis complete."
 
 # Alias for lint

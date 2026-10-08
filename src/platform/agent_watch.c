@@ -4,8 +4,11 @@
 #include "core/agent_sessions.h"
 
 #include <errno.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <sys/epoll.h>
 #include <sys/pidfd.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #define EXTRA_WATCHES 6

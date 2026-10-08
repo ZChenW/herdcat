@@ -1,6 +1,8 @@
 #define _GNU_SOURCE
 #include "platform/shm_buffer.h"
 
+#include "graphics/pixel_rect.h"
+
 #include <fcntl.h>
 #include <limits.h>
 #include <stddef.h>

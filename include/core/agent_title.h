@@ -4,7 +4,7 @@
 #include <stddef.h>
 #define AGENT_TITLE_MAX      96
 #define AGENT_SESSION_ID_MAX 64
-#define AGENT_TITLE_TAIL_MAX (256 * 1024)
+#define AGENT_TITLE_TAIL_MAX (256L * 1024L)
 #include "utils/json.h"
 
 #include <string.h>

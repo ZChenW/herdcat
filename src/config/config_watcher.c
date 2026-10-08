@@ -15,7 +15,7 @@ static int64_t now_ms(void) {
   return ((int64_t)ts.tv_sec * 1000) + (ts.tv_nsec / 1000000);
 }
 
-static void add_watch(ConfigWatcher *watcher) {
+static void add_watch(config_watcher_t *watcher) {
   watcher->watch_fd = inotify_add_watch(
       watcher->inotify_fd, watcher->directory,
       IN_CLOSE_WRITE | IN_MODIFY | IN_MOVED_TO | IN_MOVED_FROM | IN_CREATE |
@@ -25,12 +25,12 @@ static void add_watch(ConfigWatcher *watcher) {
   }
 }
 
-int config_watcher_init(ConfigWatcher *watcher, const char *path,
+int config_watcher_init(config_watcher_t *watcher, const char *path,
                         void (*callback)(const char *)) {
   if (!watcher || !path || !callback) {
     return -1;
   }
-  *watcher = (ConfigWatcher){.inotify_fd = -1, .watch_fd = -1};
+  *watcher = (config_watcher_t){.inotify_fd = -1, .watch_fd = -1};
   watcher->config_path = strdup(path);
   watcher->directory = strdup(path);
   const char *slash = strrchr(path, '/');
@@ -60,19 +60,19 @@ fail:
   return -1;
 }
 
-void config_watcher_start(ConfigWatcher *watcher) {
+void config_watcher_start(config_watcher_t *watcher) {
   if (watcher && watcher->inotify_fd >= 0) {
     watcher->watching = true;
   }
 }
 
-void config_watcher_stop(ConfigWatcher *watcher) {
+void config_watcher_stop(config_watcher_t *watcher) {
   if (watcher) {
     watcher->watching = false;
   }
 }
 
-void config_watcher_process(ConfigWatcher *watcher) {
+void config_watcher_process(config_watcher_t *watcher) {
   if (!watcher || !watcher->watching) {
     return;
   }
@@ -111,7 +111,7 @@ void config_watcher_process(ConfigWatcher *watcher) {
   }
 }
 
-void config_watcher_cleanup(ConfigWatcher *watcher) {
+void config_watcher_cleanup(config_watcher_t *watcher) {
   if (!watcher) {
     return;
   }
@@ -122,10 +122,10 @@ void config_watcher_cleanup(ConfigWatcher *watcher) {
   free(watcher->config_path);
   free(watcher->directory);
   free(watcher->filename);
-  *watcher = (ConfigWatcher){.inotify_fd = -1, .watch_fd = -1};
+  *watcher = (config_watcher_t){.inotify_fd = -1, .watch_fd = -1};
 }
 
-int config_watcher_timeout(ConfigWatcher *watcher) {
+int config_watcher_timeout(config_watcher_t *watcher) {
   if (!watcher || !watcher->watching) {
     return -1;
   }

@@ -1,9 +1,19 @@
 #include "agent_sessions_internal.h"
+#include "core/agent_sessions.h"
 #include "core/agent_sign_state.h"
+#include "core/agent_state.h"
+#include "core/agent_title.h"
+#include "core/agent_transcript.h"
+#include "platform/agent_terminal.h"
 #include "utils/path_wire.h"
+#include "utils/utf8.h"
 
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
 
 int agent_sessions_format(char *buffer, size_t capacity, int64_t now_ms) {
   if (!capacity) {

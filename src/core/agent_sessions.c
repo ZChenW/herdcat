@@ -1,13 +1,18 @@
 #define _GNU_SOURCE
+#include "core/agent_sessions.h"
+
 #include "agent_sessions_internal.h"
-#include "utils/utf8.h"
+#include "core/agent_state.h"
+#include "platform/agent_terminal.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 uint64_t next_order;
@@ -568,16 +573,14 @@ bool agent_sessions_expire(int64_t now_ms, int stale_timeout_s) {
     }
     int64_t until = session_deadline(&sessions[i], stale_timeout_s);
     if (until > 0 && now_ms >= until) {
-      if (sessions[i].parent_order) {
+      if (sessions[i].parent_order ||
+          (sessions[i].pid <= 0 && sessions[i].state == AGENT_STATE_IDLE)) {
         remove_session(&sessions[i]);
       } else if (finished(sessions[i].state) && sessions[i].unread) {
         sessions[i].unread = false;
         sessions[i].done_until_ms = applied_done_timeout > 0
                                         ? deadline(now_ms, applied_done_timeout)
                                         : 0;
-      } else if (sessions[i].pid <= 0 &&
-                 sessions[i].state == AGENT_STATE_IDLE) {
-        remove_session(&sessions[i]);
       } else {
         bool was_finished = finished(sessions[i].state);
         sessions[i].state = AGENT_STATE_IDLE;
@@ -669,11 +672,11 @@ bool agent_sessions_kitty(pid_t pid, uint64_t *window, char *listen,
 
 agent_state_t agent_sessions_resolve(void) {
   // waiting > error > done > working > idle
-  static const int PRIORITY[AGENT_STATE_COUNT] = {0, 1, 4, 2, 3};
+  static const int priority[AGENT_STATE_COUNT] = {0, 1, 4, 2, 3};
   agent_state_t result = AGENT_STATE_IDLE;
   for (int i = 0; i < AGENT_SESSIONS_MAX; i++) {
     if (sessions[i].used && !sessions[i].parent_order &&
-        PRIORITY[sessions[i].state] > PRIORITY[result]) {
+        priority[sessions[i].state] > priority[result]) {
       result = sessions[i].state;
     }
   }

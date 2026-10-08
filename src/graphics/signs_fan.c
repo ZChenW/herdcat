@@ -1,10 +1,14 @@
 #include "config/sign_options.h"
-#include "core/agent_adapters.h"
+#include "core/agent_sessions.h"
+#include "core/agent_sign_state.h"
+#include "core/agent_state.h"
 #include "graphics/sign_palette.h"
 #include "graphics/signs.h"
+#include "platform/agent_terminal.h"
 #include "signs_internal.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -71,7 +75,7 @@ static void emit_fan(sign_slot_t *slot, const sign_input_t *in,
                      bool two_rows, double back_length) {
   const sign_palette_t *palette = sign_palette(in->theme);
   bool visible = slot->present &&
-                 (show_session(in, agent_sign_state(&slot->session))) &&
+                 show_session(in, agent_sign_state(&slot->session)) &&
                  !(in->typing && in->typing_key == slot->session.key);
   bool hovered = visible && in->has_hover && in->hover_key == slot->session.key;
   bool pressed = in->has_pressed && in->pressed_key == slot->session.key;
@@ -408,7 +412,7 @@ void layout_fan(signs_t *model, const sign_input_t *in, sign_frame_t *frame,
       if (!slot->used)
         continue;
       bool visible =
-          slot->present && (show_session(in, agent_sign_state(&slot->session)));
+          slot->present && show_session(in, agent_sign_state(&slot->session));
       bool hovered =
           visible && in->has_hover && in->hover_key == slot->session.key;
       if (slot->back_row != (pass < 2) || hovered != (pass % 2 == 1))

@@ -15,9 +15,9 @@ typedef enum {
 // BGRA. Settled shapes are reused from a small cache; a frame whose scalars
 // are still moving is rasterized and not stored. The LRU holds at most 2048
 // bitmaps and 64 MiB of pixels. Ink is clipped to bounds.
-void sign_draw(uint8_t *dst, int dst_w, int dst_h, int scale_120,
+void sign_draw(uint8_t *dst, int dw, int dh, int scale_120,
                const sign_frame_t *frame, sign_draw_layer_t layer);
-void sign_draw_clip(uint8_t *dst, int dst_w, int dst_h, int scale_120,
+void sign_draw_clip(uint8_t *dst, int dw, int dh, int scale_120,
                     const sign_frame_t *frame, sign_draw_layer_t layer,
                     pixel_rect_t clip);
 void sign_draw_cleanup(void);

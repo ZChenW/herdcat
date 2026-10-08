@@ -1,9 +1,11 @@
 #include "graphics/nameplate_layout.h"
 
+#include "config/nameplate.h"
+#include "graphics/signs.h"
 #include "graphics/text.h"
-#include "utils/utf8.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 

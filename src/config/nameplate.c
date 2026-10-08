@@ -1,7 +1,9 @@
 #include "config/nameplate.h"
 
+#include "config/sign_options.h"
 #include "utils/utf8.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -35,7 +37,7 @@ const char *nameplate_validate(const char *s, size_t *position) {
       const char *end = strchr(s + i + 1, '}');
       if (!end)
         return "unclosed placeholder";
-      if (field_id(s + i + 1, (size_t)(end - s - i - 1)) < 0)
+      if (field_id(s + i + 1, (end - s - i - 1)) < 0)
         return "unknown placeholder";
       i = (size_t)(end - s) + 1;
     } else if (s[i] == '}') {

@@ -4,11 +4,13 @@
 #include "utils/utf8.h"
 
 #include <fontconfig/fontconfig.h>
-#include <ft2build.h>
-#include FT_FREETYPE_H
-#include FT_SYNTHESIS_H
-#include FT_TRUETYPE_TABLES_H
+#include <freetype/freetype.h>
+#include <freetype/ftimage.h>
+#include <freetype/ftsynth.h>
+#include <freetype/fttypes.h>
+#include <freetype/tttables.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -116,6 +118,8 @@ static int routed(const char *family, uint32_t cp, bool bold) {
   int face = -1;
   if (cp) {
     int own = routed(family, 0, bold);
+    // match() caps face_count at FACE_LIMIT; recursive routed() keeps that cap.
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
     if (own >= 0 && own < face_count && FT_Get_Char_Index(faces[own].ft, cp))
       face = own;
   }
@@ -427,7 +431,8 @@ static glyph_t *glyph(const char *family, uint32_t cp, float px, bool bold) {
   for (int y = 0; y < h; y++) {
     int row = src->bitmap.pitch < 0 ? h - 1 - y : y;
     memcpy(pixels + (size_t)y * (size_t)w,
-           src->bitmap.buffer + row * abs(src->bitmap.pitch), (size_t)w);
+           src->bitmap.buffer + (size_t)row * (size_t)abs(src->bitmap.pitch),
+           (size_t)w);
   }
   free(slot->pixels);
   *slot = (glyph_t){.cp = cp,
@@ -494,7 +499,7 @@ static ellipsis_t ellipsis_geometry(const char *family, float px, bool bold) {
   // first dot does not read as a full stop glued to the last letter.
   e.gap = e.dot ? e.dot->left + e.ink_left : minimum;
   if (e.gap < e.step - e.diameter)
-    e.gap = e.step - e.diameter;
+    e.gap = (int)(e.step - e.diameter);
   e.gap = e.gap < minimum ? minimum : e.gap > maximum ? maximum : e.gap;
   // Match the public API's whole-logical-pixel budget at fractional scales.
   e.width = (int)floor(ceil((e.gap + 2 * e.step + e.diameter) / scale) * scale);
@@ -619,20 +624,20 @@ bool text_metrics_family(const char *family, float px, bool bold,
   double unit = 64.0 * scale_120 / 120.0;
   metrics_calls++;
   *out = (text_metrics_t){0};
-  out->ascent = face->size->metrics.ascender / unit;
-  out->descent = -face->size->metrics.descender / unit;
+  out->ascent = (double)face->size->metrics.ascender / unit;
+  out->descent = (double)-face->size->metrics.descender / unit;
   const TT_OS2 *os2 = FT_Get_Sfnt_Table(face, ft_sfnt_os2);
   if (os2 && os2->version != 0xffff && os2->version >= 2 &&
       os2->sCapHeight > 0) {
     out->cap_height =
-        FT_MulFix(os2->sCapHeight, face->size->metrics.y_scale) / unit;
+        (double)FT_MulFix(os2->sCapHeight, face->size->metrics.y_scale) / unit;
     out->cap_source = TEXT_CAP_OS2;
   } else {
     FT_UInt h = FT_Get_Char_Index(face, 'H');
     if (h && !FT_Load_Glyph(face, h, FT_LOAD_DEFAULT | FT_LOAD_NO_BITMAP)) {
       if (bold && !(face->style_flags & FT_STYLE_FLAG_BOLD))
         FT_GlyphSlot_Embolden(face->glyph);
-      out->cap_height = face->glyph->metrics.height / unit;
+      out->cap_height = (double)face->glyph->metrics.height / unit;
       if (out->cap_height > 0)
         out->cap_source = TEXT_CAP_GLYPH;
     }
@@ -670,7 +675,7 @@ static void paint(uint8_t *dst, int dw, int dh, int64_t x, int y, glyph_t *g,
     if (yy < 0 || yy >= dh || yy < clip.y || yy >= (int64_t)clip.y + clip.h)
       continue;
     for (int gx = 0; gx < g->w; gx++) {
-      int64_t xx = (int64_t)x + g->left + gx;
+      int64_t xx = x + g->left + gx;
       if (xx < 0 || xx >= dw || xx < clip.x || xx >= (int64_t)clip.x + clip.w)
         continue;
       unsigned a =

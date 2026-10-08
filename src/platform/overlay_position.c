@@ -1,9 +1,14 @@
+#include "config/config.h"
+#include "core/herdcat.h"
 #include "overlay_internal.h"
 #include "platform/drag.h"
 #include "platform/overlay_geometry.h"
 #include "platform/overlay_signs.h"
 #include "platform/overlay_vertical.h"
+#include "platform/surface_tiers.h"
 #include "zwlr-layer-shell-v1-client-protocol.h"
+
+#include <stddef.h>
 
 void clamp_position(overlay_t *overlay) {
   if (!overlay->has_position) {

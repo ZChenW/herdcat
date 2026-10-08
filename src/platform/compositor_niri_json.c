@@ -1,16 +1,15 @@
 #define _GNU_SOURCE
+#include "platform/agent_terminal.h"
+#include "platform/focus.h"
 #include "platform/focus_watch.h"
 #include "utils/json_string.h"
 
-#include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
-#include <sys/socket.h>
-#include <sys/un.h>
+#include <sys/types.h>
 #include <time.h>
-#include <unistd.h>
 
 #define STREAM_LINE 65536
 typedef struct {
@@ -53,7 +52,10 @@ static bool key_string(json_t *j, const char **start, size_t *length) {
     c = (unsigned char)*j->p++;
     if (c == 'u') {
       for (int i = 0; i < 4; i++) {
-        if (j->p == j->end || !strchr("0123456789abcdefABCDEF", *j->p++)) {
+        if (j->p == j->end)
+          return false;
+        char hex = *j->p++;
+        if (!strchr("0123456789abcdefABCDEF", hex)) {
           return false;
         }
       }

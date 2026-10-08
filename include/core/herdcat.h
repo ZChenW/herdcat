@@ -69,7 +69,7 @@ typedef struct {
   atomic_bool watching;
   char *config_path;
   void (*reload_callback)(const char *config_path);
-} ConfigWatcher;
+} config_watcher_t;
 
 // Output monitor reference for multi-monitor support
 // Combines xdg-output metadata with wl_output screen dimensions
@@ -98,19 +98,19 @@ typedef struct {
 // =============================================================================
 
 // Initialize config watcher - returns 0 on success, -1 on failure
-int config_watcher_init(ConfigWatcher *watcher, const char *config_path,
+int config_watcher_init(config_watcher_t *watcher, const char *config_path,
                         void (*callback)(const char *));
 
 // Start watching for config changes
-void config_watcher_start(ConfigWatcher *watcher);
+void config_watcher_start(config_watcher_t *watcher);
 
 // Stop watching for config changes
-void config_watcher_stop(ConfigWatcher *watcher);
+void config_watcher_stop(config_watcher_t *watcher);
 
-void config_watcher_process(ConfigWatcher *watcher);
-int config_watcher_timeout(ConfigWatcher *watcher);
+void config_watcher_process(config_watcher_t *watcher);
+int config_watcher_timeout(config_watcher_t *watcher);
 
 // Cleanup config watcher resources
-void config_watcher_cleanup(ConfigWatcher *watcher);
+void config_watcher_cleanup(config_watcher_t *watcher);
 
 #endif  // HERDCAT_H

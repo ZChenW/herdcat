@@ -1,12 +1,15 @@
 #include "graphics/signs.h"
 
 #include "config/sign_options.h"
-#include "core/agent_adapters.h"
+#include "core/agent_sessions.h"
+#include "core/agent_sign_state.h"
+#include "core/agent_state.h"
 #include "graphics/sign_palette.h"
 #include "signs_internal.h"
 
 #include <limits.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -210,7 +213,8 @@ double nudge_phase(const sign_input_t *in, const sign_slot_t *slot,
   int position = phase <= NUDGE_PHASES / 2 ? phase : NUDGE_PHASES - phase;
   int next = ((phase + 1) * NUDGE_MS + NUDGE_PHASES - 1) / NUDGE_PHASES;
   wake_at(frame, in->now_ms + next - offset);
-  return curve_at((double)position / (NUDGE_PHASES / 2), &BEZIER_LOOP);
+  int half = NUDGE_PHASES / 2;
+  return curve_at((double)position / half, &BEZIER_LOOP);
 }
 void snap_from(sign_frame_t *frame, int first, bool snap) {
   for (int i = first; i < frame->shape_count; i++)
@@ -348,7 +352,7 @@ static void emit_desk(sign_frame_t *frame, const sign_input_t *in, double scale,
     progress = 1;
   // cat_y is already lifted. Put the board back on the resting cat.
   double x = in->cat_x + 12 * scale;
-  double y = in->cat_y + lround(lift) +
+  double y = in->cat_y + (double)lround(lift) +
              (DESK_TOP + (1 - progress) * DESK_SLIDE) * scale;
   // The desk is emitted after reflection to keep its default ink unchanged.
   // Reflect only the new displacement when the signs point down.

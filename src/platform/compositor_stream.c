@@ -2,14 +2,19 @@
 #include "compositor_internal.h"
 #include "platform/agent_watch.h"
 #include "platform/command_job.h"
+#include "platform/compositor.h"
+#include "platform/focus.h"
+#include "platform/focus_watch.h"
 #include "utils/json.h"
 
 #include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
+#include <sys/epoll.h>  // IWYU pragma: keep
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>

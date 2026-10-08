@@ -1,6 +1,8 @@
 #define _GNU_SOURCE
 #include "platform/drag.h"
 
+#include "config/config.h"
+#include "core/herdcat.h"
 #include "utils/error.h"
 
 #include <errno.h>
@@ -15,7 +17,7 @@
 #include <unistd.h>
 
 #define POSITION_LINE_MAX 256
-#define POSITION_FILE_MAX (MAX_OUTPUTS * POSITION_LINE_MAX)
+#define POSITION_FILE_MAX (MAX_OUTPUTS * (long)POSITION_LINE_MAX)
 
 typedef struct {
   char output[128];

@@ -1,12 +1,15 @@
 #include "config/sign_options.h"
-#include "core/agent_adapters.h"
+#include "core/agent_sign_state.h"
+#include "core/agent_state.h"
 #include "graphics/sign_names.h"
 #include "graphics/sign_palette.h"
 #include "graphics/signs.h"
 #include "graphics/text.h"
+#include "platform/agent_terminal.h"
 #include "signs_internal.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -58,7 +61,7 @@ void layout_board(sign_slot_t *slot, const sign_input_t *in,
                   double scale, double desk_clear) {
   const sign_palette_t *palette = sign_palette(in->theme);
   bool visible = slot->present &&
-                 (show_session(in, agent_sign_state(&slot->session))) &&
+                 show_session(in, agent_sign_state(&slot->session)) &&
                  !(in->typing && in->typing_key == slot->session.key);
   // Waiting and error say what they are without being hovered.
   bool expanded = in->open ||

@@ -2,14 +2,21 @@
 
 #include "utils/json_string.h"
 
+#include <stdint.h>
 #include <string.h>
 
 static void space(json_span_t *s) {
   while (s->p < s->end && strchr(" \t\r\n", *s->p))
     s->p++;
 }
+static bool take(json_span_t *s, char expected) {
+  if (s->p == s->end)
+    return false;
+  char value = *s->p++;
+  return value == expected;
+}
 static bool string(json_span_t *s) {
-  if (s->p == s->end || *s->p++ != '"')
+  if (!take(s, '"'))
     return false;
   while (s->p < s->end) {
     unsigned char c = (unsigned char)*s->p++;
@@ -22,9 +29,13 @@ static bool string(json_span_t *s) {
         return false;
       c = (unsigned char)*s->p++;
       if (c == 'u') {
-        for (int i = 0; i < 4; i++)
-          if (s->p == s->end || !strchr("0123456789abcdefABCDEF", *s->p++))
+        for (int i = 0; i < 4; i++) {
+          if (s->p == s->end)
             return false;
+          char hex = *s->p++;
+          if (!strchr("0123456789abcdefABCDEF", hex))
+            return false;
+        }
       } else if (!strchr("\"\\/bfnrt", c))
         return false;
     }
@@ -54,7 +65,7 @@ static bool skip(json_span_t *s, unsigned depth) {
         if (!string(s))
           return false;
         space(s);
-        if (s->p == s->end || *s->p++ != ':')
+        if (!take(s, ':'))
           return false;
       }
       if (!skip(s, depth + 1))
@@ -117,7 +128,7 @@ bool json_document(const char *text, size_t length, json_span_t *out) {
   return s.p == s.end;
 }
 bool json_field(json_span_t s, const char *key, json_span_t *out) {
-  if (s.p == s.end || *s.p++ != '{')
+  if (!take(&s, '{'))
     return false;
   bool found = false;
   space(&s);
@@ -127,7 +138,7 @@ bool json_field(json_span_t s, const char *key, json_span_t *out) {
       return false;
     name.end = s.p;
     space(&s);
-    if (s.p == s.end || *s.p++ != ':')
+    if (!take(&s, ':'))
       return false;
     space(&s);
     json_span_t v = s;
@@ -150,7 +161,7 @@ bool json_field(json_span_t s, const char *key, json_span_t *out) {
   return found;
 }
 bool json_item(json_span_t s, size_t index, json_span_t *out) {
-  if (s.p == s.end || *s.p++ != '[')
+  if (!take(&s, '['))
     return false;
   space(&s);
   for (size_t i = 0; s.p < s.end && *s.p != ']'; i++) {
@@ -163,7 +174,7 @@ bool json_item(json_span_t s, size_t index, json_span_t *out) {
       return true;
     }
     space(&s);
-    if (s.p == s.end || *s.p++ != ',')
+    if (!take(&s, ','))
       return false;
     space(&s);
   }

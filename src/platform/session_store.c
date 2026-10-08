@@ -4,6 +4,8 @@
 #include "core/agent_hook.h"
 #include "core/agent_sessions.h"
 #include "core/agent_state.h"
+#include "core/agent_title.h"
+#include "core/agent_transcript.h"
 #include "platform/agent_terminal.h"
 #include "platform/agent_watch.h"
 #include "platform/transcript_watch.h"
@@ -15,15 +17,17 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #define STORE_DELAY_MS 1000
 #define STORE_LINE_MAX 2304
-#define STORE_FILE_MAX (AGENT_SESSIONS_MAX * STORE_LINE_MAX)
+#define STORE_FILE_MAX (AGENT_SESSIONS_MAX * (long)STORE_LINE_MAX)
 
 static uint64_t seen_generation;
 static int64_t due_ms;

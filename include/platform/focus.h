@@ -45,21 +45,23 @@ typedef struct {
 } focus_wezterm_pane_t;
 int focus_parse_wezterm(const char *json, size_t length, bool clients,
                         focus_wezterm_pane_t *out, size_t capacity);
-typedef bool (*focus_terminal_fn)(pid_t pid, agent_terminal_t *terminal,
-                                  char *name, size_t capacity);
-typedef bool (*focus_title_fn)(pid_t pid, char *title, size_t capacity);
-void focus_set_title(focus_title_fn lookup);
+typedef bool (*focus_terminal_fn_t)(pid_t pid, agent_terminal_t *terminal,
+                                    char *name, size_t capacity);
+typedef bool (*focus_title_fn_t)(pid_t pid, char *title, size_t capacity);
+void focus_set_title(focus_title_fn_t lookup);
 bool focus_terminal_window_title(pid_t pid, const agent_terminal_t *terminal,
                                  const char *name, const char *title,
                                  const focus_window_t *windows, size_t count,
                                  uint64_t *id);
-typedef void (*focus_terminal_note_fn)(pid_t pid,
-                                       const agent_terminal_t *terminal);
-void focus_set_terminal(focus_terminal_fn lookup, focus_terminal_note_fn note);
-typedef void (*focus_current_fn)(pid_t pid, uint64_t window, const char *socket,
-                                 const focus_wezterm_pane_t *panes,
-                                 size_t count);
-void focus_set_current(focus_current_fn note);
+typedef void (*focus_terminal_note_fn_t)(pid_t pid,
+                                         const agent_terminal_t *terminal);
+void focus_set_terminal(focus_terminal_fn_t lookup,
+                        focus_terminal_note_fn_t note);
+typedef void (*focus_current_fn_t)(pid_t pid, uint64_t window,
+                                   const char *socket,
+                                   const focus_wezterm_pane_t *panes,
+                                   size_t count);
+void focus_set_current(focus_current_fn_t note);
 bool focus_tmux_client(const char *text, const char *session, pid_t *pid,
                        char *tty, size_t capacity);
 // Background discovery shares the one command job and adds no periodic wake.
@@ -73,9 +75,9 @@ unsigned focus_stat_reads(void);
 bool focus_available(void);
 int focus_session_window(pid_t agent_pid);
 // After niri focuses the window. True provides a split id and socket.
-typedef bool (*focus_kitty_fn)(pid_t pid, uint64_t *window, char *listen,
-                               size_t capacity);
-void focus_set_kitty(focus_kitty_fn fn);
+typedef bool (*focus_kitty_fn_t)(pid_t pid, uint64_t *window, char *listen,
+                                 size_t capacity);
+void focus_set_kitty(focus_kitty_fn_t fn);
 // False means kitten must not be started. match receives id:<decimal>.
 bool focus_kitty_target(const char *window_text, const char *listen,
                         char *match, size_t capacity);

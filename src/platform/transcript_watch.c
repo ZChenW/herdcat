@@ -4,6 +4,7 @@
 #include "core/agent_adapters.h"
 #include "core/agent_quiet.h"
 #include "core/agent_sessions.h"
+#include "core/agent_state.h"
 #include "core/agent_title.h"
 #include "core/agent_transcript.h"
 #include "platform/agent_watch.h"
@@ -12,18 +13,20 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
+#include <sys/epoll.h>  // IWYU pragma: keep
 #include <sys/eventfd.h>
 #include <sys/inotify.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #define TRANSCRIPT_TOKEN 0x7472616eU
 #define BACKLOG_TOKEN    0x74726162U
-#define READ_BUDGET      (256 * 1024)
+#define READ_BUDGET      (256L * 1024L)
 
 typedef struct {
   uint64_t key, order;

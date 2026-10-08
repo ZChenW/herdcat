@@ -1,11 +1,14 @@
 #include "graphics/sign_draw.h"
 
+#include "graphics/pixel_rect.h"
+#include "graphics/signs.h"
 #include "graphics/text.h"
 #include "sign_draw_internal.h"
 
 #include <math.h>
 #include <nanosvg.h>
 #include <nanosvgrast.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -182,6 +185,8 @@ static cache_slot_t *cache_oldest(void) {
   }
   return oldest;
 }
+// Ownership passes to the cache; cache_drop() frees this mutable allocation.
+// NOLINTNEXTLINE(readability-non-const-parameter)
 static void cache_store(uint64_t key, uint8_t *pixels, int w, int h,
                         bool phase) {
   size_t bytes = (size_t)w * (size_t)h * 4;

@@ -1,8 +1,13 @@
 #include "graphics/sign_names.h"
 
+#include "config/sign_options.h"
 #include "core/agent_adapters.h"
+#include "core/agent_sessions.h"
+#include "core/agent_title.h"
+#include "graphics/signs.h"
 #include "utils/utf8.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 

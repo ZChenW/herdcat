@@ -1,6 +1,41 @@
 # Clang-Tidy Configuration for herdcat
 # Static analysis for C code with best practices
 
+# Stage 38 exclusions (each retains the established behavior/style):
+# readability-braces-around-statements: Single-statement bodies follow the
+#   existing unbraced project style.
+# readability-math-missing-parentheses: Normal C arithmetic precedence follows
+#   the existing project style.
+# readability-implicit-bool-conversion: Scalar truth tests follow the existing C
+#   project style.
+# readability-trailing-comma: Trailing commas are managed by clang-format.
+# readability-isolate-declaration: Grouped declarations follow the existing
+#   project style.
+# bugprone-suspicious-string-compare: !strcmp() is the established equality
+#   idiom in this C project.
+# readability-avoid-nested-conditional-operator: Nested conditional expressions
+#   follow the existing project style.
+# readability-function-size: Function decomposition is outside this lint cleanup
+#   stage.
+# readability-inconsistent-ifelse-braces: Mixed braced and single-statement
+#   bodies follow the existing style.
+# bugprone-signed-bitwise: Reviewed uses are OS/enum flags, bounded UTF-8 fields
+#   and color channels.
+# clang-analyzer-optin.performance.Padding: ABI/layout padding is outside this
+#   behavior-preserving cleanup.
+
+# Existing exclusions remain in place:
+# bugprone-easily-swappable-parameters: callback/API argument order is established.
+# bugprone-reserved-identifier: libc feature-test macros use reserved names.
+# clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling:
+#   C buffer operations use explicit bounds; blanket deprecation is unhelpful.
+# concurrency-mt-unsafe: renderer and helper each run one thread.
+# misc-no-recursion: JSON and font routing use intentionally bounded recursion.
+# readability-identifier-length: short loop/geometry names follow project style.
+# readability-magic-numbers: drawing geometry keeps its existing numeric values.
+# readability-function-cognitive-complexity: decomposition is outside this stage.
+# readability-else-after-return: guarded branches follow the existing style.
+
 # Enable checks
 Checks: >
   -*,
@@ -20,12 +55,24 @@ Checks: >
   -readability-magic-numbers,
   -readability-function-cognitive-complexity,
   -readability-else-after-return,
+  -readability-braces-around-statements,
+  -readability-math-missing-parentheses,
+  -readability-implicit-bool-conversion,
+  -readability-trailing-comma,
+  -readability-isolate-declaration,
+  -bugprone-suspicious-string-compare,
+  -readability-avoid-nested-conditional-operator,
+  -readability-function-size,
+  -readability-inconsistent-ifelse-braces,
+  -bugprone-signed-bitwise,
+  -clang-analyzer-optin.performance.Padding,
 
 # Only analyze project headers, not system/lib headers
-HeaderFilterRegex: '.*/(include|src)/.*\.h$'
+# Match project module headers, rather than /usr/include (e.g. FreeType).
+HeaderFilterRegex: '(^|/)(include|src)/(core|config|graphics|platform|utils)/.*\.h$'
 
-# Treat warnings as warnings (not errors by default)
-WarningsAsErrors: ''
+# Every remaining diagnostic must fail make lint and CI.
+WarningsAsErrors: '*'
 
 # The renderer and helper each run a single thread; mt-unsafe calls cannot
 # race here. Other concurrency checks remain enabled.
@@ -36,6 +83,9 @@ CheckOptions:
   # direct inclusion of glibc implementation headers.
   - key: misc-include-cleaner.IgnoreHeaders
     value: '(^|/)(bits|asm-generic)/.*;(^|/)linux/(limits|prctl)\.h$'
+  # Generated asset names are defined by embed_assets.sh; retain those symbols.
+  - key: readability-identifier-naming.GlobalConstantIgnoredRegexp
+    value: '^bongo_.*_svg(_size)?$'
   # Feature-test macros are prescribed by libc, rather than project naming.
   - key: readability-identifier-naming.MacroDefinitionIgnoredRegexp
     value: '^_(GNU_SOURCE|DEFAULT_SOURCE|POSIX_C_SOURCE)$'
@@ -60,18 +110,6 @@ CheckOptions:
     value: lower_case
   - key: readability-identifier-naming.EnumConstantCase
     value: UPPER_CASE
-  
-  # Braces around statements
-  - key: readability-braces-around-statements.ShortStatementLines
-    value: '1'
-  
-  # Function size limits (advisory)
-  - key: readability-function-size.LineThreshold
-    value: '200'
-  - key: readability-function-size.StatementThreshold
-    value: '100'
-  - key: readability-function-size.ParameterThreshold
-    value: '8'
   
   # Performance checks
   - key: performance-unnecessary-value-param.AllowedTypes

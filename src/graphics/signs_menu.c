@@ -1,10 +1,10 @@
 #include "config/sign_options.h"
-#include "core/agent_adapters.h"
 #include "graphics/sign_palette.h"
 #include "graphics/signs.h"
 #include "signs_internal.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 

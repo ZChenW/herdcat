@@ -5,13 +5,12 @@
 #include "core/agent_quiet.h"
 #include "core/agent_sessions.h"
 #include "core/agent_state.h"
+#include "core/agent_title.h"
 #include "core/control.h"
 #include "core/herdcat.h"
 #include "graphics/animation.h"
 #include "graphics/sign_draw.h"
-#include "graphics/sign_palette.h"
 #include "graphics/text.h"
-#include "platform/agent_discover.h"
 #include "platform/agent_terminal.h"
 #include "platform/agent_watch.h"
 #include "platform/compositor.h"
@@ -30,6 +29,7 @@
 #include "utils/error.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdatomic.h>
@@ -45,7 +45,7 @@
 volatile sig_atomic_t running = 1;
 static int signal_fd = -1;
 config_t config;
-static ConfigWatcher watcher = {.inotify_fd = -1, .watch_fd = -1};
+static config_watcher_t watcher = {.inotify_fd = -1, .watch_fd = -1};
 char *config_path;
 static const char *monitor_override;
 static bool reload_pending;
@@ -424,6 +424,8 @@ typedef struct {
 
 static int run_setup(char **argv) {
   argv[1] = "herdcat-setup";
+  // The executable is fixed; forwarding the user's setup arguments is intended.
+  // NOLINTNEXTLINE(clang-analyzer-optin.taint.GenericTaint)
   execvp(argv[1], &argv[1]);
   fprintf(stderr,
           "Cannot run herdcat-setup: %s. Install the setup script and "
@@ -445,7 +447,8 @@ static int parse_arguments(int argc, char **argv, cli_options_t *options) {
     }
     if (!strcmp(arg, "--config") || !strcmp(arg, "-c") ||
         !strcmp(arg, "--monitor") || !strcmp(arg, "-m")) {
-      if (++i >= argc) {
+      i++;
+      if (i >= argc) {
         fprintf(stderr, "%s requires a value\n", arg);
         return 1;
       }
@@ -459,14 +462,17 @@ static int parse_arguments(int argc, char **argv, cli_options_t *options) {
         fprintf(stderr, "Select one control command\n");
         return 1;
       }
-      if (++i >= argc || !agent_hook_valid_agent(argv[i])) {
+      i++;
+      if (i >= argc || !agent_hook_valid_agent(argv[i])) {
         fprintf(stderr, "--hook requires an agent name matching [a-z]{1,8}\n");
         return 1;
       }
       options->hook_agent = argv[i];
     } else if (!strcmp(arg, "--event")) {
-      if (!options->hook_agent || options->hook_event || ++i >= argc ||
-          !argv[i][0] || strlen(argv[i]) >= 64) {
+      bool invalid = !options->hook_agent || options->hook_event;
+      if (!invalid)
+        i++;
+      if (invalid || i >= argc || !argv[i][0] || strlen(argv[i]) >= 64) {
         fprintf(stderr, "--event requires a name after --hook AGENT\n");
         return 1;
       }

@@ -6,7 +6,6 @@
 #include "core/herdcat.h"
 #include "utils/error.h"
 
-#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>

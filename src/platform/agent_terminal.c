@@ -3,10 +3,12 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 enum {
@@ -346,7 +348,7 @@ bool agent_terminal_lookup_all(const char *root, pid_t pid,
   return ok;
 }
 
-static const char *const terminal_names[] = {"kitty", "tmux", "wezterm",
+static const char *const TERMINAL_NAMES[] = {"kitty", "tmux", "wezterm",
                                              "ghostty"};
 bool agent_terminal_message(char *out, size_t capacity, uint64_t key,
                             const agent_terminal_t *t) {
@@ -361,7 +363,7 @@ bool agent_terminal_message(char *out, size_t capacity, uint64_t key,
   if (!n)
     strcpy(encoded, "-");
   int wrote = snprintf(out, capacity, "term %016jx %s %ju %s", (uintmax_t)key,
-                       terminal_names[t->kind], (uintmax_t)t->pane, encoded);
+                       TERMINAL_NAMES[t->kind], (uintmax_t)t->pane, encoded);
   return wrote > 0 && (size_t)wrote < capacity;
 }
 bool agent_terminal_request(const char *request, uint64_t *key,
@@ -375,7 +377,7 @@ bool agent_terminal_request(const char *request, uint64_t *key,
     return false;
   agent_terminal_t t = {.kind = TERMINAL_NONE};
   for (int i = TERMINAL_TMUX; i <= TERMINAL_GHOSTTY; i++)
-    if (!strcmp(kind, terminal_names[i]))
+    if (!strcmp(kind, TERMINAL_NAMES[i]))
       t.kind = (agent_terminal_kind_t)i;
   if (t.kind == TERMINAL_NONE || !parse_window(pane, &t.pane))
     return false;

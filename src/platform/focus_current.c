@@ -1,8 +1,12 @@
 #include "platform/focus_current.h"
 
-#include "platform/focus_watch.h"
+#include "core/agent_sessions.h"
+#include "platform/agent_terminal.h"
+#include "platform/focus.h"
 
+#include <stdint.h>
 #include <string.h>
+#include <sys/types.h>
 
 enum {
   PID_MAX = 4194304

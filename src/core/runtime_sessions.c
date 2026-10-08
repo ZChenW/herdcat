@@ -4,7 +4,6 @@
 #include "core/agent_quiet.h"
 #include "core/agent_sessions.h"
 #include "core/agent_state.h"
-#include "core/agent_title.h"
 #include "graphics/animation.h"
 #include "platform/agent_discover.h"
 #include "platform/agent_terminal.h"
@@ -19,19 +18,18 @@
 #include "platform/wayland.h"
 #include "runtime_internal.h"
 
+#include <fcntl.h>
+
 static bool hidden, paused;
 
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
-#include <signal.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/eventfd.h>
-#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 void agent_refresh(void) {

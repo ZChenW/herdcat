@@ -1,7 +1,10 @@
 #include "platform/overlay_geometry.h"
 
+#include "config/config.h"
+#include "config/sign_options.h"
 #include "core/herdcat.h"
 #include "graphics/signs.h"
+#include "platform/drag.h"
 
 #include <limits.h>
 #include <stdint.h>

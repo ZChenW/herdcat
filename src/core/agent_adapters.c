@@ -1,5 +1,7 @@
 #include "core/agent_adapters.h"
 
+#include "core/agent_sessions.h"
+
 #include <string.h>
 
 // clang-format off

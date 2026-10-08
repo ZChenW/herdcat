@@ -71,7 +71,7 @@ static void config_tests(const char *path) {
   config_cleanup_full(&config);
 }
 static void watcher_tests(const char *path, const char *other) {
-  ConfigWatcher watcher;
+  config_watcher_t watcher;
   TEST_ASSERT(config_watcher_init(&watcher, path, changed) == 0);
   config_watcher_start(&watcher);
   write_config(other, "fps=30\n");

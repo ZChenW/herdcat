@@ -1,9 +1,13 @@
 #include "core/agent_quiet.h"
 
 #include "core/agent_adapters.h"
+#include "core/agent_sessions.h"
+#include "core/agent_state.h"
 #include "platform/agent_output.h"
 
+#include <stdint.h>
 #include <string.h>
+#include <sys/types.h>
 
 #define QUIET_BYTES 256
 #define WINDOW_MS   1000

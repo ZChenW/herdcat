@@ -23,7 +23,7 @@ static inline int path_nibble(char c) {
 }
 static inline bool path_unhex(const char *text, char *out) {
   size_t n = strlen(text);
-  if (n % 2 || n > AGENT_CWD_MAX * 2)
+  if (n % 2 || n > AGENT_CWD_MAX * 2UL)
     return false;
   for (size_t i = 0; i < n; i += 2) {
     int a = path_nibble(text[i]), b = path_nibble(text[i + 1]);

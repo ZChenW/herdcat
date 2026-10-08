@@ -1,20 +1,29 @@
 #define _POSIX_C_SOURCE 200809L
 #include "platform/overlay_signs.h"
 
+#include "config/config.h"
 #include "config/sign_options.h"
 #include "core/agent_sessions.h"
 #include "core/agent_sign_state.h"
+#include "core/agent_state.h"
+#include "core/agent_title.h"
+#include "core/herdcat.h"
 #include "graphics/sign_names.h"
 #include "graphics/sign_palette.h"
+#include "graphics/signs.h"
 #include "graphics/text.h"
 #include "overlay_signs_internal.h"
+#include "platform/agent_terminal.h"
 #include "platform/drag.h"
+#include "platform/focus.h"
 #include "platform/focus_current.h"
 #include "platform/focus_watch.h"
 #include "platform/font_panel.h"
 #include "platform/surface_tiers.h"
 
+#include <fcntl.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -187,9 +196,11 @@ static void build_frame(size_t index, const config_t *config, int cat_x,
   bool before_deadline =
       !lane->frame.animating || lane->frame.next_frame_ms > now_ms ||
       (lane->frame.next_frame_ms == 0 && lane->waiting_frame);
+  // Compare bytes deliberately: different padding can only miss the cache.
   if (lane->cached && before_deadline &&
       lane->cached_text_key == text_layout_key() &&
-      !memcmp(&signature, &lane->cached_input, sizeof(signature)) &&
+      !memcmp((const unsigned char *)&signature,
+              (const unsigned char *)&lane->cached_input, sizeof(signature)) &&
       !memcmp(shown, lane->cached_sessions, input.count * sizeof(*shown))) {
     *frame = lane->frame;
     return;

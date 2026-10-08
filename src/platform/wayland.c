@@ -2,7 +2,11 @@
 #include "platform/wayland.h"
 
 #include "config/config.h"
+#include "config/sign_options.h"
 #include "core/herdcat.h"
+#include "graphics/pixel_rect.h"
+#include "graphics/signs.h"
+#include "platform/surface_tiers.h"
 #include "utils/error.h"
 #include "zwlr-layer-shell-v1-client-protocol.h"
 
@@ -42,7 +46,6 @@
 #endif
 
 #include "overlay_internal.h"
-#include "platform/overlay_geometry.h"
 
 #include <limits.h>
 

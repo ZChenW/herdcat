@@ -1,9 +1,15 @@
+#include "config/config.h"
 #include "config/sign_name_geometry.h"
+#include "config/sign_options.h"
+#include "core/herdcat.h"
+#include "graphics/signs.h"
 #include "overlay_signs_internal.h"
 #include "platform/drag.h"
 #include "platform/overlay_signs.h"
 
 #include <limits.h>
+#include <stddef.h>
+#include <stdint.h>
 
 void overlay_signs_width(size_t index, int surface_width) {
   if (index < MAX_OUTPUTS)

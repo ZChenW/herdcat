@@ -1,43 +1,27 @@
 #define _GNU_SOURCE
 #include "config/config.h"
 #include "core/herdcat.h"
+#include "graphics/signs.h"
 #include "platform/wayland.h"
-#include "utils/error.h"
-#include "zwlr-layer-shell-v1-client-protocol.h"
 
-#include <errno.h>
-#include <signal.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/poll.h>
-#include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
 
 #ifdef __GNUC__
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wshadow"
 #endif
-#include "cursor-shape-v1-client-protocol.h"
-#include "fractional-scale-v1-client-protocol.h"
 #include "graphics/animation.h"
 #include "graphics/pixel_rect.h"
 #include "graphics/sign_draw.h"
-#include "graphics/text.h"
-#include "platform/drag.h"
-#include "platform/focus.h"
-#include "platform/font_panel.h"
-#include "platform/fullscreen.h"
-#include "platform/input.h"
-#include "platform/outputs.h"
 #include "platform/overlay_signs.h"
 #include "platform/scale.h"
 #include "platform/shm_buffer.h"
 #include "viewporter-client-protocol.h"
-#include "wlr-foreign-toplevel-management-v1-client-protocol.h"
-#include "xdg-output-unstable-v1-client-protocol.h"
 #ifdef __GNUC__
 #  pragma GCC diagnostic pop
 #endif
@@ -45,8 +29,6 @@
 #include "overlay_internal.h"
 
 #include <limits.h>
-#include <linux/input-event-codes.h>
-#include <math.h>
 
 struct wl_callback *sign_frames[MAX_OUTPUTS];
 

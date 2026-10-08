@@ -8,10 +8,11 @@
 #include <inttypes.h>
 #include <signal.h>
 #include <spawn.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -58,7 +59,7 @@ int job_start(command_job_t *job, const char *const argv[]) {
         size_t count = 0;
         while (environ[count])
           count++;
-        owned = calloc(count + 2, sizeof(*owned));
+        owned = (char **)calloc(count + 2, sizeof(*owned));
         if (!owned) {
           error = ENOMEM;
         } else {
@@ -75,7 +76,7 @@ int job_start(command_job_t *job, const char *const argv[]) {
       if (!error)
         error = posix_spawnp(&job->pid, argv[0], &actions, NULL,
                              (char *const *)argv, environment);
-      free(owned);
+      free((void *)owned);
     }
     posix_spawn_file_actions_destroy(&actions);
   }

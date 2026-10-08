@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "platform/theme_watch.h"
 
+#include "config/sign_options.h"
 #include "graphics/sign_palette.h"
 #include "platform/agent_watch.h"
 #include "platform/command_job.h"
@@ -8,12 +9,13 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
+#include <sys/epoll.h>  // IWYU pragma: keep
 #include <sys/stat.h>
-#include <sys/wait.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -129,15 +131,11 @@ static bool read_start(bool old) {
   return true;
 }
 static void start(void) {
+  const char *match_rule = "type='signal',interface='org.freedesktop.portal."
+                           "Settings',member='SettingChanged'";
   fallback = false;
-  const char *args[] = {"busctl",
-                        "--user",
-                        "monitor",
-                        "--json=short",
-                        "--match",
-                        "type='signal',interface='org.freedesktop.portal."
-                        "Settings',member='SettingChanged'",
-                        NULL};
+  const char *args[] = {"busctl",  "--user",   "monitor", "--json=short",
+                        "--match", match_rule, NULL};
   if (job_start(&monitor, args) < 0 ||
       agent_watch_listen(monitor.fd, THEME_TOKEN, EPOLLIN) < 0 ||
       !read_start(false))

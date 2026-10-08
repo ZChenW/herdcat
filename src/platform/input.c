@@ -182,6 +182,8 @@ input_group_t input_group_state(void) {
   gid_t egid;
   gid_t sgid;
   if (getresgid(&rgid, &egid, &sgid) == 0) {
+    // getgroups(n, held) returns at most n; calloc reserves three extra slots.
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
     held[count++] = rgid;
     held[count++] = egid;
     held[count++] = sgid;

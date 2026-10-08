@@ -3,18 +3,18 @@
 
 #include "compositor_internal.h"
 #include "core/agent_adapters.h"
+#include "core/agent_sessions.h"
+#include "core/agent_state.h"
+#include "platform/agent_terminal.h"
 #include "platform/agent_watch.h"
 #include "platform/compositor.h"
+#include "platform/focus.h"
 #include "platform/focus_current.h"
-#include "utils/json_string.h"
 
-#include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
 #define WINDOW_MAX FOCUS_WATCH_WINDOW_MAX

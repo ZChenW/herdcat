@@ -1,10 +1,13 @@
 #include "graphics/font_panel.h"
 
+#include "config/sign_options.h"
 #include "graphics/sign_draw.h"
 #include "graphics/sign_palette.h"
+#include "graphics/signs.h"
 #include "graphics/text.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -377,14 +380,13 @@ void font_panel_layout(const font_panel_t *panel, font_panel_layout_t *out) {
   out->cell_count = shown;
   for (int i = 0; i < shown; i++) {
     double x, w;
+    int row = i / FONT_PANEL_COLS;
     column_box(i % FONT_PANEL_COLS, scale, &x, &w);
-    out->cells[i] =
-        (font_panel_box_t){.x = x,
-                           .y = (INSET + HEAD + GAP +
-                                 (i / FONT_PANEL_COLS) * (CELL_H + CELL_GAP)) *
-                                scale,
-                           .w = w,
-                           .h = CELL_H * scale};
+    out->cells[i] = (font_panel_box_t){
+        .x = x,
+        .y = (INSET + HEAD + GAP + row * (CELL_H + CELL_GAP)) * scale,
+        .w = w,
+        .h = CELL_H * scale};
   }
   out->preview = preview_box(panel, scale, grid);
   if (rows > FONT_PANEL_ROWS && grid > 0) {

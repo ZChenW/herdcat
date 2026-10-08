@@ -1,6 +1,9 @@
 #include "platform/overlay_vertical.h"
 
+#include "config/config.h"
 #include "config/sign_name_geometry.h"
+#include "config/sign_options.h"
+#include "graphics/signs.h"
 
 #include <limits.h>
 #include <stdint.h>

@@ -4,9 +4,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 bool agent_output_wchar(pid_t pid, uint64_t *wchar) {

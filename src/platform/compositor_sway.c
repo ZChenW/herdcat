@@ -1,14 +1,18 @@
 #define _POSIX_C_SOURCE 200809L
 #include "compositor_internal.h"
 #include "platform/compositor.h"
+#include "platform/focus.h"
+#include "platform/focus_watch.h"
 #include "utils/json.h"
 
 #include <inttypes.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 static bool sway_window(json_span_t item, focus_window_t *out, bool *focused) {
   json_span_t v;
@@ -154,7 +158,7 @@ static int sway_connect(void) {
 }
 static void sway_windows(const char **args) {
   const char *a[] = {"swaymsg", "-r", "-t", "get_tree", NULL};
-  memcpy(args, a, sizeof(a));
+  memcpy((void *)args, (const void *)a, sizeof(a));
 }
 static bool sway_focus(uint64_t id, const char **args, char *text,
                        size_t size) {
@@ -164,7 +168,7 @@ static bool sway_focus(uint64_t id, const char **args, char *text,
   if (n < 0 || (size_t)n >= size)
     return false;
   const char *a[] = {"swaymsg", "-r", text, NULL};
-  memcpy(args, a, sizeof(a));
+  memcpy((void *)args, (const void *)a, sizeof(a));
   return true;
 }
 const compositor_ops_t COMPOSITOR_SWAY = {.name = "Sway (experimental)",

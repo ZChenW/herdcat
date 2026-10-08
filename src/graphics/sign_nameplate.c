@@ -1,8 +1,14 @@
-#include "core/agent_adapters.h"
+#include "config/nameplate.h"
+#include "core/agent_sessions.h"
+#include "core/agent_sign_state.h"
+#include "core/agent_state.h"
+#include "core/agent_title.h"
 #include "graphics/sign_names.h"
-#include "graphics/sign_palette.h"
+#include "graphics/signs.h"
+#include "platform/agent_terminal.h"
 #include "signs_internal.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 

@@ -1,15 +1,22 @@
 #define _GNU_SOURCE
 #include "platform/font_panel.h"
 
+#include "config/config.h"
+#include "core/herdcat.h"
 #include "font_panel_internal.h"
 #include "graphics/font_panel.h"
 #include "graphics/sign_palette.h"
-#include "graphics/text.h"
+#include "platform/drag.h"
+#include "platform/outputs.h"
 #include "platform/overlay_geometry.h"
 #include "platform/overlay_signs.h"
 #include "platform/shm_buffer.h"
 #include "platform/wayland.h"
 #include "utils/error.h"
+#include "zwlr-layer-shell-v1-client-protocol.h"
+
+#include <stdint.h>
+#include <wayland-client-protocol.h>
 #ifdef __GNUC__
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wshadow"
@@ -19,16 +26,12 @@
 #  pragma GCC diagnostic pop
 #endif
 
-#include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-#include <wayland-client.h>
 
 static font_panel_t panel;
 static char selected_name[128];

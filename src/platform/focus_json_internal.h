@@ -40,7 +40,10 @@ static bool string(json_t *j, const char **start, size_t *length) {
     c = (unsigned char)*j->p++;
     if (c == 'u') {
       for (int i = 0; i < 4; i++) {
-        if (j->p == j->end || !strchr("0123456789abcdefABCDEF", *j->p++))
+        if (j->p == j->end)
+          return false;
+        char hex = *j->p++;
+        if (!strchr("0123456789abcdefABCDEF", hex))
           return false;
       }
     } else if (!strchr("\"\\/bfnrt", c))

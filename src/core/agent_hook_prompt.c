@@ -1,6 +1,11 @@
 #include "agent_hook_internal.h"
+#include "core/agent_adapters.h"
+#include "core/agent_hook.h"
+#include "core/agent_sessions.h"
+#include "core/agent_title.h"
 #include "utils/utf8.h"
 
+#include <stdint.h>
 #include <string.h>
 
 static bool prompt_space(uint32_t cp) {
