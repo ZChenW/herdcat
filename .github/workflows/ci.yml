@@ -35,9 +35,6 @@ jobs:
       - name: Run tests
         run: make test-sanitize
 
-      - name: Run clang-tidy
-        run: make lint
-
       - name: Run ShellCheck
         run: shellcheck scripts/*.sh
 
@@ -54,13 +51,19 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm --needed base-devel git wayland \
-            wayland-protocols freetype2 fontconfig python sway \
+            wayland-protocols freetype2 fontconfig python sway clang \
             noto-fonts noto-fonts-cjk ttf-dejavu ttf-liberation
           # Arch gives sway cap_sys_nice. The container lacks that
           # capability, so the kernel refuses to execute the file at all.
           setcap -r /usr/bin/sway
 
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      # Lint here rather than on Ubuntu: warnings are errors, and an older
+      # clang-tidy disagrees with the one developers run about which
+      # includes are needed.
+      - name: Run clang-tidy
+        run: make lint
 
       - name: Run runtime tests
         run: |
