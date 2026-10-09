@@ -654,10 +654,6 @@ herdcat_error_t animation_init(config_t *config) {
   return HERDCAT_SUCCESS;
 }
 
-herdcat_error_t animation_start(void) {
-  return HERDCAT_SUCCESS;
-}
-
 void animation_cleanup(void) {
   agent_state = AGENT_STATE_IDLE;
   agent_frames = true;

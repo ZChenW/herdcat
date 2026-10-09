@@ -230,19 +230,6 @@ static bool parse_window(char *buf, window_info_t *win) {
   return (has_monitor && has_state) != 0;
 }
 
-void hypr_update_outputs_with_monitor_ids(void) {
-  char buf[8192];
-  const char *args[] = {"hyprctl", "monitors", NULL};
-  if (safe_exec_read(args, buf, sizeof(buf)) >= 0) {
-    parse_monitors(buf);
-  }
-}
-bool hypr_get_active_window(window_info_t *window) {
-  char buf[8192];
-  const char *args[] = {"hyprctl", "activewindow", NULL};
-  return (safe_exec_read(args, buf, sizeof(buf)) >= 0 &&
-          parse_window(buf, window)) != 0;
-}
 void hypr_poll(void) {
   if (!getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
     return;

@@ -1,0 +1,92 @@
+{
+  "recorded_version": "0.25.0",
+  "recorded_date": "2026-10-08",
+  "source": "docs/performance/qwen-hooks-raw.log",
+  "source_sha256": "bbd84eb2037c6acf088bfc24ff4b6b04e89fd869f52ace9638c446786fbdbcd2",
+  "version_source": "docs/performance/qwen-antigravity-report.md reviewer revalidation section",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 1,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "qwen"
+      ]
+    },
+    {
+      "payload": "002.json",
+      "source_line": 2,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "qwen"
+      ]
+    },
+    {
+      "payload": "003.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "qwen"
+      ]
+    },
+    {
+      "payload": "004.json",
+      "source_line": 4,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "qwen"
+      ]
+    },
+    {
+      "payload": "005.json",
+      "source_line": 5,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "qwen"
+      ]
+    },
+    {
+      "payload": "006.json",
+      "source_line": 6,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "qwen"
+      ]
+    },
+    {
+      "payload": "007.json",
+      "source_line": 7,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "qwen"
+      ]
+    },
+    {
+      "payload": "008.json",
+      "source_line": 8,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "qwen"
+      ]
+    },
+    {
+      "payload": "009.json",
+      "source_line": 9,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "qwen"
+      ]
+    }
+  ],
+  "redaction": "Paths, username, project, session/tool IDs, nonempty prompt/response/tool-output/descriptions replaced; keys, nesting, value types, empty strings, event names and timing preserved.",
+  "limitations": "No transcript/log contents are supplied; only hook-visible title/state is replayed. No recorded subagent payload."
+}

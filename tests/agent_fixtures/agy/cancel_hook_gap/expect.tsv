@@ -1,0 +1,4 @@
+# elapsed_ms	payload	--event (or -)	state	title (- means empty)	subagent
+0	001.json	PreInvocation	working	-	0
+38939	002.json	PreInvocation	working	-	0
+46092	003.json	PreInvocation	working	-	0

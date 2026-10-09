@@ -1,0 +1,133 @@
+{
+  "agents": [
+    {
+      "agent": "claude",
+      "recorded_versions": [],
+      "scenarios": [],
+      "query": {
+        "kind": "npm",
+        "url": "https://registry.npmjs.org/@anthropic-ai%2Fclaude-code/latest",
+        "identity_source": "Claude Code npm distribution"
+      },
+      "query_note": "",
+      "evidence_note": "No raw hook payload has been recorded yet.",
+      "validated_version": "2.1.292"
+    },
+    {
+      "agent": "codex",
+      "recorded_versions": [],
+      "scenarios": [],
+      "query": {
+        "kind": "npm",
+        "url": "https://registry.npmjs.org/@openai%2Fcodex/latest",
+        "identity_source": "Codex CLI npm distribution"
+      },
+      "query_note": "",
+      "evidence_note": "No raw hook payload has been recorded yet.",
+      "validated_version": "0.160.0"
+    },
+    {
+      "agent": "grok",
+      "recorded_versions": [],
+      "scenarios": [],
+      "query": null,
+      "query_note": "distributed by its own installer; no public npm, PyPI or GitHub Releases listing",
+      "evidence_note": "No raw hook payload has been recorded yet.",
+      "validated_version": "1.0.46"
+    },
+    {
+      "agent": "kimi",
+      "recorded_versions": [],
+      "scenarios": [],
+      "query": {
+        "kind": "npm",
+        "url": "https://registry.npmjs.org/@moonshot-ai%2Fkimi-code/latest",
+        "identity_source": "npm package named by the tags of github.com/MoonshotAI/kimi-code releases"
+      },
+      "query_note": "",
+      "evidence_note": "No raw hook payload has been recorded yet.",
+      "validated_version": "2.1.1"
+    },
+    {
+      "agent": "cursor",
+      "recorded_versions": [],
+      "scenarios": [],
+      "query": null,
+      "query_note": "versions are dates with a commit, published by its own installer only",
+      "evidence_note": "No raw hook payload has been recorded yet.",
+      "validated_version": null
+    },
+    {
+      "agent": "copilot",
+      "recorded_versions": [],
+      "scenarios": [],
+      "query": {
+        "kind": "npm",
+        "url": "https://registry.npmjs.org/@github%2Fcopilot/latest",
+        "identity_source": "GitHub Copilot CLI npm distribution"
+      },
+      "query_note": "",
+      "evidence_note": "No raw hook payload has been recorded yet.",
+      "validated_version": "1.0.93"
+    },
+    {
+      "agent": "pi",
+      "recorded_versions": [],
+      "scenarios": [],
+      "query": {
+        "kind": "npm",
+        "url": "https://registry.npmjs.org/@earendil-works%2Fpi-coding-agent/latest",
+        "identity_source": "npm package whose repository field is github.com/earendil-works/pi"
+      },
+      "query_note": "",
+      "evidence_note": "No raw hook payload has been recorded yet.",
+      "validated_version": "0.84.2"
+    },
+    {
+      "agent": "opencode",
+      "recorded_versions": [],
+      "scenarios": [],
+      "query": {
+        "kind": "github",
+        "url": "https://api.github.com/repos/anomalyco/opencode/releases/latest",
+        "identity_source": "upstream named by the Arch opencode package"
+      },
+      "query_note": "",
+      "evidence_note": "No raw hook payload has been recorded yet.",
+      "validated_version": "2.0.23"
+    },
+    {
+      "agent": "qwen",
+      "recorded_versions": [
+        "0.25.0"
+      ],
+      "scenarios": [
+        "api_error_and_exit",
+        "normal_tools_and_cancel",
+        "approval_and_exit"
+      ],
+      "query": {
+        "kind": "npm",
+        "url": "https://registry.npmjs.org/@qwen-code%2Fqwen-code/latest",
+        "identity_source": "Qwen Code npm distribution"
+      },
+      "query_note": "",
+      "evidence_note": "Captured from the real agent on 2026-10-08.",
+      "validated_version": "0.25.0"
+    },
+    {
+      "agent": "agy",
+      "recorded_versions": [
+        "1.3.1"
+      ],
+      "scenarios": [
+        "normal_and_tools",
+        "cancel_hook_gap"
+      ],
+      "query": null,
+      "query_note": "distributed by its own installer; no public registry or release listing",
+      "evidence_note": "Captured from the real agent on 2026-10-08.",
+      "validated_version": "1.3.1"
+    }
+  ]
+}

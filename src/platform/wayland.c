@@ -662,9 +662,6 @@ herdcat_error_t wayland_run(const volatile sig_atomic_t *running) {
   }
   return HERDCAT_SUCCESS;
 }
-struct wl_output *wayland_get_current_screen_output(void) {
-  return output;
-}
 void wayland_set_tick_callback(void (*callback)(void)) {
   tick_callback = callback;
 }

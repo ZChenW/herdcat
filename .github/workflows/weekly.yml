@@ -1,0 +1,41 @@
+name: Weekly
+
+on:
+  schedule:
+    - cron: '23 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  agent-versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - name: Test version response parsing offline
+        run: python3 tests/test_agent_versions.py
+      # Warns instead of failing: agents release most weeks, and each new
+      # release is a prompt to observe its hooks again, not a broken build.
+      - name: Compare checked agent versions with public releases
+        run: python3 scripts/check_agent_versions.py
+
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang make pkg-config libwayland-dev \
+            wayland-protocols libfreetype-dev libfontconfig1-dev
+      - name: Fuzz the parsers
+        run: make fuzz FUZZ_SECONDS=120 -j4
+      - name: Keep any crashing input
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-crashes
+          path: build/fuzz/crashes

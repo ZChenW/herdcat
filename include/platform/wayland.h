@@ -68,9 +68,6 @@ void draw_bar(void);
 void wayland_request_redraw(void);
 void wayland_request_current_redraw(void);
 
-// Get the wl_output associated with the current screen info (may be NULL)
-HERDCAT_NODISCARD struct wl_output *wayland_get_current_screen_output(void);
-
 // Register a per-loop callback executed on Wayland main thread.
 void wayland_set_tick_callback(void (*callback)(void));
 

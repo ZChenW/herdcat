@@ -255,7 +255,7 @@ static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
       if (strict_parse) {
         return HERDCAT_ERROR_CONFIG;
       }
-      herdcat_log_warning("Invalid layer '%s', using 'top'", value);
+      diagnostic(key, "invalid layer, using top");
       config->layer = LAYER_TOP;
     }
   } else if (strcmp(key, "overlay_position") == 0) {
@@ -267,7 +267,7 @@ static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
       if (strict_parse) {
         return HERDCAT_ERROR_CONFIG;
       }
-      herdcat_log_warning("Invalid overlay_position '%s', using 'top'", value);
+      diagnostic(key, "invalid overlay_position, using top");
       config->overlay_position = POSITION_TOP;
     }
   } else if (strcmp(key, "cat_align") == 0) {
@@ -281,7 +281,7 @@ static herdcat_error_t config_parse_enum_key(config_t *config, const char *key,
       if (strict_parse) {
         return HERDCAT_ERROR_CONFIG;
       }
-      herdcat_log_warning("Invalid cat_align '%s', using 'center'", value);
+      diagnostic(key, "invalid cat_align, using center");
       config->cat_align = ALIGN_CENTER;
     }
   } else {
@@ -578,7 +578,7 @@ static herdcat_error_t config_read_file(config_t *config, FILE *file) {
         result = parse_result;
         break;
       }
-    } else if (strlen(line) > 0) {
+    } else {
       diagnostic(NULL, "malformed configuration line");
       if (strict_parse) {
         result = HERDCAT_ERROR_CONFIG;

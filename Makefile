@@ -502,3 +502,89 @@ $(BUILDDIR)/test/input_fallback.o: src/platform/input.c $(TEST_FLAGS)
 $(BUILDDIR)/input_fallback_fixture: tests/input_helper_fixture.c \
   $(BUILDDIR)/test/input_fallback.o $(TEST_LIB)
 	$(CC) $(TEST_CFLAGS) -MMD -MP -MF $@.d $^ -o $@ $(TEST_LDFLAGS)
+
+# =============================================================================
+# FUZZ TARGETS
+# =============================================================================
+# libFuzzer harnesses for the code that reads what agents, the user's config
+# and the command line hand us. `make fuzz FUZZ_SECONDS=600 -j6` runs every
+# target; `make test` replays the seeds and past crashes without clang.
+
+FUZZ_CC ?= clang
+FUZZ_SECONDS ?= 60
+FUZZ_DIR = $(BUILDDIR)/fuzz
+FUZZ_TARGETS = $(patsubst tests/fuzz/fuzz_%.c,%,$(wildcard tests/fuzz/fuzz_*.c))
+FUZZ_CFLAGS = $(filter-out -W%,$(BASE_CFLAGS)) -Itests/fuzz -DTEST_BUILD \
+  -g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined \
+  -fno-sanitize-recover=undefined
+FUZZ_OBJECTS = $(TEST_SOURCES:src/%.c=$(FUZZ_DIR)/obj/%.o)
+FUZZ_LIB = $(FUZZ_DIR)/libherdcat.a
+
+.PHONY: fuzz-check fuzz-build fuzz
+fuzz-check:
+	@command -v $(FUZZ_CC) >/dev/null 2>&1 || \
+	  { echo "fuzzing needs clang with libFuzzer (FUZZ_CC=$(FUZZ_CC) was not found)"; exit 1; }
+
+$(FUZZ_DIR)/obj/%.o: src/%.c
+	@mkdir -p $(@D)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) -fsanitize=fuzzer-no-link -MMD -MP -c $< -o $@
+
+$(FUZZ_LIB): $(FUZZ_OBJECTS)
+	@rm -f $@
+	$(AR) rcs $@ $^
+
+$(FUZZ_DIR)/fuzz_%: tests/fuzz/fuzz_%.c tests/fuzz/fuzz.h $(FUZZ_LIB)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) -DFUZZ_MAIN -fsanitize=fuzzer $< $(FUZZ_LIB) \
+	  -o $@ $(TEXT_LIBS) -lm -lpthread
+
+fuzz-build: fuzz-check
+	@$(MAKE) --no-print-directory $(addprefix $(FUZZ_DIR)/fuzz_,$(FUZZ_TARGETS))
+
+# The corpus that grows during a run stays under build/, not in the tree.
+.PHONY: $(addprefix fuzz-run-,$(FUZZ_TARGETS))
+$(addprefix fuzz-run-,$(FUZZ_TARGETS)): fuzz-run-%: fuzz-build
+	@mkdir -p $(FUZZ_DIR)/corpus/$* $(FUZZ_DIR)/crashes tests/fuzz/regressions/$*
+	@$(FUZZ_DIR)/fuzz_$* -max_total_time=$(FUZZ_SECONDS) -max_len=8192 \
+	  -timeout=10 -close_fd_mask=3 -print_final_stats=1 \
+	  $(if $(wildcard tests/fuzz/$*.dict),-dict=tests/fuzz/$*.dict) \
+	  -artifact_prefix=$(FUZZ_DIR)/crashes/$*- \
+	  $(FUZZ_DIR)/corpus/$* tests/fuzz/corpus/$* tests/fuzz/regressions/$* \
+	  2>$(FUZZ_DIR)/$*.log || { tail -40 $(FUZZ_DIR)/$*.log; exit 1; }
+	@grep -E '^(stat::number_of_executed_units|#[0-9]+\s+DONE)' $(FUZZ_DIR)/$*.log | sed 's/^/$*: /'
+
+fuzz: $(addprefix fuzz-run-,$(FUZZ_TARGETS))
+
+-include $(FUZZ_OBJECTS:.o=.d)
+
+# Recorded hook replay and offline registry-response parsing.
+$(BUILDDIR)/test_agent_fixtures: TEST_WRAPS = -Wl,--wrap=control_request
+TEST_PYTHON += tests/test_agent_versions.py
+
+.PHONY: test-agent-fixtures check-agent-versions
+test-agent-fixtures: $(BUILDDIR)/test_agent_fixtures
+	./$(BUILDDIR)/test_agent_fixtures
+	python3 tests/test_agent_versions.py
+
+check-agent-versions:
+	python3 scripts/check_agent_versions.py --fail-on-update
+
+# Optional GCC coverage; keep instrumentation out of normal build artifacts.
+# The driver copies sources because existing runtime scripts use build/ paths.
+ifeq ($(BUILD_TYPE),coverage)
+CC := python3 scripts/coverage_report.py --cc
+CFLAGS = $(BASE_CFLAGS) -O0 -g --coverage
+LDFLAGS = -lwayland-client -lm -lpthread $(TEXT_LIBS) --coverage
+TEST_CFLAGS += --coverage
+TEST_LDFLAGS += --coverage
+endif
+TEST_PYTHON += scripts/test_coverage.py
+COVERAGE_JOBS ?= 2
+.PHONY: coverage coverage-runtime
+coverage:
+	python3 scripts/coverage_report.py --jobs $(COVERAGE_JOBS)
+
+coverage-runtime:
+	python3 scripts/coverage_report.py --runtime --jobs $(COVERAGE_JOBS)
+
+# Allocation faults must enter the real configuration parser and cleanup path.
+$(BUILDDIR)/test_config_allocation: TEST_WRAPS = -Wl,--wrap=malloc,--wrap=realloc,--wrap=strdup

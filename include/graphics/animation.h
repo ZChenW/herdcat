@@ -51,9 +51,6 @@ void animation_set_agent_state(agent_state_t state);
 void animation_use_agent_frames(bool enabled);
 agent_state_t animation_get_agent_state(void);
 
-// Compatibility lifecycle entrypoint - must be checked
-HERDCAT_NODISCARD herdcat_error_t animation_start(void);
-
 // Cleanup animation resources
 void animation_cleanup(void);
 

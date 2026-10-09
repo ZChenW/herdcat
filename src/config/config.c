@@ -320,10 +320,6 @@ herdcat_error_t load_config(config_t *config, const char *config_file_path) {
   return HERDCAT_SUCCESS;
 }
 
-void config_cleanup(void) {
-  // No global config state to clean up.
-}
-
 void config_cleanup_full(config_t *config) {
   if (!config) {
     return;
@@ -345,12 +341,6 @@ void config_cleanup_full(config_t *config) {
   }
 
   config_free_string_array(&config->output_names, &config->num_output_names);
-}
-
-int get_screen_width(void) {
-  // This function is now only used for initial config loading
-  // The actual screen width detection happens in wayland_init
-  return DEFAULT_SCREEN_WIDTH;
 }
 
 char *config_resolve_path(const char *explicit_path) {

@@ -1,0 +1,121 @@
+{
+  "recorded_version": "1.3.1",
+  "recorded_date": "2026-10-08",
+  "source": "docs/performance/agy-hooks-raw.log",
+  "source_sha256": "1c5faa4dfb96b483df0cbd00ab4459232808230256e096f8c8c9be85735df9fc",
+  "version_source": "docs/performance/qwen-antigravity-report.md reviewer revalidation section",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 1,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "agy",
+        "--event",
+        "PreInvocation"
+      ]
+    },
+    {
+      "payload": "002.json",
+      "source_line": 2,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "agy",
+        "--event",
+        "PostInvocation"
+      ]
+    },
+    {
+      "payload": "003.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "agy",
+        "--event",
+        "Stop"
+      ]
+    },
+    {
+      "payload": "004.json",
+      "source_line": 4,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "agy",
+        "--event",
+        "PreInvocation"
+      ]
+    },
+    {
+      "payload": "005.json",
+      "source_line": 5,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "agy",
+        "--event",
+        "PreToolUse"
+      ]
+    },
+    {
+      "payload": "006.json",
+      "source_line": 6,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "agy",
+        "--event",
+        "PostToolUse"
+      ]
+    },
+    {
+      "payload": "007.json",
+      "source_line": 7,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "agy",
+        "--event",
+        "PostInvocation"
+      ]
+    },
+    {
+      "payload": "008.json",
+      "source_line": 8,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "agy",
+        "--event",
+        "PreInvocation"
+      ]
+    },
+    {
+      "payload": "009.json",
+      "source_line": 9,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "agy",
+        "--event",
+        "PostInvocation"
+      ]
+    },
+    {
+      "payload": "010.json",
+      "source_line": 10,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "agy",
+        "--event",
+        "Stop"
+      ]
+    }
+  ],
+  "redaction": "Paths, username, project, session/tool IDs, nonempty prompt/response/tool-output/descriptions replaced; keys, nesting, value types, empty strings, event names and timing preserved.",
+  "limitations": "No transcript/log contents are supplied; only hook-visible title/state is replayed. No recorded subagent payload."
+}

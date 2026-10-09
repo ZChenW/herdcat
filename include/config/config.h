@@ -152,16 +152,12 @@ void config_for_monitor(const config_t *global, const char *name,
 
 bool config_sign_english(const config_t *config);
 
-// Get screen width - returns 0 on failure (should be checked)
-HERDCAT_NODISCARD int get_screen_width(void);
-
 // Resolve config file path with XDG fallback
 // Returns a static/allocated path, or NULL if none found.
 // Caller must free the returned string.
 char *config_resolve_path(const char *explicit_path);
 
 // Cleanup functions
-void config_cleanup(void);
 void config_cleanup_full(config_t *config);
 
 #endif  // CONFIG_H

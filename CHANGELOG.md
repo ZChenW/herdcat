@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Config** - A line with nothing before the `=` is reported as malformed
+  (and refused by `--strict`) instead of being skipped in silence. An
+  unknown `layer`, `overlay_position` or `cat_align` is reported with its
+  line number like every other bad value.
+
+### Internal
+
+- `make fuzz` runs libFuzzer over the parsers of hook payloads, session
+  records, agent logs, the config file and the input helper's arguments;
+  `make test` replays the seeds and any input that once crashed.
+- Recorded hook sequences from real agents are replayed in `make test`, and
+  a weekly workflow warns when an agent has released a version newer than
+  the one its hooks were last checked against.
+- `make coverage` reports line and branch coverage of the unit tests
+  (73% and 63%); `make coverage-runtime` adds the runtime tests (87% and
+  73%).
+
 ## [0.4.0] - 2026-10-08
 
 ### Added

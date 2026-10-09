@@ -8,6 +8,7 @@ int input_helper_entry(int argc, char **argv);
 
 #include "test_helpers.h"
 
+#include <stdarg.h>
 #include <sys/eventfd.h>
 #include <sys/wait.h>
 
@@ -33,6 +34,13 @@ int __wrap_open(const char *path, int flags, ...) {
     TEST_ASSERT(flags ==
                 (O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK));
     return 10000;
+  }
+  if (flags & O_CREAT) {
+    va_list arguments;
+    va_start(arguments, flags);
+    mode_t mode = (mode_t)va_arg(arguments, int);
+    va_end(arguments);
+    return __real_open(path, flags, mode);
   }
   return __real_open(path, flags);
 }
@@ -72,6 +80,19 @@ int __wrap_getresgid(gid_t *real, gid_t *effective, gid_t *saved) {
   *effective = test_effective;
   *saved = mismatch_group ? test_saved + 1 : test_saved;
   return 0;
+}
+
+static void test_open_mode(void) {
+  char directory[] = "/tmp/hc-helper-open-XXXXXX";
+  TEST_ASSERT(mkdtemp(directory) != NULL);
+  char path[128];
+  snprintf(path, sizeof(path), "%s/created", directory);
+  int fd = __wrap_open(path, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  TEST_ASSERT(fd >= 0);
+  struct stat metadata;
+  TEST_ASSERT(__real_fstat(fd, &metadata) == 0);
+  TEST_ASSERT((metadata.st_mode & 0777) == 0600);
+  TEST_ASSERT(close(fd) == 0 && unlink(path) == 0 && rmdir(directory) == 0);
 }
 
 static void test_rejections(void) {
@@ -223,6 +244,7 @@ static void test_filter(int operation) {
 int main(void) {
   TEST_ASSERT(sizeof(input_message_t) == 24);
   TEST_ASSERT(offsetof(input_message_t, monotonic_ns) == 16);
+  test_open_mode();
   test_rejections();
   test_device_and_group();
   for (int operation = 0; operation <= 4; operation++) {

@@ -1,0 +1,1 @@
+{"timestamp":"t","type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}
