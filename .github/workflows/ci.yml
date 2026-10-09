@@ -9,72 +9,182 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-lint:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      heavy: ${{ steps.paths.outputs.heavy }}
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          # Compare the full push range, including multiple commits.
+          fetch-depth: 0
+      - id: paths
+        run: python3 scripts/ci_changes.py
+
+  quality:
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
-
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc make libwayland-dev wayland-protocols \
-            libfreetype-dev libfontconfig1-dev fonts-dejavu-core fonts-noto-core \
-            fonts-noto-cjk fonts-liberation \
-            python3 clang-format clang-tidy clang-tools shellcheck
-
-      - name: Check formatting
-        run: make format-check
-
+          sudo apt-get install -y --no-install-recommends gcc make libwayland-dev \
+            libfreetype-dev libfontconfig1-dev python3 clang-format shellcheck
+      - name: Check formatting and CI inventories
+        run: |
+          make format-check
+          make ci-shard-check
       - name: Build release
-        run: make release
-
+        run: make -j4 release
       - name: Build debug (ASan + UBSan)
-        run: make clean && make debug
-
-      - name: Run tests
-        run: make test-sanitize
-
+        run: make clean && make -j4 debug
       - name: Run ShellCheck
         run: shellcheck scripts/*.sh
 
-      - name: Run scan-build
-        run: scan-build --status-bugs --exclude lib make clean release
+  unit:
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc make libwayland-dev \
+            libfreetype-dev libfontconfig1-dev fonts-dejavu-core fonts-noto-core \
+            fonts-noto-cjk fonts-liberation python3 nodejs
+      # Compile locally in each shard: the measured build cost is small enough
+      # to avoid an artifact upload/download dependency on the critical path.
+      # Keep ASan tests serial within each shard, matching the local default.
+      - name: ASan and UBSan unit shard
+        run: make -j4 ci-test TEST_SANITIZE=1 CI_SUITE=unit CI_SHARD=${{ matrix.shard }}/3
 
-  # The runtime tests drive a small test compositor. It needs libwayland
-  # 1.23 or newer, which the Ubuntu runner does not have, so they run in an
-  # Arch container, as an ordinary user like the program itself.
-  runtime:
+  scan-build:
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc make libwayland-dev \
+            libfreetype-dev libfontconfig1-dev clang-tools
+      - name: Run scan-build
+        run: scan-build --status-bugs --exclude lib make -j4 release
+
+  # Warnings remain errors. Arch's clang-tidy matches development; the older
+  # Ubuntu version disagrees about required includes. No runtime test waits
+  # for clang-tidy, and no lint worker rebuilds the shared product artifacts.
+  tidy:
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm --needed base-devel git wayland \
-            wayland-protocols freetype2 fontconfig python sway clang \
-            noto-fonts noto-fonts-cjk ttf-dejavu ttf-liberation
-          # Arch gives sway cap_sys_nice. The container lacks that
-          # capability, so the kernel refuses to execute the file at all.
-          setcap -r /usr/bin/sway
-
+          pacman -Syu --noconfirm --needed base-devel git wayland freetype2 \
+            fontconfig python clang
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - name: Run clang-tidy with four workers
+        run: make ci-lint
 
-      # Lint here rather than on Ubuntu: warnings are errors, and an older
-      # clang-tidy disagrees with the one developers run about which
-      # includes are needed.
-      - name: Run clang-tidy
-        run: make lint
-
-      - name: Run runtime tests
+  # libwayland >= 1.23 is required for the protocol fixture's queue pressure
+  # test. Each shard owns its container, build tree and private runtime state.
+  runtime-tests:
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git wayland \
+            wayland-protocols freetype2 fontconfig python sway \
+            noto-fonts noto-fonts-cjk ttf-dejavu ttf-liberation
+          # Sway's file capability is unavailable inside this container.
+          setcap -r /usr/bin/sway
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - name: Run runtime shard as an ordinary user
         run: |
           useradd -m tester
           chown -R tester .
-          su tester -c 'HERDCAT_REQUIRE_SWAY=1 XDG_RUNTIME_DIR=$(mktemp -d) make test-runtime'
+          su tester -c 'HERDCAT_REQUIRE_SWAY=1 make -j4 ci-test CI_SUITE=runtime CI_SHARD=${{ matrix.shard }}/5'
+
+  # Preserve the existing required-check names. Documentation changes still
+  # produce successful jobs; a failed/cancelled dependency cannot be hidden.
+  build-and-lint:
+    if: always()
+    needs: [changes, quality, unit, scan-build, tidy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every applicable build and analysis job
+        env:
+          HEAVY: ${{ needs.changes.outputs.heavy }}
+          CHANGES: ${{ needs.changes.result }}
+          QUALITY: ${{ needs.quality.result }}
+          UNIT: ${{ needs.unit.result }}
+          SCAN: ${{ needs.scan-build.result }}
+          TIDY: ${{ needs.tidy.result }}
+        run: |
+          test "$CHANGES" = success
+          if [ "$HEAVY" = true ]; then
+            for result in "$QUALITY" "$UNIT" "$SCAN" "$TIDY"; do
+              test "$result" = success || exit 1
+            done
+          else
+            test "$HEAVY" = false
+            for result in "$QUALITY" "$UNIT" "$SCAN" "$TIDY"; do
+              test "$result" = skipped || exit 1
+            done
+          fi
+
+  runtime:
+    if: always()
+    needs: [changes, runtime-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every applicable runtime shard
+        env:
+          HEAVY: ${{ needs.changes.outputs.heavy }}
+          CHANGES: ${{ needs.changes.result }}
+          RUNTIME: ${{ needs.runtime-tests.result }}
+        run: |
+          test "$CHANGES" = success
+          if [ "$HEAVY" = true ]; then
+            test "$RUNTIME" = success
+          else
+            test "$HEAVY" = false
+            test "$RUNTIME" = skipped
+          fi
 
   nix:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        if: needs.changes.outputs.heavy == 'true'
       - uses: cachix/install-nix-action@a49548c11d9846ad46ecc0115273879b045f001c # v31
+        if: needs.changes.outputs.heavy == 'true'
       - name: Check flake and package
+        if: needs.changes.outputs.heavy == 'true'
         run: ./scripts/test_nix_build.sh
+      - name: Documentation-only change
+        if: needs.changes.outputs.heavy == 'false'
+        run: echo 'Documentation-only change; Nix check passed.'

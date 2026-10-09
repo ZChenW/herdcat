@@ -22,6 +22,12 @@ binary = str(Path('build/herdcat').resolve())
 with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
     env = runtime_env(XDG_RUNTIME_DIR=directory)
     env.pop('HERDCAT_HOOK_DEBUG', None)
+    # Own the project boundary even if /tmp itself belongs to another repo.
+    project = Path(directory) / '项目 with spaces'
+    late_project = Path(directory) / 'late-project'
+    for path in (project, late_project):
+        path.mkdir()
+        (path / '.git').mkdir()
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as server:
         server.bind(str(Path(directory) / 'herdcat.sock'))
         server.listen(1)
@@ -81,27 +87,27 @@ with tempfile.TemporaryDirectory(prefix='bongo-hook-client-') as directory:
         invoke(json.dumps(event).encode(), expected)
         invoke(json.dumps(event).encode(), expected, shell=True)
         for hook, state in [('SessionStart', 'start'), ('UserPromptSubmit', 'working')]:
-            payload = dict(event, hook_event_name=hook, cwd='/tmp/项目 with spaces')
+            payload = dict(event, hook_event_name=hook, cwd=str(project))
             if hook == 'UserPromptSubmit':
                 payload['prompt'] = '  synthetic   first\nsecond line'
             requests = [
                 f'ev claude {state} e430d22bdbbe8583 {os.getpid()}',
                 'sid e430d22bdbbe8583 test',
                 'cwd e430d22bdbbe8583 '
-                + '/tmp/项目 with spaces'.encode().hex() + ' 项目 with spaces']
+                + str(project).encode().hex() + ' 项目 with spaces']
             if hook == 'UserPromptSubmit':
                 requests.append('ask e430d22bdbbe8583 synthetic first')
             invoke(json.dumps(payload).encode(), requests)
         # New hook / old daemon: the original reply preserves the exact bytes.
-        late = dict(event, cwd='/tmp/late-project',
-                    transcript_path='/tmp/late-project/turn.jsonl')
+        late = dict(event, cwd=str(late_project),
+                    transcript_path=str(late_project / 'turn.jsonl'))
         invoke(json.dumps(late).encode(), expected)
         # The real authenticated transport prints the marker for the hook to
         # consume, but the hook must keep stdout silent.
         metadata = [expected, 'sid e430d22bdbbe8583 test',
-                    'path e430d22bdbbe8583 /tmp/late-project/turn.jsonl',
+                    'path e430d22bdbbe8583 ' + str(late_project / 'turn.jsonl'),
                     'cwd e430d22bdbbe8583 '
-                    + '/tmp/late-project'.encode().hex() + ' late-project']
+                    + str(late_project).encode().hex() + ' late-project']
         invoke(json.dumps(late).encode(), metadata, reply=b'0 ok metadata')
         for reply in (b'0 ok metadata-extra', b'0 metadata', b'1 ok metadata'):
             invoke(json.dumps(late).encode(), expected, reply=reply)

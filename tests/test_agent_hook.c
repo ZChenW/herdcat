@@ -286,15 +286,17 @@ static void test_process_tty(void) {
 }
 
 static void test_cwd(void) {
-  const char *inputs[] = {"{\"cwd\":\"/tmp/项目 with spaces/\"}",
-                          "{\"cwd\":\"/tmp/\\u9879\\u76ee with spaces\"}",
-                          "{\"cwd\":\"/tmp/pro\\nject\\t\"}",
-                          "{\"cwd\":\"/tmp/猫猫猫猫猫猫猫猫猫猫猫猫猫猫\"}",
-                          "{\"cwd\":\"/tmp/\\ud83d\\ude00\"}",
-                          "{\"cwd\":\"relative\"}",
-                          "{\"cwd\":\"/\"}",
-                          "{\"x\":{\"cwd\":\"/tmp/wrong\"}}",
-                          "{\"cwd\":false}"};
+  // Virtual paths avoid inheriting a repository marker in the shared /tmp.
+  const char *inputs[] = {
+      "{\"cwd\":\"/herdcat-test-input/项目 with spaces/\"}",
+      "{\"cwd\":\"/herdcat-test-input/\\u9879\\u76ee with spaces\"}",
+      "{\"cwd\":\"/herdcat-test-input/pro\\nject\\t\"}",
+      "{\"cwd\":\"/herdcat-test-input/猫猫猫猫猫猫猫猫猫猫猫猫猫猫\"}",
+      "{\"cwd\":\"/herdcat-test-input/\\ud83d\\ude00\"}",
+      "{\"cwd\":\"relative\"}",
+      "{\"cwd\":\"/\"}",
+      "{\"x\":{\"cwd\":\"/herdcat-test-input/wrong\"}}",
+      "{\"cwd\":false}"};
   const char *expected[] = {"项目 with spaces",
                             "项目 with spaces",
                             "project",

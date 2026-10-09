@@ -181,9 +181,11 @@ static void test_qwen_agy(void) {
   adapter_check("agy", large, "Stop", AGENT_EVENT_FAIL);
   agent_hook_scanner_t scanner;
   agent_hook_scan_adapter(&scanner, agent_adapter_find("agy"));
+  // A virtual prefix keeps these parsing samples independent of /tmp/.git.
   const char *json =
-      "{\"conversationId\":\"test-id\",\"workspacePaths\":[\"/tmp/project\",\"/"
-      "tmp/other\"],\"transcriptPath\":\"/tmp/ignored.jsonl\"}";
+      "{\"conversationId\":\"test-id\",\"workspacePaths\":[\"/"
+      "herdcat-test-input/project\",\"/"
+      "herdcat-test-input/other\"],\"transcriptPath\":\"/tmp/ignored.jsonl\"}";
   agent_hook_scan_feed(&scanner, json, strlen(json));
   TEST_ASSERT(agent_hook_scan_finish(&scanner));
   TEST_ASSERT(!strcmp(scanner.session_id, "test-id"));

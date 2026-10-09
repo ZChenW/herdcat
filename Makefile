@@ -412,12 +412,19 @@ TEST_NODE = $(if $(shell command -v node 2>/dev/null),tests/test_opencode_titles
 # runner-private XDG directories; fixed path literals are fakes/parser inputs.
 TEST_EXCLUSIVE =
 
+# The surface tier test runs as five commands, so its long motion pass
+# does not hold up one worker or one CI shard on its own.
+TEST_SPLIT = $(BUILDDIR)/test_surface_tier_pixels
+TEST_UNIT_COMMANDS = $(foreach t,$(filter-out $(TEST_EXCLUSIVE) $(TEST_SPLIT),$(TEST_BINARIES)),--test './$(t)') \
+  --test './$(TEST_SPLIT) scenes' \
+  $(foreach part,0 1 2 3,--test './$(TEST_SPLIT) motion $(part)/4')
+
 # The completion test asks the program itself for its options.
 test: $(TEST_BINARIES) $(TARGET) $(BUILDDIR)/herdcat-input
 	@echo "Running tests..."
 	@$(if $(TEST_NODE),:,echo "SKIP test_opencode_titles.mjs: node is unavailable")
 	@python3 scripts/run_tests.py --jobs $(TEST_JOBS) \
-	  $(foreach t,$(filter-out $(TEST_EXCLUSIVE),$(TEST_BINARIES)),--test './$(t)') \
+	  $(TEST_UNIT_COMMANDS) \
 	  $(foreach t,$(TEST_PYTHON),--test 'python3 $(t)') \
 	  $(foreach t,$(TEST_NODE),--test 'node $(t)') \
 	  $(foreach t,$(TEST_EXCLUSIVE),--exclusive './$(t)')
@@ -588,3 +595,51 @@ coverage-runtime:
 
 # Allocation faults must enter the real configuration parser and cleanup path.
 $(BUILDDIR)/test_config_allocation: TEST_WRAPS = -Wl,--wrap=malloc,--wrap=realloc,--wrap=strdup
+
+# CI-only entry points. Keep local test/test-runtime scheduling unchanged.
+CI_SUITE ?= unit
+# Optimize only CI unit objects; both sanitizers and all assertions stay on.
+ifneq ($(filter ci-test ci-test-build,$(MAKECMDGOALS)),)
+ifeq ($(CI_SUITE),unit)
+TEST_CFLAGS += -O2
+endif
+endif
+CI_SHARD ?= 1/1
+CI_JOBS ?= $(if $(filter runtime,$(CI_SUITE)),4,1)
+CI_UNIT_ARGS = $(TEST_UNIT_COMMANDS) \
+  $(foreach t,$(TEST_PYTHON),--test 'python3 $(t)') \
+  $(foreach t,$(TEST_NODE),--test 'node $(t)') \
+  $(foreach t,$(TEST_EXCLUSIVE),--exclusive './$(t)')
+CI_RUNTIME_ARGS = $(foreach t,$(RUNTIME_PARALLEL),--test 'python3 $(t)') \
+  $(foreach style,fan post off,--test 'python3 scripts/test_drag_runtime.py --sign-style $(style)') \
+  $(foreach agent,claude grok copilot,--test 'python3 scripts/test_agent_quiet_runtime.py --agent $(agent)') \
+  $(foreach t,$(RUNTIME_EXCLUSIVE),--exclusive 'python3 $(t)') \
+  --exclusive 'python3 scripts/test_agent_quiet_runtime.py --real-time'
+CI_ARGS = $(if $(filter runtime,$(CI_SUITE)),$(CI_RUNTIME_ARGS),$(CI_UNIT_ARGS))
+CI_BUILD = $(if $(filter runtime,$(CI_SUITE)),all compositor-test-build \
+  $(BUILDDIR)/test_focus $(BUILDDIR)/agent_children_fixture,\
+  $(CI_UNIT_BINARIES))
+CI_UNIT_BINARIES = $(shell python3 scripts/run_tests.py --list-binaries \
+  --shard $(CI_SHARD) --timings scripts/ci_test_timings.json $(CI_UNIT_ARGS))
+TEST_PYTHON += scripts/test_ci_shards.py
+
+.PHONY: ci-test-list ci-test-build ci-test ci-shard-check
+ci-test-list:
+	@python3 scripts/run_tests.py --list-groups $(CI_ARGS)
+
+ifneq ($(filter ci-test ci-test-build,$(MAKECMDGOALS)),)
+ci-test-build: $(CI_BUILD)
+endif
+
+ci-test: ci-test-build
+	@python3 scripts/run_tests.py --jobs $(CI_JOBS) --shard $(CI_SHARD) \
+	  --timings scripts/ci_test_timings.json $(if $(CI_REPORT),--report '$(CI_REPORT)') $(CI_ARGS)
+
+ci-shard-check:
+	@python3 scripts/test_ci_shards.py
+
+# Preserve lint's source set, flags and warnings-as-errors policy.
+.PHONY: ci-lint
+ci-lint: export CI_LINT_FLAGS = $(CFLAGS)
+ci-lint:
+	@python3 scripts/ci_lint.py --jobs 4 $(PROJECT_SOURCES)

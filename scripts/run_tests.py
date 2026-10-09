@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Run independent test commands with bounded concurrency and grouped output."""
 import argparse
+import json
+import time
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 from pathlib import Path
 import shlex
 import subprocess
 import tempfile
+
+from ci_shards import build_targets, partition, read_timings, shard_number
 
 
 def test_name(command):
@@ -47,13 +52,44 @@ def main():
   parser.add_argument('--jobs', type=int, default=os.cpu_count() or 1)
   parser.add_argument('--test', action='append', default=[])
   parser.add_argument('--exclusive', action='append', default=[])
+  parser.add_argument('--shard', help='duration-balanced, one-based shard i/n')
+  parser.add_argument('--timings', help='JSON command-to-seconds weights')
+  parser.add_argument('--list', action='store_true', help='print selected commands only')
+  parser.add_argument('--list-binaries', action='store_true', help='print selected build targets')
+  parser.add_argument('--list-groups', action='store_true', help='print the complete groups')
+  parser.add_argument('--report', help='write measured command durations as JSON')
   args = parser.parse_args()
   if args.jobs < 1:
     parser.error('jobs must be positive')
+  if args.shard:
+    try:
+      index, count = shard_number(args.shard)
+      selected = set(partition(args.test + args.exclusive, count,
+                               read_timings(args.timings))[index])
+    except (ValueError, OSError) as error:
+      parser.error(str(error))
+    args.test = [command for command in args.test if command in selected]
+    args.exclusive = [command for command in args.exclusive if command in selected]
+  if args.list_binaries:
+    print(' '.join(build_targets(args.test + args.exclusive)))
+    return 0
+  if args.list_groups:
+    print(json.dumps(dict(test=args.test, exclusive=args.exclusive)))
+    return 0
+  if args.list:
+    print(json.dumps(args.test + args.exclusive))
+    return 0
   failures = []
+  durations = {}
+
+  def measured(command):
+    start = time.monotonic()
+    code, output = run_test(command)
+    return code, output, time.monotonic() - start
 
   def report(command, result):
-    code, output = result
+    code, output, seconds = result
+    durations[command] = seconds
     print(f'--- {test_name(command)} ---', flush=True)
     print(output.decode(errors='replace'), end='', flush=True)
     if output and not output.endswith(b'\n'):
@@ -62,12 +98,14 @@ def main():
       failures.append(command)
 
   with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-    pending = {pool.submit(run_test, command): command for command in args.test}
+    pending = {pool.submit(measured, command): command for command in args.test}
     for future in as_completed(pending):
       report(pending[future], future.result())
   # The pool has drained before any exclusive command starts.
   for command in args.exclusive:
-    report(command, run_test(command))
+    report(command, measured(command))
+  if args.report:
+    Path(args.report).write_text(json.dumps(durations, indent=2) + '\n')
   if failures:
     names = [test_name(command) for command in args.test + args.exclusive
         if command in failures]

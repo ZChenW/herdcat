@@ -9,6 +9,7 @@
 #  include "platform/surface_tiers.h"
 #  include "surface_tier_hashes.h"
 #endif
+#include "pixel_border.h"
 #include "test_helpers.h"
 
 #include <inttypes.h>
@@ -136,7 +137,8 @@ static void ink_bounds(const sign_frame_t *source, int width, int height,
   sign_draw(pixels, w, h, (int)scale, &frame, SIGN_DRAW_UNDER);
   sign_draw(pixels, w, h, (int)scale, &frame, SIGN_DRAW_OVER);
   for (int y = 0; y < h; y++)
-    for (int x = 0; x < w; x++)
+    for (int x = test_border_column(0, y, left, right, bottom); x < w;
+         x = test_border_column(x + 1, y, left, right, bottom))
       if (x < left || y < left || x >= right || y >= bottom) {
         if (pixels[((size_t)y * (size_t)w + (size_t)x) * 4 + 3])
           fprintf(stderr,
@@ -150,7 +152,9 @@ static void ink_bounds(const sign_frame_t *source, int width, int height,
       }
   free(pixels);
 }
-static void motion_bounds(void) {
+// Checks every parts-th case starting at part; 0 of 1 is all of them.
+static void motion_bounds(int part, int parts) {
+  int number = 0;
   config_t config = {.cat_height = 110,
                      .overlay_height = 120,
                      .sign_max = 10,
@@ -178,6 +182,8 @@ static void motion_bounds(void) {
           surface_size_t size =
               surface_tier_size(&config, capacity, 2560, scale);
           for (int below = 0; below < 2; below++) {
+            if (number++ % parts != part)
+              continue;
             int old_h = overlay_signs_height(&config);
             int base = 1080 - old_h + overlay_signs_resting_y(&config, old_h);
             overlay_vertical_t vertical = surface_tier_vertical(
@@ -233,16 +239,25 @@ static void motion_bounds(void) {
 #endif
 int main(int argc, char **argv) {
 #ifndef SURFACE_TIERS_BASELINE
-  if (argc == 2 && !strcmp(argv[1], "motion")) {
-    motion_bounds();
+  // The motion pass is nearly all of this test's time. "motion 2/4" checks
+  // every fourth case starting at the third and "scenes" only the hashes, so
+  // the parts can run side by side; no argument runs everything.
+  bool scenes_only = argc == 2 && !strcmp(argv[1], "scenes");
+  if (argc >= 2 && !strcmp(argv[1], "motion")) {
+    int part = 0, parts = 1;
+    TEST_ASSERT(argc == 2 ||
+                (argc == 3 && sscanf(argv[2], "%d/%d", &part, &parts) == 2 &&
+                 parts > 0 && part >= 0 && part < parts));
+    motion_bounds(part, parts);
     sign_draw_cleanup();
     puts("Surface tier motion stays inside the canvas.");
     return 0;
   }
+  TEST_ASSERT(argc == 1 || scenes_only);
 #else
   (void)argv;
-#endif
   TEST_ASSERT(argc == 1);
+#endif
   config_t config = {.cat_height = 110,
                      .overlay_height = 120,
                      .sign_max = 10,
@@ -276,7 +291,8 @@ int main(int argc, char **argv) {
           }
   }
 #ifndef SURFACE_TIERS_BASELINE
-  motion_bounds();
+  if (!scenes_only)
+    motion_bounds(0, 1);
 #endif
   sign_draw_cleanup();
   puts("Surface tier output pixel hashes unchanged (96 scenes, no fonts).");

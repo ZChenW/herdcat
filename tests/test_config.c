@@ -68,7 +68,8 @@ static void test_defaults(void) {
   char path[] = "/tmp/herdcat_test_XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
-  write(fd, "\n", 1);
+  if (write(fd, "\n", 1) != 1)
+    abort();
   close(fd);
 
   memset(&config, 0, sizeof(config));

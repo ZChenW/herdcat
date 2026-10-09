@@ -55,6 +55,9 @@ static void add_proc_tty(const char *tree, pid_t pid, const char *comm,
     return;
   snprintf(target, sizeof(target), "%s/names/%s", root, base);
   mkdir(target, 0700);
+  // Discovery must stop at this private project, not an ancestor repository.
+  snprintf(path, sizeof(path), "%s/.git", target);
+  mkdir(path, 0700);
   snprintf(path, sizeof(path), "%s/cwd", dir);
   TEST_ASSERT(symlink(target, path) == 0);
 }

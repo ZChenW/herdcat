@@ -18,6 +18,8 @@ with tempfile.TemporaryDirectory(prefix='hc-meta-') as directory:
                       WAYLAND_DISPLAY='wayland-test', XDG_CURRENT_DESKTOP='test')
     project = root / 'late-project'
     project.mkdir()
+    # Stop project discovery at the fixture, independent of ancestor .git files.
+    (project / '.git').mkdir()
     config = root / 'cat.conf'
     config.write_text('keyboard_device=/dev/input/herdcat-test-nonexistent\n'
                       'monitor=TEST-1\nfps=1\nhotplug_scan_interval=0\n'

@@ -52,16 +52,18 @@ int __wrap_control_request(const char *request) {
 }
 
 static void invoke(const char *agent, const char *event, bool cwd, bool title) {
+  // Virtual payload paths do not inherit project names from /tmp/.git.
   char data[2048];
-  int length = snprintf(data, sizeof(data),
-                        "{\"session_id\":\"late-id\",\"sessionId\":\"late-id\","
-                        "\"conversationId\":\"late-id\",\"agent_pid\":%ld,"
-                        "\"transcript_path\":\"%s/turn.jsonl\"%s%s}",
-                        (long)getppid(), home,
-                        cwd ? ",\"cwd\":\"/tmp/late-project\","
-                              "\"workspacePaths\":[\"/tmp/late-project\"]"
-                            : "",
-                        title ? ",\"title\":\"Late title\"" : "");
+  int length =
+      snprintf(data, sizeof(data),
+               "{\"session_id\":\"late-id\",\"sessionId\":\"late-id\","
+               "\"conversationId\":\"late-id\",\"agent_pid\":%ld,"
+               "\"transcript_path\":\"%s/turn.jsonl\"%s%s}",
+               (long)getppid(), home,
+               cwd ? ",\"cwd\":\"/herdcat-test-input/late-project\","
+                     "\"workspacePaths\":[\"/herdcat-test-input/late-project\"]"
+                   : "",
+               title ? ",\"title\":\"Late title\"" : "");
   TEST_ASSERT(length > 0 && (size_t)length < sizeof(data));
   int input[2];
   TEST_ASSERT(pipe(input) == 0);
@@ -78,7 +80,8 @@ static void named(bool expected) {
   agent_session_record_t row;
   TEST_ASSERT(agent_sessions_export(&row, 1) == 1);
   TEST_ASSERT(!strcmp(row.name, "late-project") == expected);
-  TEST_ASSERT(!strcmp(row.start_cwd, "/tmp/late-project") == expected);
+  TEST_ASSERT(!strcmp(row.start_cwd, "/herdcat-test-input/late-project") ==
+              expected);
   if (expected)
     TEST_ASSERT(!strcmp(row.session_id, "late-id"));
 }
