@@ -107,6 +107,7 @@ finally:
 
 if args.renderer_status:
     from runtime_test_helpers import runtime_env, wait_until
+    from runtime_test_helpers import control_ready
     with tempfile.TemporaryDirectory(prefix="herdcat-input-status-") as directory:
         runtime = Path(directory)
         env = runtime_env(XDG_RUNTIME_DIR=directory, XDG_STATE_HOME=directory,
@@ -122,7 +123,7 @@ if args.renderer_status:
                 wait_until(lambda: (runtime / "wayland-test").exists(), 4)
                 app = subprocess.Popen([str(root / "build/herdcat"), "-c", str(config)],
                                        env=env, stdout=app_log, stderr=app_log)
-                wait_until(lambda: (runtime / "herdcat.sock").exists(), 4)
+                wait_until(lambda: control_ready(runtime / 'herdcat.sock'), 4)
                 status = subprocess.run([str(root / "build/herdcat"), "--status"],
                                         env=env, capture_output=True, text=True,
                                         timeout=3)

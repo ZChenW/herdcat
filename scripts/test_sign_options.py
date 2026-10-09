@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env, wait_settled, wait_until
+from runtime_test_helpers import control_ready, runtime_env, wait_settled, wait_until
 from pathlib import Path
 temporary = tempfile.TemporaryDirectory(prefix='herdcat-sign-options-')
 r = Path(temporary.name)
@@ -65,7 +65,7 @@ try:
     wait(lambda: (r / 'wayland-test').exists())
     app = subprocess.Popen([binary, '-c', str(config), '-w'], env=env,
                            stdout=app_log, stderr=app_log)
-    wait(lambda: (r / 'herdcat.sock').exists())
+    wait(lambda: control_ready(r / 'herdcat.sock'))
     wire('ev claude waiting aaaaaaaaaaaaaaaa 0')
     wire('name aaaaaaaaaaaaaaaa 演示 project')
     wire('ask aaaaaaaaaaaaaaaa SIGNS_PRIVATE_TITLE')

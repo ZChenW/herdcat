@@ -18,7 +18,7 @@ import sys
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env
+from runtime_test_helpers import control_ready, runtime_env
 
 ROOT = Path(__file__).resolve().parent.parent
 BINARY = ROOT / 'build/herdcat'
@@ -228,7 +228,7 @@ class SwayTest:
         self.app = self.spawn('herdcat', [str(BINARY), '-c', str(cat_config)],
                               env=dict(self.env, WAYLAND_DEBUG='client'))
         self.wait('herdcat control socket', lambda:
-                  (self.directory / 'herdcat.sock').exists())
+                  control_ready(self.directory / 'herdcat.sock'))
         self.wait('Sway backend ready', lambda:
                   'compositor=Sway focus-watch=ready'
                   in self.cli('--status'))

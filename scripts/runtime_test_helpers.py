@@ -5,6 +5,7 @@ import os
 import pty
 import select
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -108,6 +109,21 @@ def runtime_env(**overrides):
 def runtime_timing(real_time=False, divisor=4):
     """Scale only opted-in fixture deadlines; retain default-duration cases."""
     return (1, {}) if real_time else (1 / divisor, {'HERDCAT_TEST_TIMING': 'fast'})
+
+
+def control_ready(path):
+    """True once the control socket accepts connections, not merely exists.
+
+    The file appears at bind(), a moment before listen(); a client that
+    connects in between is refused.
+    """
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as probe:
+            probe.settimeout(1)
+            probe.connect(str(path))
+        return True
+    except OSError:
+        return False
 
 
 def wait_until(sample, seconds=6, *, description='fixture condition',

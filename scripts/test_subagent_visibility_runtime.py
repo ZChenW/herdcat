@@ -9,7 +9,7 @@ import socket
 import subprocess
 import tempfile
 
-from runtime_test_helpers import runtime_env, wait_settled, wait_until
+from runtime_test_helpers import control_ready, runtime_env, wait_settled, wait_until
 
 BINARY = str(Path('build/herdcat').resolve())
 COMPOSITOR = str(Path('build/compositor/server').resolve())
@@ -67,7 +67,7 @@ def run():
                 wait_until(lambda: (root / 'wayland-test').exists(), diagnostics=diagnostics)
                 app = subprocess.Popen([BINARY, '-c', str(config)], env=env,
                                        stdout=app_file, stderr=app_file)
-                wait_until(lambda: (root / 'herdcat.sock').exists(), diagnostics=diagnostics)
+                wait_until(lambda: control_ready(root / 'herdcat.sock'), diagnostics=diagnostics)
                 wire(f'ev claude start {PARENT:016x} {workers[0].pid}')
                 visible(1)  # only the cat; idle parent is retracted
                 for i, state in enumerate(('working', 'waiting'), 1):

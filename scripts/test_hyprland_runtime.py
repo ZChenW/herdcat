@@ -22,7 +22,7 @@ import threading
 import time
 
 from test_sway_runtime import SwayTest, ROOT, BINARY, CLIENT, KEYS, layer_roundtrip
-
+from runtime_test_helpers import control_ready
 
 def isolated_env(directory):
     return dict(PATH='/usr/bin:/bin', LANG='C.UTF-8', HOME=str(directory),
@@ -180,7 +180,7 @@ class HyprlandTest(SwayTest):
         self.app = self.spawn('herdcat', [str(BINARY), '-c', str(cat_config)],
                               env=dict(self.env, WAYLAND_DEBUG='client'))
         self.wait('herdcat control socket', lambda:
-                  (self.directory / 'herdcat.sock').exists())
+                  control_ready(self.directory / 'herdcat.sock'))
         self.wait('Hyprland backend ready', lambda:
                   'compositor=Hyprland (experimental) focus-watch=ready'
                   in self.cli('--status'))

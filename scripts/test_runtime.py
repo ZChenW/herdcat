@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env, wait_settled, wait_until
+from runtime_test_helpers import control_ready, runtime_env, wait_settled, wait_until
 
 binary = str(Path("build/herdcat").resolve())
 fixture = str(Path("build/compositor/server").resolve())
@@ -61,7 +61,7 @@ with tempfile.TemporaryDirectory(prefix="herdcat-integration-") as directory:
         wait_for(lambda: (root / "wayland-test").exists())
         app = subprocess.Popen([binary, "-c", str(config), "-w"], env=env,
                                stdout=app_log, stderr=app_log)
-        wait_for(lambda: (root / "herdcat.sock").exists())
+        wait_for(lambda: control_ready(root / 'herdcat.sock'))
         assert "paused=no" in command("status")
         assert app.poll() is None
         competing = subprocess.run([binary, "-c", str(config)], env=env,
@@ -184,7 +184,7 @@ with tempfile.TemporaryDirectory(prefix="herdcat-integration-") as directory:
             assert not Path(f"/proc/{helper}").exists()
             app = subprocess.Popen([binary, "-c", str(config)], env=env,
                                    stdout=app_log, stderr=app_log)
-            wait_for(lambda: (root / "herdcat.sock").exists())
+            wait_for(lambda: control_ready(root / 'herdcat.sock'))
             wait_for(lambda: Path(f"/proc/{app.pid}/task/{app.pid}/children").read_text().strip())
             helper = int(Path(f"/proc/{app.pid}/task/{app.pid}/children").read_text().split()[0])
         command("stop", success=False)  # Public stop option is intentionally absent.

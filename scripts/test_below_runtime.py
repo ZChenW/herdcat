@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env, runtime_timing, wait_settled, wait_until
+from runtime_test_helpers import control_ready, runtime_env, runtime_timing, wait_settled, wait_until
 
 BINARY = str(Path('build/herdcat').resolve())
 FIXTURE = str(Path('build/compositor/server').resolve())
@@ -101,7 +101,7 @@ def run(style, theme, top, sign_max):
                 wait_for(lambda: (root / 'wayland-test').exists())
                 app = subprocess.Popen([BINARY, '-c', str(config)], env=env,
                                        stdout=app_file, stderr=app_file)
-                wait_for(lambda: (root / 'herdcat.sock').exists())
+                wait_for(lambda: control_ready(root / 'herdcat.sock'))
                 wait_for(lambda: snapshot() and snapshot()[7] > 0)
                 cat = snapshot()
                 send(f'hover TEST-1 {cat[5] + 36} {cat[6] + 20}')
@@ -247,7 +247,7 @@ def tier_flip(style, top):
                 wait(lambda: (root / 'wayland-test').exists())
                 app = subprocess.Popen([BINARY, '-c', str(config)], env=env,
                                        stdout=app_file, stderr=app_file)
-                wait(lambda: (root / 'herdcat.sock').exists())
+                wait(lambda: control_ready(root / 'herdcat.sock'))
                 wait(lambda: latest() and latest()[13] >= 1)
                 cat = latest()
                 send(f'hover TEST-1 {cat[11] + 36} {cat[12] + 20}')
@@ -372,7 +372,7 @@ def split_card(top):
                 wait(lambda: (root / 'wayland-test').exists())
                 app = subprocess.Popen([BINARY, '-c', str(config)], env=env,
                                        stdout=app_file, stderr=app_file)
-                wait(lambda: (root / 'herdcat.sock').exists())
+                wait(lambda: control_ready(root / 'herdcat.sock'))
                 with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as control:
                     control.connect(str(root / 'herdcat.sock'))
                     control.sendall(b'ev claude working 0000000000000001 0')

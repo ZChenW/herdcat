@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env, runtime_timing, wait_until
+from runtime_test_helpers import control_ready, runtime_env, runtime_timing, wait_until
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -83,7 +83,7 @@ def run(style, top, scale, clamped=False, real_time=False):
                            diagnostics=diagnostics)
                 app = subprocess.Popen([str(ROOT / 'build/herdcat'), '-c', str(config)],
                                        env=env, stdout=app_file, stderr=app_file)
-                wait_until(lambda: (root / 'herdcat.sock').exists(), 6,
+                wait_until(lambda: control_ready(root / 'herdcat.sock'), 6,
                            diagnostics=diagnostics)
                 wait_size(136)
                 start = len(records())

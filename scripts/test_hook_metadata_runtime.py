@@ -5,7 +5,7 @@ import socket
 import subprocess
 import tempfile
 
-from runtime_test_helpers import HookParent, runtime_env, run_on_pty, wait_until
+from runtime_test_helpers import HookParent, control_ready, run_on_pty, runtime_env, wait_until
 
 run_on_pty()
 binary = str(Path('build/herdcat').resolve())
@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='hc-meta-') as directory:
         global app
         app = subprocess.Popen([binary, '-c', str(config)], env=env,
                                stdout=log, stderr=log)
-        wait(lambda: (root / 'herdcat.sock').exists())
+        wait(lambda: control_ready(root / 'herdcat.sock'))
         return app
 
     def sessions():

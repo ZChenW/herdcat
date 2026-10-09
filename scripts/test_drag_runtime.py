@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env, wait_settled, wait_until
+from runtime_test_helpers import control_ready, runtime_env, wait_settled, wait_until
 
 binary = str(Path('build/herdcat').resolve())
 fixture = str(Path('build/compositor/server').resolve())
@@ -70,7 +70,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
     def start():
         process = subprocess.Popen([binary, '-c', str(config), '-w'], env=env,
                                    stdout=app_file, stderr=app_file)
-        wait_for(lambda: (root / 'herdcat.sock').exists())
+        wait_for(lambda: control_ready(root / 'herdcat.sock'))
         # This existing drag suite exercises configured-capacity geometry.
         # Resting/expanded tiers have a separate runtime matrix.
         for key in range(1, 11):
@@ -184,7 +184,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-drag-runtime-') as directory:
         assert app.wait(timeout=3) == 0
         app = start()
         reserve_expanded()
-        wait_for(lambda: (root / 'herdcat.sock').exists())
+        wait_for(lambda: control_ready(root / 'herdcat.sock'))
         wait_for(lambda: abs(regions()['TEST-1'][0] - saved['TEST-1'][0]) <= 1)
         assert records() == saved
         for op in ('pause', 'resume', 'hide'):

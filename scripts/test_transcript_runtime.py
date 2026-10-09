@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env, wait_settled, wait_until
+from runtime_test_helpers import control_ready, runtime_env, wait_settled, wait_until
 
 from runtime_test_helpers import run_on_pty
 
@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix="bongo-transcript-runtime-") as director
         wait_for(lambda: (root / "wayland-test").exists())
         app = subprocess.Popen([binary, "-c", str(config), "-w"], env=env,
                                stdout=log, stderr=log)
-        wait_for(lambda: (root / "herdcat.sock").exists())
+        wait_for(lambda: control_ready(root / 'herdcat.sock'))
         hook("claude", "SessionStart")
         hook("claude", "UserPromptSubmit")
         assert state("working")

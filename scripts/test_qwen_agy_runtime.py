@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 
-from runtime_test_helpers import HookParent, WORKER, runtime_env, run_on_pty, wait_until
+from runtime_test_helpers import HookParent, WORKER, control_ready, run_on_pty, runtime_env, wait_until
 
 run_on_pty()
 binary = str(Path('build/herdcat').resolve())
@@ -87,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix='hc-qa-') as directory:
     try:
         wait(lambda: (root / 'wayland-test').exists())
         app = subprocess.Popen([binary, '-c', str(config)], env=env, stdout=log, stderr=log)
-        wait(lambda: (root / 'herdcat.sock').exists())
+        wait(lambda: control_ready(root / 'herdcat.sock'))
         qwen = HookParent(binary, env)
         qevent('SessionStart')
         assert state('idle')

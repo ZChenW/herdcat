@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env, wait_until
+from runtime_test_helpers import control_ready, runtime_env, wait_until
 
 binary = str(Path('build/herdcat').resolve())
 fixture = str(Path('build/compositor/server').resolve())
@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-pointer-hover-runtime-') as tem
             wait_until(lambda: (root / 'wayland-test').exists(), 5)
             app = subprocess.Popen([binary, '-c', str(config)], env=env,
                                    stdout=al, stderr=al)
-            wait_until(lambda: (root / 'herdcat.sock').exists(), 5)
+            wait_until(lambda: control_ready(root / 'herdcat.sock'), 5)
             wire('ev claude start 1111111100000000 0')
             wire('cwd 1111111100000000 ' + b'/work/Projects'.hex() + ' Projects')
             wire('cwd 1111111100000000 ' + b'/work/Projects/herdcat'.hex() + ' herdcat')
@@ -118,7 +118,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-pointer-hover-runtime-') as tem
             assert app.wait(timeout=3) == 0
             app = subprocess.Popen([binary, '-c', str(config)], env=env,
                                    stdout=al, stderr=al)
-            wait_until(lambda: (root / 'herdcat.sock').exists(), 5)
+            wait_until(lambda: control_ready(root / 'herdcat.sock'), 5)
             wire('cwd 1111111100000000 ' + b'/work/Projects'.hex() + ' wrong')
             assert ' herdcat' in wire('sessions')
             assert 'title=explicit title' in wire('sessions')

@@ -9,7 +9,7 @@ import socket
 import subprocess
 import tempfile
 
-from runtime_test_helpers import runtime_env, wait_settled, wait_until
+from runtime_test_helpers import control_ready, runtime_env, wait_settled, wait_until
 
 binary = str(Path('build/herdcat').resolve())
 fixture = str(Path('build/compositor/server').resolve())
@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-sign-rows-runtime-') as directo
                        diagnostics=diagnostics)
             app = subprocess.Popen([binary, '-c', str(config)], env=env,
                                    stdout=app_file, stderr=app_file)
-            wait_until(lambda: (root / 'herdcat.sock').exists(), 6,
+            wait_until(lambda: control_ready(root / 'herdcat.sock'), 6,
                        diagnostics=diagnostics)
             # Default capacity is ten. Creation/display order remains stable.
             for i in range(1, 11):

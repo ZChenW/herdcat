@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 
-from runtime_test_helpers import runtime_env, wait_settled, wait_until
+from runtime_test_helpers import control_ready, runtime_env, wait_settled, wait_until
 
 from measure_focus_fixture import FocusFixture
 from measure_scenarios import CONFIG, stop, wait_for, wire
@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='herdcat-focus-runtime-') as temporary:
             wait_for(lambda: (directory / 'wayland-test').exists(), [server])
             app = subprocess.Popen([str(binary), '-c', str(config)], cwd=directory,
                                    env=env, stdout=log, stderr=log)
-            wait_for(lambda: (directory / 'herdcat.sock').exists(), [server, app])
+            wait_for(lambda: control_ready(directory / 'herdcat.sock'), [server, app])
             wait_for(lambda: 'commit TEST-1' in (directory / 'runtime.log').read_text(),
                      [server, app])
             helpers = Path(f'/proc/{app.pid}/task/{app.pid}/children').read_text().split()

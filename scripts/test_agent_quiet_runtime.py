@@ -13,7 +13,7 @@ import tempfile
 import threading
 import time
 
-from runtime_test_helpers import runtime_env, runtime_timing, wait_until
+from runtime_test_helpers import control_ready, runtime_env, runtime_timing, wait_until
 from measure_scenarios import CONFIG, wire, stop
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -99,7 +99,7 @@ def run(binary, agent, measure, baseline=False, real_time=False):
                 app = subprocess.Popen([binary, '-c', str(config)], env=env,
                                        stdout=log, stderr=log)
                 processes.append(app)
-                wait_until(lambda: (root / 'herdcat.sock').exists())
+                wait_until(lambda: control_ready(root / 'herdcat.sock'))
                 if measure:
                     # Match the existing focus measurement fixture: suspend
                     # only our private helper so device rescans add no wakes.
