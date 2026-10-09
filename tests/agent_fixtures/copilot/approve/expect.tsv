@@ -1,0 +1,11 @@
+# elapsed_ms	payload	--event	state	title	subagent
+0	-	-	absent	-	0
+371	001.json	userPromptSubmitted	working	Sample prompt 1	0
+393	002.json	sessionStart	working	Sample prompt 1	0
+407	-	-	working	Sample prompt 1	0
+1721	003.json	preToolUse	working	Sample prompt 1	0
+1760	004.json	notification	waiting	Sample prompt 1	0
+1850	-	-	waiting	Sample prompt 1	0
+1883	005.json	postToolUse	working	Sample prompt 1	0
+2664	006.json	agentStop	done	Sample prompt 1	0
+2759	-	-	done	Sample prompt 1	0

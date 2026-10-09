@@ -1,0 +1,9 @@
+{
+  "session_id": "00000000000000000000000000000001",
+  "turn_id": "00000000000000000000000000000002",
+  "transcript_path": "/tmp/herdcat-probe/transcript.jsonl",
+  "cwd": "/tmp/herdcat-probe/project",
+  "hook_event_name": "Interrupt",
+  "model": "gpt-6.1-sol",
+  "permission_mode": "default"
+}

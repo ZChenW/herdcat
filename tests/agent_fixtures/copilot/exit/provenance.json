@@ -1,0 +1,93 @@
+{
+  "agent": "copilot",
+  "scenario": "exit",
+  "recorded_version": "1.0.94",
+  "recorded_date": "2026-10-08",
+  "version_source": "actual --version stdout",
+  "version_output": "GitHub Copilot CLI 1.0.94.\nRun 'copilot update' to check for updates.",
+  "source": "private ephemeral shim JSONL (removed after capture)",
+  "source_sha256": "77384c9370ca5e9f56bd7f6b085e7bc506f6bcaddc08fe46242e3ec558e5e66d",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 2,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "userPromptSubmitted"
+      ],
+      "received_monotonic_ms": 20497980
+    },
+    {
+      "payload": "002.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "sessionStart"
+      ],
+      "received_monotonic_ms": 20498004
+    },
+    {
+      "payload": "003.json",
+      "source_line": 5,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "agentStop"
+      ],
+      "received_monotonic_ms": 20500410
+    },
+    {
+      "payload": "004.json",
+      "source_line": 7,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "sessionEnd"
+      ],
+      "received_monotonic_ms": 20500664
+    }
+  ],
+  "milestones": [
+    {
+      "ms": 0,
+      "state": "absent",
+      "label": "ready before first submission"
+    },
+    {
+      "ms": 406,
+      "state": "working",
+      "label": "prompt submitted"
+    },
+    {
+      "ms": 2816,
+      "state": "done",
+      "label": "answer ended or refused"
+    },
+    {
+      "ms": 3126,
+      "state": "absent",
+      "label": "session exited"
+    }
+  ],
+  "command": [
+    "copilot",
+    "--no-auto-update",
+    "--disable-builtin-mcps",
+    "--no-custom-instructions",
+    "--no-remote-export"
+  ],
+  "interception": "PATH shim, no forwarding; temporary configuration/auth copies",
+  "redaction": "Private paths, identities, session/tool IDs and nonempty content replaced; keys, types, empties, events, timing retained.",
+  "limitations": "Hook-only replay; no transcript, quiet detection or subagents.",
+  "complete": true
+}

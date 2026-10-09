@@ -1,0 +1,93 @@
+{
+  "agent": "copilot",
+  "command": [
+    "copilot",
+    "--no-auto-update",
+    "--disable-builtin-mcps",
+    "--no-custom-instructions",
+    "--no-remote-export"
+  ],
+  "version_command": [
+    "copilot",
+    "--no-auto-update",
+    "--version"
+  ],
+  "upgrade": [
+    "copilot",
+    "update"
+  ],
+  "ready": "\u276f|for shortcuts|Enter.*send|Type.*message|>",
+  "start_event": "sessionStart",
+  "submit_event": "userPromptSubmitted",
+  "end_event": "agentStop",
+  "exit_event": "sessionEnd",
+  "answer": "(?i)ok|herdcat-probe|denied|declined|permission",
+  "approval_screen": "(?i)Do you want|Allow.*command|Yes,.*once|Approve",
+  "approve_keys": [
+    "Enter"
+  ],
+  "deny_keys": [
+    "Down",
+    "Enter"
+  ],
+  "exit_keys": [
+    "/exit",
+    "Enter"
+  ],
+  "timeout": 45,
+  "startup": [
+    {
+      "screen": "(?i)trust.*folder|Yes, trust|trust.*directory",
+      "keys": [
+        "Enter"
+      ]
+    }
+  ],
+  "events": {
+    "sessionStart": "idle",
+    "userPromptSubmitted": "working",
+    "preToolUse": "working",
+    "postToolUse": "working",
+    "postToolUseFailure": "working",
+    "errorOccurred": "error",
+    "sessionEnd": "absent",
+    "notification": "preserve"
+  },
+  "stop_reasons": {
+    "end_turn": "done",
+    "error": "error",
+    "aborted": "idle",
+    "interrupted": "idle"
+  },
+  "scenarios": {
+    "normal": {
+      "prompt": "Reply with the single word ok"
+    },
+    "approve": {
+      "prompt": "Run exactly: sh -c 'echo herdcat-probe'"
+    },
+    "deny": {
+      "prompt": "Run exactly: sh -c 'echo herdcat-probe'"
+    },
+    "cancel": {
+      "skip": "Double Esc has no cancellation hook; terminal quiet detection cannot be verified by hook-only replay."
+    },
+    "exit": {}
+  },
+  "lazy_start": true,
+  "notifications": {
+    "permission_prompt": "waiting"
+  },
+  "config": {
+    "env": "COPILOT_HOME",
+    "directory": ".copilot",
+    "files": [
+      "config.json",
+      "settings.json",
+      "hooks/hooks.json"
+    ],
+    "hook_file": "hooks/hooks.json",
+    "hook_format": "json"
+  },
+  "shim_stdout": "{}\n"
+}

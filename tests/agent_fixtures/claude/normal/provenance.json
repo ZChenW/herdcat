@@ -1,0 +1,70 @@
+{
+  "agent": "claude",
+  "scenario": "normal",
+  "recorded_version": "2.1.295",
+  "recorded_date": "2026-10-08",
+  "version_source": "actual --version stdout",
+  "version_output": "2.1.295 (Claude Code)",
+  "source": "private ephemeral shim JSONL (removed after capture)",
+  "source_sha256": "a2daaaebc3fc3fa29c0db643a022b8773581eeae5c8ae6679bead13f458cb59c",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 1,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20325740
+    },
+    {
+      "payload": "002.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20326249
+    },
+    {
+      "payload": "003.json",
+      "source_line": 5,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20326999
+    }
+  ],
+  "milestones": [
+    {
+      "ms": 271,
+      "state": "idle",
+      "label": "ready before first submission"
+    },
+    {
+      "ms": 578,
+      "state": "working",
+      "label": "prompt submitted"
+    },
+    {
+      "ms": 1285,
+      "state": "done",
+      "label": "answer ended or refused"
+    }
+  ],
+  "command": [
+    "claude",
+    "--permission-mode",
+    "manual",
+    "--strict-mcp-config",
+    "--disable-slash-commands"
+  ],
+  "interception": "PATH shim, no forwarding; temporary configuration/auth copies",
+  "redaction": "Private paths, identities, session/tool IDs and nonempty content replaced; keys, types, empties, events, timing retained.",
+  "limitations": "Hook-only replay; no transcript, quiet detection or subagents. Cleanup hooks after the final authored milestone were omitted.",
+  "complete": true
+}

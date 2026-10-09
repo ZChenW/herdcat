@@ -2,29 +2,42 @@
   "agents": [
     {
       "agent": "claude",
-      "recorded_versions": [],
-      "scenarios": [],
+      "recorded_versions": [
+        "2.1.295"
+      ],
+      "scenarios": [
+        "approve",
+        "exit",
+        "normal"
+      ],
       "query": {
         "kind": "npm",
         "url": "https://registry.npmjs.org/@anthropic-ai%2Fclaude-code/latest",
         "identity_source": "Claude Code npm distribution"
       },
       "query_note": "",
-      "evidence_note": "No raw hook payload has been recorded yet.",
-      "validated_version": "2.1.292"
+      "evidence_note": "Captured by record_agent_hooks.py from the real agent; see each provenance.json.",
+      "validated_version": "2.1.295"
     },
     {
       "agent": "codex",
-      "recorded_versions": [],
-      "scenarios": [],
+      "recorded_versions": [
+        "0.162.0"
+      ],
+      "scenarios": [
+        "approve",
+        "cancel",
+        "deny",
+        "normal"
+      ],
       "query": {
         "kind": "npm",
         "url": "https://registry.npmjs.org/@openai%2Fcodex/latest",
         "identity_source": "Codex CLI npm distribution"
       },
       "query_note": "",
-      "evidence_note": "No raw hook payload has been recorded yet.",
-      "validated_version": "0.160.0"
+      "evidence_note": "Captured by record_agent_hooks.py from the real agent; see each provenance.json.",
+      "validated_version": "0.162.0"
     },
     {
       "agent": "grok",
@@ -59,29 +72,41 @@
     },
     {
       "agent": "copilot",
-      "recorded_versions": [],
-      "scenarios": [],
+      "recorded_versions": [
+        "1.0.94"
+      ],
+      "scenarios": [
+        "approve",
+        "deny",
+        "exit",
+        "normal"
+      ],
       "query": {
         "kind": "npm",
         "url": "https://registry.npmjs.org/@github%2Fcopilot/latest",
         "identity_source": "GitHub Copilot CLI npm distribution"
       },
       "query_note": "",
-      "evidence_note": "No raw hook payload has been recorded yet.",
-      "validated_version": "1.0.93"
+      "evidence_note": "Captured by record_agent_hooks.py from the real agent; see each provenance.json.",
+      "validated_version": "1.0.94"
     },
     {
       "agent": "pi",
-      "recorded_versions": [],
-      "scenarios": [],
+      "recorded_versions": [
+        "1.1.0"
+      ],
+      "scenarios": [
+        "cancel",
+        "normal"
+      ],
       "query": {
         "kind": "npm",
         "url": "https://registry.npmjs.org/@earendil-works%2Fpi-coding-agent/latest",
         "identity_source": "npm package whose repository field is github.com/earendil-works/pi"
       },
       "query_note": "",
-      "evidence_note": "No raw hook payload has been recorded yet.",
-      "validated_version": "0.84.2"
+      "evidence_note": "Captured by record_agent_hooks.py from the real agent; see each provenance.json.",
+      "validated_version": "1.1.0"
     },
     {
       "agent": "opencode",

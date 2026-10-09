@@ -655,3 +655,16 @@ Claude session's process. A self PID, an unknown PID or a tracked non-Claude
 PID is ignored. Claude is the only adapter declaring an owner environment
 variable; no equivalents are guessed for other agents. Children keep their
 own process watches while sharing the parent's sign and alert behavior.
+
+
+## Automated hook revalidation
+
+Claude Code, Codex, Copilot CLI and Pi can be recorded and judged with the
+[fixture workflow](../tests/agent_fixtures/README.md#automated-revalidation).
+`make agents-check` reports installed-version drift; `make agents-update`
+updates changed installations, records supported scenes and accepts safe
+fixtures after production replay. Use `--force` to upgrade and record even when
+the installed version already matches. This operates in private temporary
+projects and a dedicated tmux server, without editing user configuration or
+sending hooks to the desktop. Needs-attention scenes retain their diagnostics;
+partial acceptance does not advance the whole-agent validated version.

@@ -1,0 +1,81 @@
+{
+  "agent": "pi",
+  "command": [
+    "pi",
+    "--offline",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-context-files"
+  ],
+  "version_command": [
+    "pi",
+    "--version"
+  ],
+  "upgrade": [
+    "npm",
+    "install",
+    "-g",
+    "@earendil-works/pi-coding-agent@latest"
+  ],
+  "ready": "(?i)escape interrupt|context|tokens|type a message|[0-9.]+%/[0-9.]+[kKM]",
+  "start_event": "session_start",
+  "submit_event": "before_agent_start",
+  "end_event": "agent_end",
+  "exit_event": "session_shutdown",
+  "cancel_event": "agent_end",
+  "working_screen": "(?i)working|thinking|esc|abort",
+  "cancel_keys": [
+    "Escape"
+  ],
+  "answer": "(?i)ok",
+  "exit_keys": [
+    "/quit",
+    "Enter"
+  ],
+  "timeout": 45,
+  "events": {
+    "session_start": "idle",
+    "before_agent_start": "working",
+    "agent_start": "working",
+    "tool_call": "working",
+    "tool_result": "working",
+    "session_shutdown": "absent"
+  },
+  "stop_reasons": {
+    "stop": "done",
+    "error": "error",
+    "length": "error",
+    "aborted": "idle"
+  },
+  "scenarios": {
+    "normal": {
+      "prompt": "Reply with the single word ok"
+    },
+    "approve": {
+      "skip": "Stock Pi has no permission dialog or permission hook."
+    },
+    "deny": {
+      "skip": "Stock Pi has no permission dialog or permission hook."
+    },
+    "cancel": {
+      "prompt": "Count from 1 to 1000"
+    },
+    "exit": {
+      "skip": "No end-of-session hook arrives on exit; the session is removed when the process exits (pidfd watch), which a hook-only replay cannot show."
+    }
+  },
+  "config": {
+    "env": "PI_CODING_AGENT_DIR",
+    "directory": ".pi/agent",
+    "files": [
+      "auth.json",
+      "settings.json",
+      "models-store.json",
+      "extensions/herdcat.ts"
+    ],
+    "hook_file": "extensions/herdcat.ts",
+    "hook_format": "bridge",
+    "bridge_pattern": "spawn\\(\"herdcat\","
+  },
+  "shim_stdout": ""
+}

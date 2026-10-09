@@ -565,12 +565,18 @@ fuzz: $(addprefix fuzz-run-,$(FUZZ_TARGETS))
 
 # Recorded hook replay and offline registry-response parsing.
 $(BUILDDIR)/test_agent_fixtures: TEST_WRAPS = -Wl,--wrap=control_request
-TEST_PYTHON += tests/test_agent_versions.py
+TEST_PYTHON += tests/test_agent_versions.py tests/test_agent_recording.py
 
-.PHONY: test-agent-fixtures check-agent-versions
+.PHONY: test-agent-fixtures check-agent-versions agents-check agents-update
 test-agent-fixtures: $(BUILDDIR)/test_agent_fixtures
 	./$(BUILDDIR)/test_agent_fixtures
 	python3 tests/test_agent_versions.py
+
+agents-check:
+	python3 scripts/update_agents.py --check
+
+agents-update:
+	python3 scripts/update_agents.py --accept
 
 check-agent-versions:
 	python3 scripts/check_agent_versions.py --fail-on-update

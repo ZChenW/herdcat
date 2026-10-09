@@ -64,11 +64,13 @@ class ShardTests(unittest.TestCase):
                                  '--test', 'python3 tests/test_theme_watch.py',
                                  '--test', 'python3 tests/test_terminal_commands.py',
                                  '--test', 'python3 tests/test_completions.py',
-                                 '--test', './build/test_theme_watch'],
+                                 '--test', './build/test_theme_watch',
+                                 '--test', 'python3 tests/test_agent_recording.py'],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertCountEqual(result.stdout.split(), ['build/test_theme_watch',
-                              'build/test_terminal_focus', 'build/test_agent_adapters', 'build/herdcat'])
+                              'build/test_terminal_focus', 'build/test_agent_adapters', 'build/herdcat',
+                              'build/test_agent_fixtures'])
 
     def test_product_binaries_are_built_only_for_the_drivers_that_use_them(self):
         result = subprocess.run([sys.executable, str(RUNNER), '--list-binaries',

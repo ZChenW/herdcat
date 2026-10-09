@@ -1,0 +1,14 @@
+{
+  "sessionId": "00000000000000000000000000000001",
+  "timestamp": 1791507187493,
+  "cwd": "/tmp/herdcat-probe/project",
+  "toolName": "bash",
+  "toolArgs": {
+    "command": "Sample text",
+    "description": "Sample text"
+  },
+  "toolResult": {
+    "resultType": "Sample text",
+    "textResultForLlm": "Sample text"
+  }
+}

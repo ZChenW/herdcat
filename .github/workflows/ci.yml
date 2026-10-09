@@ -63,7 +63,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends gcc make libwayland-dev \
             libfreetype-dev libfontconfig1-dev fonts-dejavu-core fonts-noto-core \
-            fonts-noto-cjk fonts-liberation python3 nodejs
+            fonts-noto-cjk fonts-liberation python3 nodejs tmux
       # Compile locally in each shard: the measured build cost is small enough
       # to avoid an artifact upload/download dependency on the critical path.
       # Keep ASan tests serial within each shard, matching the local default.

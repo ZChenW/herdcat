@@ -1,0 +1,88 @@
+{
+  "agent": "claude",
+  "command": [
+    "claude",
+    "--permission-mode",
+    "manual",
+    "--strict-mcp-config",
+    "--disable-slash-commands"
+  ],
+  "version_command": [
+    "claude",
+    "--version"
+  ],
+  "upgrade": [
+    "claude",
+    "update"
+  ],
+  "ready": "❯|Try \"|for shortcuts",
+  "start_event": "SessionStart",
+  "submit_event": "UserPromptSubmit",
+  "end_event": "Stop",
+  "exit_event": "SessionEnd",
+  "answer": "(?i)ok|herdcat-probe|denied|declined|permission",
+  "approval_screen": "(?i)Do you want to proceed|Allow this|Yes.*No",
+  "approve_keys": [
+    "Enter"
+  ],
+  "deny_keys": [
+    "Down",
+    "Enter"
+  ],
+  "cancel_keys": [
+    "Escape"
+  ],
+  "exit_keys": [
+    "C-c",
+    "C-c"
+  ],
+  "timeout": 45,
+  "startup": [
+    {
+      "screen": "(?i)trust this folder|Yes, I trust",
+      "keys": [
+        "Down",
+        "Enter"
+      ]
+    },
+    {
+      "screen": "Choose the text style|Choose.*theme",
+      "keys": [
+        "Enter"
+      ]
+    }
+  ],
+  "notifications": {
+    "permission_prompt": "waiting",
+    "idle_prompt": "preserve",
+    "elicitation_dialog": "waiting",
+    "agent_needs_input": "waiting"
+  },
+  "scenarios": {
+    "normal": {
+      "prompt": "Reply with the single word ok"
+    },
+    "approve": {
+      "prompt": "Run the shell command: echo herdcat-probe"
+    },
+    "deny": {
+      "skip": "Refusing a tool emits no hook; the sign is lowered by the interruption record in the transcript, outside hook-only replay."
+    },
+    "cancel": {
+      "skip": "Esc emits no cancellation hook; idle requires transcript/terminal quiet detection, outside hook-only replay."
+    },
+    "exit": {}
+  },
+  "config": {
+    "env": "CLAUDE_CONFIG_DIR",
+    "directory": ".claude",
+    "files": [
+      "settings.json",
+      ".credentials.json",
+      ".claude.json"
+    ],
+    "hook_file": "settings.json",
+    "hook_format": "json"
+  },
+  "shim_stdout": ""
+}

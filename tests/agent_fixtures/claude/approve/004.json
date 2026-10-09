@@ -1,0 +1,17 @@
+{
+  "session_id": "00000000000000000000000000000001",
+  "transcript_path": "/tmp/herdcat-probe/transcript.jsonl",
+  "cwd": "/tmp/herdcat-probe/project",
+  "scratchpad_dir": "sample-token",
+  "prompt_id": "00000000000000000000000000000002",
+  "permission_mode": "default",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "Sample text",
+    "description": "Sample text"
+  }
+}

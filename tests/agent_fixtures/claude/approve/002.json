@@ -1,0 +1,10 @@
+{
+  "session_id": "00000000000000000000000000000001",
+  "transcript_path": "/tmp/herdcat-probe/transcript.jsonl",
+  "cwd": "/tmp/herdcat-probe/project",
+  "scratchpad_dir": "sample-token",
+  "prompt_id": "00000000000000000000000000000002",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "Sample prompt 1"
+}

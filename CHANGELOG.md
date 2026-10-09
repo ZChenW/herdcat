@@ -18,7 +18,10 @@ All notable changes to this project will be documented in this file.
   `make test` replays the seeds and any input that once crashed.
 - Recorded hook sequences from real agents are replayed in `make test`, and
   a weekly workflow warns when an agent has released a version newer than
-  the one its hooks were last checked against.
+  the one its hooks were last checked against. `make agents-update` then
+  upgrades Claude Code, Codex, Copilot CLI and Pi, drives each through a
+  short scripted session, and accepts the new recording when the fields
+  herdcat reads are unchanged and the sign follows the script.
 - `make coverage` reports line and branch coverage of the unit tests
   (73% and 63%); `make coverage-runtime` adds the runtime tests (87% and
   73%).

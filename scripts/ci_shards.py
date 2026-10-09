@@ -42,6 +42,7 @@ def shard_number(value):
 def build_targets(commands):
     """Include binaries used by Python drivers without running extra suites."""
     fixtures = {
+        'python3 tests/test_agent_recording.py': ['build/test_agent_fixtures'],
         'python3 tests/test_theme_watch.py': ['build/test_theme_watch'],
         'python3 tests/test_terminal_commands.py': ['build/test_terminal_focus'],
         'python3 tests/test_completions.py': ['build/test_agent_adapters', 'build/herdcat'],

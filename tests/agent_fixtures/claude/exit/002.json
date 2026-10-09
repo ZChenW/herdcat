@@ -1,0 +1,8 @@
+{
+  "session_id": "00000000000000000000000000000001",
+  "transcript_path": "/tmp/herdcat-probe/transcript.jsonl",
+  "cwd": "/tmp/herdcat-probe/project",
+  "scratchpad_dir": "sample-token",
+  "hook_event_name": "SessionEnd",
+  "reason": "Sample text"
+}

@@ -1,0 +1,85 @@
+{
+  "agent": "codex",
+  "scenario": "normal",
+  "recorded_version": "0.162.0",
+  "recorded_date": "2026-10-08",
+  "version_source": "actual --version stdout",
+  "version_output": "codex-cli 0.162.0",
+  "source": "private ephemeral shim JSONL (removed after capture)",
+  "source_sha256": "0e0a944363fd7f7805fb302fdd1fd2b540f28e646183cdf0dad5df0c8cd7ee30",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 2,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "codex"
+      ],
+      "received_monotonic_ms": 20344652
+    },
+    {
+      "payload": "002.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "codex"
+      ],
+      "received_monotonic_ms": 20344670
+    },
+    {
+      "payload": "003.json",
+      "source_line": 5,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "codex"
+      ],
+      "received_monotonic_ms": 20346636
+    }
+  ],
+  "milestones": [
+    {
+      "ms": 0,
+      "state": "absent",
+      "label": "ready before first submission"
+    },
+    {
+      "ms": 2513,
+      "state": "working",
+      "label": "prompt submitted"
+    },
+    {
+      "ms": 4423,
+      "state": "done",
+      "label": "answer ended or refused"
+    }
+  ],
+  "command": [
+    "codex",
+    "--no-daemon",
+    "--no-alt-screen",
+    "--dangerously-bypass-hook-trust",
+    "--disable",
+    "memories",
+    "--disable",
+    "multi_agent",
+    "--disable",
+    "goals",
+    "-s",
+    "read-only",
+    "-a",
+    "on-request",
+    "-c",
+    "check_for_update_on_startup=false",
+    "--enable",
+    "hooks",
+    "--disable",
+    "apps"
+  ],
+  "interception": "PATH shim, no forwarding; temporary configuration/auth copies",
+  "redaction": "Private paths, identities, session/tool IDs and nonempty content replaced; keys, types, empties, events, timing retained.",
+  "limitations": "Hook-only replay; no transcript, quiet detection or subagents.",
+  "complete": true
+}

@@ -1,0 +1,105 @@
+{
+  "agent": "claude",
+  "scenario": "approve",
+  "recorded_version": "2.1.295",
+  "recorded_date": "2026-10-08",
+  "version_source": "actual --version stdout",
+  "version_output": "2.1.295 (Claude Code)",
+  "source": "private ephemeral shim JSONL (removed after capture)",
+  "source_sha256": "e454196ce8f02f5f7810eb8642d7998573cc0a4ce5da8eaff9563c4792bb2c51",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 1,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20328607
+    },
+    {
+      "payload": "002.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20328960
+    },
+    {
+      "payload": "003.json",
+      "source_line": 5,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20330212
+    },
+    {
+      "payload": "004.json",
+      "source_line": 6,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20330250
+    },
+    {
+      "payload": "005.json",
+      "source_line": 8,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20330328
+    },
+    {
+      "payload": "006.json",
+      "source_line": 9,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20330979
+    }
+  ],
+  "milestones": [
+    {
+      "ms": 101,
+      "state": "idle",
+      "label": "ready before first submission"
+    },
+    {
+      "ms": 408,
+      "state": "working",
+      "label": "prompt submitted"
+    },
+    {
+      "ms": 1658,
+      "state": "waiting",
+      "label": "permission dialog visible"
+    },
+    {
+      "ms": 2469,
+      "state": "done",
+      "label": "answer ended or refused"
+    }
+  ],
+  "command": [
+    "claude",
+    "--permission-mode",
+    "manual",
+    "--strict-mcp-config",
+    "--disable-slash-commands"
+  ],
+  "interception": "PATH shim, no forwarding; temporary configuration/auth copies",
+  "redaction": "Private paths, identities, session/tool IDs and nonempty content replaced; keys, types, empties, events, timing retained.",
+  "limitations": "Hook-only replay; no transcript, quiet detection or subagents. Cleanup hooks after the final authored milestone were omitted.",
+  "complete": true
+}

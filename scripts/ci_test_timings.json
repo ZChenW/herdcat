@@ -122,6 +122,7 @@
   "python3 scripts/test_sway_runtime.py": 1.441,
   "python3 scripts/test_test_runner.py": 2.022,
   "python3 scripts/test_transcript_runtime.py": 1.573,
+  "python3 tests/test_agent_recording.py": 2.55385631000172,
   "python3 tests/test_agent_versions.py": 0.079,
   "python3 tests/test_agy_hook_io.py": 2.214,
   "python3 tests/test_completions.py": 0.14,

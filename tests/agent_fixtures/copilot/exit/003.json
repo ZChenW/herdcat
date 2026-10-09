@@ -1,0 +1,8 @@
+{
+  "sessionId": "00000000000000000000000000000001",
+  "timestamp": 1791507200837,
+  "cwd": "/tmp/herdcat-probe/project",
+  "transcriptPath": "/tmp/hc-rec-jirk06z9/home/.sample-token.jsonl",
+  "stopReason": "end_turn",
+  "stop_hook_active": false
+}

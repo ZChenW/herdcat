@@ -1,0 +1,55 @@
+{
+  "agent": "claude",
+  "scenario": "exit",
+  "recorded_version": "2.1.295",
+  "recorded_date": "2026-10-08",
+  "version_source": "actual --version stdout",
+  "version_output": "2.1.295 (Claude Code)",
+  "source": "private ephemeral shim JSONL (removed after capture)",
+  "source_sha256": "161350fe7462c6ba748766c48435a6c4574fcf96f87fc65446c343894f125b84",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 1,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20335435
+    },
+    {
+      "payload": "002.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "claude"
+      ],
+      "received_monotonic_ms": 20335716
+    }
+  ],
+  "milestones": [
+    {
+      "ms": 237,
+      "state": "idle",
+      "label": "ready before first submission"
+    },
+    {
+      "ms": 342,
+      "state": "absent",
+      "label": "session exited"
+    }
+  ],
+  "command": [
+    "claude",
+    "--permission-mode",
+    "manual",
+    "--strict-mcp-config",
+    "--disable-slash-commands"
+  ],
+  "interception": "PATH shim, no forwarding; temporary configuration/auth copies",
+  "redaction": "Private paths, identities, session/tool IDs and nonempty content replaced; keys, types, empties, events, timing retained.",
+  "limitations": "Hook-only replay; no transcript, quiet detection or subagents.",
+  "complete": true
+}

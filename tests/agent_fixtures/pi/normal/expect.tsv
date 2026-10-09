@@ -1,0 +1,8 @@
+# elapsed_ms	payload	--event	state	title	subagent
+0	001.json	session_start	idle	-	0
+69	-	-	idle	-	0
+302	002.json	before_agent_start	working	-	0
+328	003.json	agent_start	working	-	0
+376	-	-	working	-	0
+1430	004.json	agent_end	done	-	0
+1486	-	-	done	-	0

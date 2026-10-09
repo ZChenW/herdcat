@@ -1,0 +1,76 @@
+{
+  "agent": "copilot",
+  "scenario": "normal",
+  "recorded_version": "1.0.94",
+  "recorded_date": "2026-10-08",
+  "version_source": "actual --version stdout",
+  "version_output": "GitHub Copilot CLI 1.0.94.\nRun 'copilot update' to check for updates.",
+  "source": "private ephemeral shim JSONL (removed after capture)",
+  "source_sha256": "94e5d359e9e77148501c4124ac9cc79e2810c3c3084dadd651581433a60e5700",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 2,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "userPromptSubmitted"
+      ],
+      "received_monotonic_ms": 20479640
+    },
+    {
+      "payload": "002.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "sessionStart"
+      ],
+      "received_monotonic_ms": 20479661
+    },
+    {
+      "payload": "003.json",
+      "source_line": 5,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "agentStop"
+      ],
+      "received_monotonic_ms": 20481826
+    }
+  ],
+  "milestones": [
+    {
+      "ms": 0,
+      "state": "absent",
+      "label": "ready before first submission"
+    },
+    {
+      "ms": 409,
+      "state": "working",
+      "label": "prompt submitted"
+    },
+    {
+      "ms": 2625,
+      "state": "done",
+      "label": "answer ended or refused"
+    }
+  ],
+  "command": [
+    "copilot",
+    "--no-auto-update",
+    "--disable-builtin-mcps",
+    "--no-custom-instructions",
+    "--no-remote-export"
+  ],
+  "interception": "PATH shim, no forwarding; temporary configuration/auth copies",
+  "redaction": "Private paths, identities, session/tool IDs and nonempty content replaced; keys, types, empties, events, timing retained.",
+  "limitations": "Hook-only replay; no transcript, quiet detection or subagents. Cleanup hooks after the final authored milestone were omitted.",
+  "complete": true
+}

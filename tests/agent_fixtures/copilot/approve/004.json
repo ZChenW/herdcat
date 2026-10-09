@@ -1,0 +1,9 @@
+{
+  "sessionId": "00000000000000000000000000000001",
+  "timestamp": 1791507187368,
+  "cwd": "/tmp/herdcat-probe/project",
+  "message": "Sample text",
+  "title": "Permission needed",
+  "hook_event_name": "Notification",
+  "notification_type": "permission_prompt"
+}

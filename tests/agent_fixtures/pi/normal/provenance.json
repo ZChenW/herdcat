@@ -1,0 +1,88 @@
+{
+  "agent": "pi",
+  "scenario": "normal",
+  "recorded_version": "1.1.0",
+  "recorded_date": "2026-10-08",
+  "version_source": "actual --version stdout",
+  "version_output": "1.1.0",
+  "source": "private ephemeral shim JSONL (removed after capture)",
+  "source_sha256": "32692639c0ba0abb2f2059e08ae8c78886ab4beffebbd745e03038a66d6af37d",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 1,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "pi",
+        "--event",
+        "session_start"
+      ],
+      "received_monotonic_ms": 20623594
+    },
+    {
+      "payload": "002.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "pi",
+        "--event",
+        "before_agent_start"
+      ],
+      "received_monotonic_ms": 20623896
+    },
+    {
+      "payload": "003.json",
+      "source_line": 4,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "pi",
+        "--event",
+        "agent_start"
+      ],
+      "received_monotonic_ms": 20623922
+    },
+    {
+      "payload": "004.json",
+      "source_line": 6,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "pi",
+        "--event",
+        "agent_end"
+      ],
+      "received_monotonic_ms": 20625024
+    }
+  ],
+  "milestones": [
+    {
+      "ms": 69,
+      "state": "idle",
+      "label": "ready before first submission"
+    },
+    {
+      "ms": 376,
+      "state": "working",
+      "label": "prompt submitted"
+    },
+    {
+      "ms": 1486,
+      "state": "done",
+      "label": "answer ended or refused"
+    }
+  ],
+  "command": [
+    "pi",
+    "--offline",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-context-files"
+  ],
+  "interception": "PATH shim, no forwarding; temporary configuration/auth copies",
+  "redaction": "Private paths, identities, session/tool IDs and nonempty content replaced; keys, types, empties, events, timing retained.",
+  "limitations": "Hook-only replay; no transcript, quiet detection or subagents.",
+  "complete": true
+}

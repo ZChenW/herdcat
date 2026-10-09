@@ -1,0 +1,117 @@
+{
+  "agent": "copilot",
+  "scenario": "approve",
+  "recorded_version": "1.0.94",
+  "recorded_date": "2026-10-08",
+  "version_source": "actual --version stdout",
+  "version_output": "GitHub Copilot CLI 1.0.94.\nRun 'copilot update' to check for updates.",
+  "source": "private ephemeral shim JSONL (removed after capture)",
+  "source_sha256": "9af766c571582ea54bc843ea3ea64450305a6a756ef9c133b49cd66033576ec0",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 2,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "userPromptSubmitted"
+      ],
+      "received_monotonic_ms": 20485552
+    },
+    {
+      "payload": "002.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "sessionStart"
+      ],
+      "received_monotonic_ms": 20485574
+    },
+    {
+      "payload": "003.json",
+      "source_line": 5,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "preToolUse"
+      ],
+      "received_monotonic_ms": 20486902
+    },
+    {
+      "payload": "004.json",
+      "source_line": 6,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "notification"
+      ],
+      "received_monotonic_ms": 20486941
+    },
+    {
+      "payload": "005.json",
+      "source_line": 8,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "postToolUse"
+      ],
+      "received_monotonic_ms": 20487064
+    },
+    {
+      "payload": "006.json",
+      "source_line": 9,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "copilot",
+        "--event",
+        "agentStop"
+      ],
+      "received_monotonic_ms": 20487845
+    }
+  ],
+  "milestones": [
+    {
+      "ms": 0,
+      "state": "absent",
+      "label": "ready before first submission"
+    },
+    {
+      "ms": 407,
+      "state": "working",
+      "label": "prompt submitted"
+    },
+    {
+      "ms": 1850,
+      "state": "waiting",
+      "label": "permission dialog visible"
+    },
+    {
+      "ms": 2759,
+      "state": "done",
+      "label": "answer ended or refused"
+    }
+  ],
+  "command": [
+    "copilot",
+    "--no-auto-update",
+    "--disable-builtin-mcps",
+    "--no-custom-instructions",
+    "--no-remote-export"
+  ],
+  "interception": "PATH shim, no forwarding; temporary configuration/auth copies",
+  "redaction": "Private paths, identities, session/tool IDs and nonempty content replaced; keys, types, empties, events, timing retained.",
+  "limitations": "Hook-only replay; no transcript, quiet detection or subagents. Cleanup hooks after the final authored milestone were omitted.",
+  "complete": true
+}

@@ -1,0 +1,101 @@
+{
+  "agent": "codex",
+  "command": [
+    "codex",
+    "--no-daemon",
+    "--no-alt-screen",
+    "--dangerously-bypass-hook-trust",
+    "--disable",
+    "memories",
+    "--disable",
+    "multi_agent",
+    "--disable",
+    "goals",
+    "-s",
+    "read-only",
+    "-a",
+    "on-request",
+    "-c",
+    "check_for_update_on_startup=false",
+    "--enable",
+    "hooks",
+    "--disable",
+    "apps"
+  ],
+  "version_command": [
+    "codex",
+    "--version"
+  ],
+  "upgrade": [
+    "npm",
+    "install",
+    "-g",
+    "@openai/codex@latest"
+  ],
+  "ready": "›|for shortcuts|context left",
+  "start_event": "SessionStart",
+  "submit_event": "UserPromptSubmit",
+  "end_event": "Stop",
+  "exit_event": "SessionEnd",
+  "cancel_event": "Interrupt",
+  "cancel_keys": [
+    "Escape"
+  ],
+  "working_screen": "(?i)working|thinking|esc to interrupt",
+  "answer": "(?i)ok|herdcat-probe|declined|denied|cancel",
+  "approval_screen": "(?i)Would you like to run|Yes, proceed|approve this",
+  "approve_keys": [
+    "Enter"
+  ],
+  "deny_keys": [
+    "3",
+    "Enter"
+  ],
+  "exit_keys": [
+    "/quit",
+    "Enter"
+  ],
+  "timeout": 45,
+  "startup": [
+    {
+      "screen": "(?i)trust.*directory|Do you trust|Yes, continue",
+      "keys": [
+        "Enter"
+      ]
+    }
+  ],
+  "scenarios": {
+    "normal": {
+      "prompt": "Reply with the single word ok"
+    },
+    "approve": {
+      "prompt": "Run echo herdcat-probe with sandbox_permissions require_escalated."
+    },
+    "deny": {
+      "prompt": "Run echo herdcat-probe with sandbox_permissions require_escalated.",
+      "end_event": "Interrupt",
+      "end_state": "idle",
+      "end_screen": "(?i)interrupt|declined|not.*run|different"
+    },
+    "cancel": {
+      "prompt": "Count from 1 to 1000"
+    },
+    "exit": {
+      "skip": "No end-of-session hook arrives on exit; the session is removed when the process exits (pidfd watch), which a hook-only replay cannot show."
+    }
+  },
+  "lazy_start": true,
+  "config": {
+    "env": "CODEX_HOME",
+    "directory": ".codex",
+    "files": [
+      "config.toml",
+      "auth.json",
+      "hooks.json",
+      "models.json"
+    ],
+    "hook_file": "hooks.json",
+    "hook_format": "json"
+  },
+  "shim_stdout": ""
+}

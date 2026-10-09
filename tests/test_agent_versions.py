@@ -62,12 +62,21 @@ class AgentVersionsTests(unittest.TestCase):
                 rows = [line.split('\t') for line in
                         (directory / 'expect.tsv').read_text().splitlines()
                         if not line.startswith('#')]
-                self.assertEqual(len(rows), len(provenance['steps']))
-                self.assertEqual({row[1] for row in rows},
+                hooks = [row for row in rows if row[1] != '-']
+                markers = [row for row in rows if row[1] == '-']
+                self.assertEqual([(int(row[0]), row[3]) for row in markers],
+                                 [(m['ms'], m['state']) for m in provenance.get('milestones', [])])
+                self.assertEqual(len(hooks), len(provenance['steps']))
+                self.assertEqual({row[1] for row in hooks},
                                  {p.name for p in directory.glob('[0-9]*.json')})
                 last_time = -1
                 last_source = 0
-                for row, step in zip(rows, provenance['steps']):
+                for row in rows:
+                    self.assertEqual(len(row), 6)
+                    self.assertGreaterEqual(int(row[0]), last_time)
+                    last_time = int(row[0])
+                last_time = -1
+                for row, step in zip(hooks, provenance['steps']):
                     self.assertEqual(len(row), 6)
                     self.assertGreaterEqual(int(row[0]), last_time)
                     self.assertGreater(step['source_line'], last_source)

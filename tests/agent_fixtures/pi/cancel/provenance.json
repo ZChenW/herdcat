@@ -1,0 +1,88 @@
+{
+  "agent": "pi",
+  "scenario": "cancel",
+  "recorded_version": "1.1.0",
+  "recorded_date": "2026-10-08",
+  "version_source": "actual --version stdout",
+  "version_output": "1.1.0",
+  "source": "private ephemeral shim JSONL (removed after capture)",
+  "source_sha256": "4be3ef38f33d6bacddbe99df1feb0ab803cf39049c42ce38aacfb69cb85215a5",
+  "steps": [
+    {
+      "payload": "001.json",
+      "source_line": 1,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "pi",
+        "--event",
+        "session_start"
+      ],
+      "received_monotonic_ms": 20625734
+    },
+    {
+      "payload": "002.json",
+      "source_line": 3,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "pi",
+        "--event",
+        "before_agent_start"
+      ],
+      "received_monotonic_ms": 20626045
+    },
+    {
+      "payload": "003.json",
+      "source_line": 4,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "pi",
+        "--event",
+        "agent_start"
+      ],
+      "received_monotonic_ms": 20626072
+    },
+    {
+      "payload": "004.json",
+      "source_line": 6,
+      "argv": [
+        "herdcat",
+        "--hook",
+        "pi",
+        "--event",
+        "agent_end"
+      ],
+      "received_monotonic_ms": 20626156
+    }
+  ],
+  "milestones": [
+    {
+      "ms": 76,
+      "state": "idle",
+      "label": "ready before first submission"
+    },
+    {
+      "ms": 384,
+      "state": "working",
+      "label": "prompt submitted"
+    },
+    {
+      "ms": 492,
+      "state": "idle",
+      "label": "cancelled"
+    }
+  ],
+  "command": [
+    "pi",
+    "--offline",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-context-files"
+  ],
+  "interception": "PATH shim, no forwarding; temporary configuration/auth copies",
+  "redaction": "Private paths, identities, session/tool IDs and nonempty content replaced; keys, types, empties, events, timing retained.",
+  "limitations": "Hook-only replay; no transcript, quiet detection or subagents.",
+  "complete": true
+}

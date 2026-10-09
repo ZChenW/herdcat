@@ -1,0 +1,7 @@
+# elapsed_ms	payload	--event	state	title	subagent
+0	-	-	absent	-	0
+2415	001.json	-	idle	-	0
+2433	002.json	-	working	Sample prompt 1	0
+2513	-	-	working	Sample prompt 1	0
+4399	003.json	-	done	Sample prompt 1	0
+4423	-	-	done	Sample prompt 1	0

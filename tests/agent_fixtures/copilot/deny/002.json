@@ -1,0 +1,7 @@
+{
+  "sessionId": "00000000000000000000000000000001",
+  "timestamp": 1791507192163,
+  "cwd": "/tmp/herdcat-probe/project",
+  "source": "new",
+  "initialPrompt": "Run exactly: sh -c 'echo herdcat-probe'"
+}
