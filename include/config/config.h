@@ -1,0 +1,164 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include "config/sign_options.h"
+#include "core/herdcat.h"
+#include "utils/error.h"
+
+#include <stdbool.h>
+
+// =============================================================================
+// CONFIGURATION ENUMS
+// =============================================================================
+
+typedef enum {
+  POSITION_TOP = 0,
+  POSITION_BOTTOM = 1
+} overlay_position_t;
+
+typedef enum {
+  LAYER_BACKGROUND = 0,
+  LAYER_BOTTOM,
+  LAYER_TOP,
+  LAYER_OVERLAY
+} layer_type_t;
+
+typedef enum {
+  ALIGN_LEFT = -1,
+  ALIGN_CENTER = 0,
+  ALIGN_RIGHT = 1,
+} align_type_t;
+
+// =============================================================================
+// CONFIGURATION TYPES
+// =============================================================================
+
+typedef struct {
+  int hour;
+  int min;
+} config_time_t;
+
+typedef struct {
+  char *monitor;
+  char *key;
+  char *value;
+} monitor_override_t;
+
+typedef struct {
+  monitor_override_t *overrides;
+  size_t num_overrides;
+  // Display settings
+  int screen_width;
+  char *output_name;
+  char **output_names;
+  int num_output_names;
+  int overlay_height;
+  int overlay_opacity;
+  layer_type_t layer;
+  overlay_position_t overlay_position;
+
+  // Cat appearance
+  const char *asset_paths[NUM_FRAMES];
+  int cat_x_offset;
+  int cat_y_offset;
+  int cat_height;
+  int cat_draggable;
+  int mirror_x;             // Reflect across Y axis (horizontal flip)
+  int mirror_y;             // Reflect across X axis (vertical flip)
+  int enable_antialiasing;  // Deprecated no-op; SVG is always anti-aliased
+  align_type_t cat_align;
+
+  // Session signs (global, including shared font and completion policy).
+  sign_style_t sign_style;
+  sign_theme_t sign_theme;
+  int sign_max;
+  sign_idle_t sign_idle;
+  char sign_font[128];
+  int sign_font_size;
+  sign_animations_t sign_animations;
+  sign_language_t sign_language;
+  sign_done_t sign_done;
+  int sign_typing_desk;
+  int sign_desk_offset;
+  sign_name_t sign_name;
+  sign_name_extra_t sign_name_extra;
+  int sign_title_length;
+  char sign_nameplate[161];
+
+  // Animation timing
+  int idle_frame;
+  int compositor_experimental;   // Opt-in experimental Hyprland focus backend
+  int agent_interrupt_detect;    // Event-driven transcript monitoring
+  int agent_cursor_wait_detect;  // Cursor terminal approval prompts
+  int agent_stale_timeout;       // Seconds; 0 disables stale session expiry
+  int agent_done_timeout;  // Seconds; 0 keeps done until the next session event
+  int keypress_duration;
+  int test_animation_duration;
+  int test_animation_interval;
+  int fps;
+  int enable_hand_mapping;  // 0=random hands, 1=based on key position
+
+  // Input devices
+  char **keyboard_devices;
+  int num_keyboard_devices;
+  int hotplug_scan_interval;
+
+  // Device matching by name (for hotplug/auto-detection)
+  char **keyboard_names;
+  int num_names;
+
+  // Sleep schedule
+  int enable_scheduled_sleep;
+  config_time_t sleep_begin;
+  config_time_t sleep_end;
+  int idle_sleep_timeout_sec;
+
+  // Fullscreen behavior
+  int disable_fullscreen_hide;
+
+  // Debug
+  int enable_debug;
+} config_t;
+
+// =============================================================================
+// CONFIGURATION FUNCTIONS
+// =============================================================================
+
+typedef enum {
+  CONFIG_WARNING,
+  CONFIG_ERROR
+} config_severity_t;
+typedef struct {
+  const char *file;
+  int line;  // Zero for file-level failures.
+  const char *key;
+  config_severity_t severity;
+  const char *message;
+} config_diagnostic_t;
+typedef void (*config_diagnostic_callback_t)(const config_diagnostic_t *,
+                                             void *);
+// Diagnostic strings are borrowed for the duration of the callback.
+HERDCAT_NODISCARD herdcat_error_t
+load_config_report(config_t *config, const char *path, bool strict,
+                   config_diagnostic_callback_t callback, void *data);
+
+// Load configuration - returns error code (must be checked)
+HERDCAT_NODISCARD herdcat_error_t load_config(config_t *config,
+                                              const char *config_file_path);
+
+HERDCAT_NODISCARD herdcat_error_t load_config_strict(config_t *config,
+                                                     const char *path);
+void config_for_monitor(const config_t *global, const char *name,
+                        config_t *effective);
+
+bool config_sign_english(const config_t *config);
+
+// Resolve config file path with XDG fallback
+// Returns a static/allocated path, or NULL if none found.
+// Caller must free the returned string.
+char *config_resolve_path(const char *explicit_path);
+
+// Cleanup functions
+void config_cleanup_full(config_t *config);
+
+#endif  // CONFIG_H

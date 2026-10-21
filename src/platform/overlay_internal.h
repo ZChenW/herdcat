@@ -1,0 +1,62 @@
+#ifndef HERDCAT_PLATFORM_OVERLAY_INTERNAL_H
+#define HERDCAT_PLATFORM_OVERLAY_INTERNAL_H
+
+#include "graphics/signs.h"
+#include "platform/outputs.h"
+#include "platform/overlay_signs.h"
+#include "platform/shm_buffer.h"
+#include "platform/surface_tiers.h"
+#include "platform/wayland.h"
+
+typedef struct {
+  uint32_t output_id;
+  struct wl_output *output;
+  char name[128];
+  config_t config;
+  struct wl_surface *surface;
+  struct zwlr_layer_surface_v1 *layer;
+  struct wp_viewport *viewport;
+  struct wp_fractional_scale_v1 *fractional;
+  shm_buffer_t *buffers[2];
+  void *animation;
+  uint32_t scale;
+  surface_tiers_t tiers;
+  int requested_width, requested_height;
+  bool await_configure;
+  struct wl_callback *size_sync;
+  int width, height, physical_width, physical_height;
+  // output_x is persisted; cat_x is only used inside the surface.
+  int output_x, cat_x, margin_x, margin_y, output_height;
+  int position_y, cat_y;
+  sign_orientation_t orientation;
+  bool has_orientation;
+  bool has_position, accepts_pointer;
+  struct wl_surface *input_surface;
+  pixel_rect_t input_rects[OVERLAY_SIGNS_REGION_LIMIT];
+  int input_count;
+  bool configured, redraw, resize, closed, damage_all;
+  pixel_rect_t pending_damage;
+} overlay_t;
+
+extern overlay_t overlays[MAX_OUTPUTS];
+extern overlay_t *active;
+extern overlay_t *pointer_overlay;
+extern bool hidden;
+extern struct wl_seat *seat;
+extern struct wp_cursor_shape_manager_v1 *cursor_manager;
+extern struct wp_cursor_shape_device_v1 *cursor_device;
+extern uint32_t seat_id, cursor_manager_id;
+extern struct wl_callback *sign_frames[MAX_OUTPUTS];
+extern const struct wl_seat_listener SEAT_LISTENER;
+
+int cat_width(const overlay_t *overlay);
+void clamp_position(overlay_t *overlay);
+bool overlay_hidden(const overlay_t *overlay);
+void set_margin(overlay_t *overlay);
+void cursor_shape(uint32_t shape);
+void finish_drag(void);
+void overlay_pointer_rebase(overlay_t *overlay, int dx, int dy);
+void setup_cursor(void);
+void release_seat(void);
+
+#endif

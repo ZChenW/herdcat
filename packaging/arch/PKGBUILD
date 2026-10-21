@@ -1,0 +1,41 @@
+pkgname=herdcat-git
+pkgver=0.5.0.r0.g0000000
+pkgrel=1
+pkgdesc='Wayland desktop cat that holds up a sign for every coding agent session'
+arch=('x86_64' 'aarch64')
+url='https://github.com/ZChenW/herdcat'
+license=('MIT')
+depends=('glibc' 'wayland' 'freetype2' 'fontconfig')
+optdepends=('python: herdcat setup')
+makedepends=('git' 'gcc' 'make' 'pkgconf')
+provides=('herdcat')
+conflicts=('herdcat')
+source=('herdcat::git+https://github.com/ZChenW/herdcat.git')
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$srcdir/herdcat"
+  # Latest release tag, commits since it, and the commit: 0.5.0.r3.gabc1234
+  git describe --long --tags --match 'v[0-9]*' | sed 's/^v//;s/-\([0-9]*\)-g/.r\1.g/'
+}
+
+build() {
+  cd "$srcdir/herdcat"
+  make PREFIX=/usr release
+}
+
+check() {
+  cd "$srcdir/herdcat"
+  # The public repository ships without the test suite.
+  [ -d tests ] || return 0
+  make test
+}
+
+package() {
+  cd "$srcdir/herdcat"
+  # Includes the user service, shell completions and share/herdcat setup helper.
+  make BUILD_TYPE=release PREFIX=/usr INPUT_HELPER_SETGID=0 DESTDIR="$pkgdir" install
+  chown root:input "$pkgdir/usr/lib/herdcat/herdcat-input"
+  chmod 2755 "$pkgdir/usr/lib/herdcat/herdcat-input"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

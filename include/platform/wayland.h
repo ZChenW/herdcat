@@ -1,0 +1,83 @@
+#ifndef WAYLAND_H
+#define WAYLAND_H
+
+#include "../protocols/zwlr-layer-shell-v1-client-protocol.h"
+#include "config/config.h"
+#include "core/herdcat.h"
+#include "utils/error.h"
+
+#include <signal.h>
+#include <stdatomic.h>
+
+// =============================================================================
+// WAYLAND GLOBAL STATE
+// =============================================================================
+
+// Core Wayland objects
+extern struct wl_display *display;
+extern struct wl_compositor *compositor;
+extern struct wl_shm *shm;
+extern struct wl_output *output;
+
+// Layer shell objects
+extern struct zwlr_layer_shell_v1 *layer_shell;
+extern struct zwlr_layer_surface_v1 *layer_surface;
+// Surface
+extern struct wl_surface *surface;
+
+// Thread-safe state flags
+extern atomic_bool configured;
+extern atomic_bool fullscreen_detected;
+
+// =============================================================================
+// WAYLAND LIFECYCLE FUNCTIONS
+// =============================================================================
+
+// Initialize Wayland connection - must be checked
+HERDCAT_NODISCARD herdcat_error_t wayland_init(config_t *config);
+
+// Run Wayland event loop - must be checked
+HERDCAT_NODISCARD herdcat_error_t
+wayland_run(const volatile sig_atomic_t *running);
+
+// Cleanup Wayland resources
+void wayland_cleanup(void);
+
+// =============================================================================
+// WAYLAND OUTPUT STATE (shared with fullscreen / hyprland modules)
+// =============================================================================
+
+// Output reference array and count (defined in wayland.c)
+#include "platform/outputs.h"
+
+// =============================================================================
+// WAYLAND UTILITY FUNCTIONS
+// =============================================================================
+
+// Update configuration (hot-reload support)
+void wayland_update_config(config_t *config);
+
+int wayland_list_monitors(bool doctor);
+void wayland_set_hidden(bool value);
+int wayland_reset_position(void);
+void wayland_set_runtime_timeout(int (*callback)(void));
+void wayland_set_runtime_fds(int (*callback)(int *, size_t));
+
+// Draw the overlay bar
+void draw_bar(void);
+void wayland_request_redraw(void);
+void wayland_request_current_redraw(void);
+
+// Register a per-loop callback executed on Wayland main thread.
+void wayland_set_tick_callback(void (*callback)(void));
+
+// HiDPI: convert a logical-pixel dimension to physical (buffer-coordinate)
+// pixels using the active render scale. Defaults to identity (scale 1.0×) if
+// the compositor has not announced a scale yet.
+HERDCAT_NODISCARD int wayland_phys_dim(int logical);
+
+// A viewport for this surface, or NULL when viewporter is absent.
+struct wp_viewport;
+struct wp_viewport *wayland_viewport_for(struct wl_surface *target);
+
+#endif  // WAYLAND_H

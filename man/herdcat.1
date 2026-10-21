@@ -1,0 +1,364 @@
+.TH HERDCAT 1 "October 2026" "v0.5.0" "User Commands"
+.SH NAME
+herdcat \- desktop cat that shows coding agent sessions on Wayland
+.SH SYNOPSIS
+.B herdcat
+[OPTIONS]
+.br
+.B herdcat setup
+[AGENT ...] [--status | --remove] [--dry-run] [--yes]
+.SH DESCRIPTION
+.B herdcat
+is a lightweight Bongo Cat overlay for Wayland compositors. The cat reacts to your keyboard input in real-time and holds up one sign for every coding agent session, showing its name and state; clicking a sign jumps to that session's terminal. Features include multi-monitor support, hot-reloadable configuration (all properties), idle sleep animation, and fullscreen auto-hiding.
+
+.SH OPTIONS
+.TP
+.BR \-c ", " \-\-config " \fIFILE\fR"
+Specify the configuration file path. If not provided, \fBherdcat\fR searches for \fBherdcat.conf\fR in:
+.RS
+.IP 1. 3
+\fIXDG_CONFIG_HOME\fR/herdcat/herdcat.conf
+.IP 2. 3
+$HOME/.config/herdcat/herdcat.conf
+.IP 3. 3
+\&./herdcat.conf
+.RE
+.TP
+.BR \-m ", " \-\-monitor " \fINAME\fR"
+Force the overlay to display on a specific monitor output (e.g., HDMI-A-1). Overrides the \fBmonitor\fR setting in the configuration file.
+.TP
+.BR \-w ", " \-\-watch-config
+Watch the configuration file for changes and automatically reload without restarting (uses inotify).
+.TP
+.BR \-t ", " \-\-toggle
+Send SIGTERM to a running herdcat instance to stop it. If no instance is running, this starts a new one.
+.TP
+.BR \-h ", " \-\-help
+Display this help message and exit.
+.TP
+.BR \-v ", " \-\-version
+Display version information and exit.
+
+.SH AGENT SETUP
+.B herdcat setup
+uses the optional Python 3 helper \fBherdcat-setup\fR to connect installed agents.
+Supported names are claude, codex, grok, cursor, copilot, kimi, pi, opencode, qwen and agy.
+With no names, it detects executables in PATH and existing configuration
+directories, previews changes and asks for confirmation (default: no).
+.TP
+.B --status
+Report not installed, not connected, connected or connected but outdated.
+.TP
+.B --dry-run
+Preview managed changes without writing configuration, backups or state.
+.TP
+.B --remove
+Remove managed hooks or bridges, retaining unrelated settings.
+.TP
+.B --yes
+Confirm changes without prompting. Required for non-interactive writes.
+.PP
+Setup reads installed templates from PREFIX/share/herdcat/integrations.
+It preserves unrelated JSON hooks and JSONC comments, and appends a marked
+block to Kimi TOML without rewriting provider settings. Invalid or ambiguous
+configuration is left untouched with a nonzero exit status.
+.PP
+Original files are backed up under
+$XDG_STATE_HOME/herdcat/backups/setup-<timestamp>/<agent>/, defaulting to
+~/.local/state/herdcat/backups/. Modes are retained; Kimi files use 0600.
+Writes use atomic replacement. Symlink targets are updated and links retained.
+Private setup receipts permit exact original-byte restoration on removal
+when no later edits occurred; otherwise only managed entries are removed.
+.PP
+Restart or reload open agents after changing hooks. Codex requires the
+[features] hooks setting and renewed review/trust through /hooks.
+See docs/agents.md for manual configuration and known limitations of each agent.
+
+.SH CONFIGURATION
+The default configuration file location is \fB~/.config/herdcat/herdcat.conf\fR.
+.PP
+.B Key Configuration Options:
+.TP
+.B monitor
+Set to one or more output names (e.g., \fBeDP-1\fR or \fBeDP-1,HDMI-A-1\fR). A comma-separated list creates one overlay per available listed monitor in a single rendering process. Missing named monitors wait for reconnection.
+.TP
+.B keyboard_device
+Path to an evdev device, including stable /dev/input/by-id/ and /dev/input/by-path/ aliases. With no paths or names, accessible keyboard-capable devices are selected automatically. Explicit selectors never fall back to unrelated devices. Use \fBherdcat-find-devices\fR to locate yours.
+.TP
+.B enable_debug
+Set to \fB1\fR to enable debug logging. Keycodes are never logged or transmitted.
+
+.SH PRIVACY NOTICE
+By default, debug logging is disabled (\fBenable_debug=0\fR). Debug logging records that a key was pressed and on which device, never which key, but the timing of key presses is still visible in the log; keep it off outside diagnosis.
+
+.SH AUTHOR
+Maintained by Saatvik Sharma.
+.SH SEE ALSO
+.BR herdcat-find-devices (1)
+
+.SH DIAGNOSTICS AND CONTROLS
+.TP
+.B --check-config
+Validate the configuration strictly without Wayland or input access. Exit nonzero on invalid or unreadable configuration.
+.TP
+.B --list-devices
+List evdev devices, keyboard capabilities and access errors.
+.TP
+.B --list-monitors
+List Wayland output names, dimensions and scales.
+.TP
+.B --doctor
+Check configuration, protocols, outputs, devices and permissions.
+Prints a pointer to \fBherdcat setup --status\fR for agent integrations.
+.TP
+.B --hide, --show
+Suppress or restore all overlays without resetting animation state.
+.TP
+.B --reset-position
+Remove saved positions on every output and restore configured horizontal alignment and zero vertical margin. Does not change the configuration file.
+.TP
+.B --pause, --resume
+Show the configured idle frame and discard input, or resume with pending paw activity cleared. Hidden and fullscreen visibility still apply.
+.TP
+.B --reload, --status
+Reload configuration or query the running application through a same-UID authenticated Unix socket. Failures return nonzero. Controls never rewrite configuration files; visibility and pause state reset on restart. --status reports input=connected once a keyboard is open, input=denied with a denied=N count and a hint when devices refuse access, input=searching while no keyboard exists, or input=restarting.
+.TP
+.BI --state " NAME"
+Set the manual session to idle, working, waiting, done or error. Idle removes the manual session. Other sessions resolve by priority: waiting > error > done > working > idle. Error marks a turn that stopped on a failure and, like done, stays until it has been seen. Seen done sessions expire after agent_done_timeout seconds; sign_done=sticky preserves unread completions. Scheduled sleep and held paws take priority over agent artwork; agent artwork takes priority over idle sleep. Pause suppresses the artwork while deadlines continue. --status includes agent=NAME and sessions=N.
+.TP
+.B --sessions
+List up to 32 tracked sessions: agent, session key prefix, state, age in seconds, process ID, name and an unread marker. The reply holds the whole table and never cuts a line; a reply that could not hold every line would end with "... N more sessions". Process exit removes all sessions associated with that process. A full table evicts the oldest idle session first, otherwise the oldest session.
+.TP
+.BI --hook " AGENT"
+Read a lifecycle JSON event from stdin for an agent named with 1 to 8 lowercase ASCII letters (such as claude or codex). Streams input using fixed storage and a two-second timeout. Stdout remains empty; malformed JSON, unknown events and an absent overlay quietly return success. Invalid arguments return nonzero. HERDCAT_HOOK_DEBUG=1 prints the outgoing event to stderr.
+.PP
+SessionStart registers the session; UserPromptSubmit, PreToolUse, PostToolUse and PostToolUseFailure set working; PermissionRequest sets waiting; Stop sets done unless stop_hook_active is true; StopFailure sets error; Interrupt sets idle; SessionEnd removes the session. Notification maps permission_prompt, elicitation_dialog and agent_needs_input to waiting, and idle_prompt clears working only. SubagentStop is ignored. Missing or invalid session IDs share a fallback session per agent.
+.PP
+Approval does not emit a separate hook: waiting continues until PostToolUse after tool completion. Claude may not emit a hook on Escape. With agent_interrupt_detect left on, quiet detection returns that working session to idle within about three seconds when its stdout is a terminal. Watched waiting remains until another event or exit. Codex Interrupt clears the session. Merge the templates from PREFIX/share/herdcat/integrations/hooks into existing agent configuration and renew Codex hook trust through /hooks after changes.
+.TP
+.BI --event " NAME"
+Override the event name in stdin. Valid only after --hook AGENT. Field aliases, conditional event mappings and stdout policy are selected by the agent adapter; unknown agent names retain the Claude mapping.
+.SH MONITOR SECTIONS AND RELOAD
+Use [monitor:NAME] for appearance overrides and [global] to return to global settings. Global settings apply before monitor overrides regardless of section order. Overrides support cat_height, overlay_height, overlay_opacity, cat_x_offset, cat_y_offset, layer, overlay_position, cat_align, cat_draggable, mirror_x, mirror_y, enable_antialiasing and disable_fullscreen_hide. Input and timing remain global.
+.PP
+Startup tolerates invalid entries with warnings. Reloads are transactional: invalid, missing or unreadable files preserve the working configuration. The parent directory is watched to survive atomic replacement and deletion/recreation; reload happens 300 ms after the final relevant event. Monitor selection is reconciled without restarting.
+.PP
+Animation deadlines are monotonic; fps ranges from 1 to 120 and test_animation_interval is in seconds.
+.PP
+agent_done_timeout sets how many seconds the done agent state lasts before returning to idle (default 5, range 0 to 3600). A value of 0 keeps that session done until another event or removal. Values outside the range reset to 5 at startup and are rejected on strict validation or reload. idle_frame accepts only the original frames 0 to 4.
+.PP
+agent_stale_timeout sets the inactivity limit for working sessions (default 600, range 0 to 86400 seconds; 0 disables it). Waiting sessions expire only if no process watch is available. Out-of-range values reset to 600 at startup and fail strict validation or reload. Both agent timeouts are global, not monitor overrides.
+.SH DRAGGING
+cat_draggable is a boolean (default 1). Hold the left button on the cat to drag; motion under four logical pixels leaves its position unchanged. The cat's bounding rectangle intercepts clicks while the remaining bar is click-through. Set cat_draggable=0 for complete click-through. Hidden and fullscreen-hidden cats intercept no clicks. Pause does not disable dragging.
+.PP
+Each output saves its own logical x and vertical margin on release to ${XDG_STATE_HOME:-$HOME/.local/state}/herdcat/position (directory mode 0700, file mode 0600). Writes are atomic and symbolic links are rejected. Saved positions override cat_align and cat_x_offset, survive restart and reload, and are clamped when output dimensions change. overlay_position chooses the margin's anchor edge; cat_y_offset still applies within the bar. Use --reset-position to restore configured positions. Cross-output dragging is not supported. Cursor grab/grabbing shapes are optional; --doctor reports cursor-shape support.
+
+.SH SESSION SIGNS
+All sign options are global and apply on reload. The cat keeps its typing and
+sleep frames when signs are enabled. Click a sign to focus its terminal on
+niri or Sway; drag from a sign to move the cat. Labels use the last directory component from
+the hook's cwd, falling back to the agent and a short session key.
+.TP
+.B compositor_experimental=0|1
+Global, default 0. Enables only the experimental Hyprland focus backend.
+Sway is selected whenever SWAYSOCK is advertised and needs no opt-in.
+Sway support is verified on headless Sway 1.12; real pointer clicks,
+multiple outputs and XWayland windows remain untested.
+.TP
+.B sign_style=fan|post|off
+Default fan: raised plates with individual hover labels. Post: a pole with
+boards that expand together on hover. Off restores whole-cat state artwork,
+original surface height and cat-only input region.
+.TP
+.B sign_max=1..10
+Maximum displayed signs (default 10); active sessions take precedence, while
+selected sessions retain creation order. Fan signs above five use two rows:
+the five highest-priority sessions stand in front (waiting, error, unread done,
+working, idle), with smaller plates on longer rods behind them. Back rods,
+plates, icons and unread dots stay behind all front shapes even on hover;
+hover nameplates stay above both rows. Post signs continue alternating sides
+up to ten rows. Flip clearance follows the current tier's sign height;
+surface height still follows the configured maximum.
+Limits of five or less retain the original geometry.
+.TP
+.B sign_idle=hover|always|never
+Show idle signs on hover (default), always, or never, even on hover.
+.TP
+.B sign_font
+Fontconfig family, up to 127 bytes; empty uses system sans-serif and fallback.
+.TP
+.B sign_font_size=10..20
+Name size in design pixels (default 13). Metadata and desk text scale
+proportionally; all sizes also scale with cat_height and output scale.
+.TP
+.B sign_animations=full|reduced|off
+Full (default) includes loops; reduced keeps transitions only; off switches
+instantly. Reduced and off keep the desk caret lit. Visible working-duration
+labels still update once a minute.
+.TP
+.B sign_theme=light|dark|auto
+Sign, nameplate, switch-card and font-panel colours. Default light.
+auto follows the desktop's light or dark preference through the XDG desktop
+portal. Reloads immediately and can be selected with the sun/moon switch.
+The cat artwork keeps its original colours.
+.TP
+.B sign_language=auto|en|zh
+Default auto selects simplified Chinese for a zh locale, otherwise English.
+Uses nonempty LC_MESSAGES before LANG; an unset locale selects English.
+.TP
+.B sign_done=sticky|timeout
+Default sticky preserves unread completion, with a dot and Unread label.
+Focusing the window or clicking starts agent_done_timeout; a new submission
+clears unread and starts working. Timeout applies the timer to every completion.
+Switching to timeout also starts timers for existing unread completions.
+This policy also applies with sign_style=off.
+.TP
+.B sign_name=project|title
+Default project always uses the directory; title uses the session title and
+falls back to the directory when none exists. Same-directory sessions retain
+the same main name, without numbering.
+.TP
+.B sign_name_extra=off|inline|end|above|below
+Default inline shows the title after the bold directory name. Fan nameplates
+show the other name before agent/status (inline), after status (end), or on a
+secondary row (above/below). Absent or equal names are omitted; insufficient
+clearance removes the second row. Post boards show the extra after the main
+name for all enabled positions, with the main name nearest the icon on either
+side of the pole. The extra uses metadata size and secondary ink, truncates
+with an ellipsis into the remaining width, and is omitted below 24 logical
+pixels. Off hides the extra on both styles; the desk uses only the main name.
+.TP
+.B sign_title_length=0..64
+Default 16 Unicode codepoints, followed by an ellipsis when truncated.
+Zero disables this limit; post boards still apply their width limit.
+.TP
+.B sign_nameplate
+Advanced fan-only template, overriding sign_name_extra on fan tags. Post boards
+continue to follow sign_name and sign_name_extra. Up to 160 UTF-8 bytes
+and two lines, with literal \en for a line break. Supported placeholders:
+{name}, {project}, {title}, {agent}, {state}. **...** selects bold primary ink;
+other text uses secondary ink, and waiting/error states retain emphasis.
+Empty placeholder segments separated by ` · ' and empty lines are removed.
+A title equal to the main name is empty. Trailing secondary content is truncated
+before bold names at the width limit. Invalid templates give a byte position
+and reject strict checks/reload; tolerant startup warns and uses the built-in.
+All name options hot-reload and do not appear in the switch card.
+Example: sign_name=project, sign_name_extra=below, sign_title_length=24.
+Advanced example: sign_nameplate={agent} · **{name}**\en{state}.
+Copilot reads name or summary from workspace.yaml; opencode forwards session
+metadata titles, ignoring default New session titles. Claude, Codex, Grok, Kimi,
+Cursor and Copilot use the first user prompt's normalized first line when there
+is no title. Empty prompts and slash commands are ignored. A real title replaces
+this temporary title; --sessions distinguishes title~= from title=.
+Titles and prompt excerpts never enter logs. Bounded metadata travels only over
+the local authenticated control channel and stays in memory and the mode-0600
+runtime session file. Hook debug output redacts it; --sessions can show it.
+.TP
+.B sign_typing_desk=0|1
+Default 1. Typing in the focused agent terminal retracts its sign and puts a
+name board under the paws. It leaves after 2.5 seconds without input, on focus
+loss, submission or hiding. It receives no pointer input. No keystroke content
+is read or recorded for this feature.
+.TP
+.B sign_desk_offset=-6..24
+Default 0. Integer distance adjustment in logical pixels at the 110-pixel cat
+height, scaled with the cat. Positive moves the typing desk farther away
+(down for above signs, up for below signs); negative moves it closer.
+Screen edges tighten the displacement. Supports config watching and --reload.
+.PP
+Focus tracking and terminal jumps require niri or Sway, or Hyprland with
+compositor_experimental=1. Without a focus event stream,
+sticky completions are unread until clicked or submitted again, and the desk
+is disabled. Text requires FreeType and Fontconfig; ligatures, right-to-left
+shaping and combining marks are unsupported. Pane focus supports kitty, tmux
+and WezTerm. Use herdcat setup tmux or herdcat setup kitty for terminal-side
+reports. WezTerm queries the current pane on demand, with no periodic polling.
+Ghostty supports window focus only; ambiguous titles fall back to the first
+window.
+
+.SS Switch card
+Right-click the cat or a sign to raise a card with four rows: style (fan or
+post), language, font, and theme (sun for light, moon for dark).
+Changing theme keeps the card open and recolours signs and the font panel. The font row steps through the families that cover
+the current language with its arrows or the scroll wheel. Clicking the family
+name opens a panel that lists every family in its own face, with a count, an
+All/Text/Mono filter and the four most recently chosen families first. While
+the panel is open the card steps aside, every sign comes up, and the signs
+take the face under the pointer until a cell is clicked or the pointer leaves
+it. A click chooses and saves; the panel stays open. Moving away or a second
+right click closes the panel and the card. There is no card with
+.BR sign_style=off .
+.PP
+Choices are stored in
+.I $XDG_STATE_HOME/herdcat/prefs
+(default
+.IR ~/.local/state/herdcat/prefs ),
+and recent families in
+.I fonts-recent
+beside it. The configuration file is never rewritten. A stored choice applies
+while the configuration value it replaced is unchanged; editing that option
+afterward makes the file win.
+.SS Qwen Code and Antigravity CLI
+Qwen Code 0.25.0 uses ~/.qwen/settings.json, merged by setup qwen.
+SessionStart registers idle; prompt submissions (including empty internal ones),
+tool callbacks and PostToolBatch report working. PermissionRequest and
+permission_prompt notifications report waiting. Stop reports done unless
+stop_hook_active is true. idle_prompt clears working/waiting, preserving unread
+done. StopFailure reports error, including within 250 ms immediately after an
+active idle_prompt; intervening events clear that Qwen-only grace window.
+Empty prompts retain the existing title. SessionEnd removes the session.
+.PP
+Antigravity CLI 1.3.1 (agy) uses ~/.gemini/config/hooks.json. setup agy preserves
+named groups and installs absolute commands. Replace /absolute/path/to/herdcat
+in integrations/hooks/antigravity.hooks.json before merging it manually.
+Tool hooks use matcher/hooks wrappers; invocation and Stop hooks are direct
+command entries with timeout in seconds. All use --event because payloads
+have no event name. Hook stdout is always empty and never makes a permission decision.
+PreInvocation, PostInvocation, PreToolUse and PostToolUse report working;
+Stop reports done when error is empty, or error when nonempty.
+There are no startup/exit or approval events: first invocation registers the
+session, PID exit removes it, and approval prompts keep it working.
+.PP
+Antigravity cancellation watches the per-process cli-*.log discovered through
+its parent's open file descriptors, never the latest cli.log symlink. Only a
+complete cancellation line for the current conversationId clears working.
+The private log format may change silently; timeout remains the fallback.
+Neither Qwen nor Antigravity uses terminal quiet detection.
+.SS Cursor approval detection
+.PP
+agent_cursor_wait_detect=1 (default) recognizes Cursor approval menus in its
+tmux pane or kitty window. This global boolean is reloadable. Only a pending
+preToolUse with no hook for at least 1.5 seconds qualifies; checks run at most
+once a second, including while inferred waiting is shown. A vanished prompt or
+the next hook returns the sign to working. stop/sessionEnd clear inferred
+waiting. Setting 0 cancels captures and clears inferred waiting immediately.
+After stripping ANSI and removing blank rows at the bottom of either terminal's
+screen, only the last 20 rows are matched. Interior blank rows still count.
+No scrollback is requested; captured
+text is never logged, saved, transmitted or displayed. Kitty needs get-text
+permission in addition to the focus-window-only setup. Other terminals and
+headless sessions retain their existing behavior. No eligible session means no
+capture job or timer. Commands are asynchronous with a one-second deadline.
+.SS Interruption detection
+agent_interrupt_detect=1 (default) enables event-driven Claude Code interruption
+and Codex abort/error detection from paths supplied by their hooks. Claude
+Escape, and the same gap for Grok and Copilot, may leave no hook. The window
+title is not treated as that signal. A working Claude, Grok or Copilot session
+whose stdout is a terminal returns to idle after two adjacent one-second
+windows with fewer than 256 bytes written each, usually within two to three
+seconds. The first second after an event is protected. Waiting is unchanged.
+A non-terminal stdout and the other agents are not quiet-checked. This global
+boolean is reloadable. Setting 0 removes recording watches and the quiet timer
+immediately.
+Only newly appended complete JSONL lines (at most 4096 bytes) are inspected in
+memory; contents and error messages are never logged, saved or transmitted.
+Paths must be absolute, no longer than 1024 decoded bytes, under the user's home,
+regular, same-UID, without symlinks or .. components, and end in .jsonl (or .log for Antigravity cancellation).
+Working/waiting returns to idle on interruption; done/unread is preserved.
+Normal Codex task_complete is ignored. Claude matches read within one second of
+submission are ignored; literal marker prompts read later can be misclassified.
+Private format changes, missing paths and truncation/rotation silently fall back
+to agent_stale_timeout. Rotation requires a new hook path handoff. Transcript
+watches stay event-driven. Quiet sampling runs once a second only while an
+eligible working session exists, and there is no recording watch when no
+eligible session is active.

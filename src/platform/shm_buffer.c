@@ -1,0 +1,132 @@
+#define _GNU_SOURCE
+#include "platform/shm_buffer.h"
+
+#include "graphics/pixel_rect.h"
+
+#include <fcntl.h>
+#include <limits.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <wayland-client-protocol.h>
+
+static shm_buffer_t *buffers;
+static void destroy(shm_buffer_t *buffer) {
+  shm_buffer_t **link = &buffers;
+  while (*link && *link != buffer) {
+    link = &(*link)->next;
+  }
+  if (*link) {
+    *link = buffer->next;
+  }
+  wl_buffer_destroy(buffer->object);
+  munmap(buffer->pixels, buffer->size);
+  free(buffer);
+}
+static void released(void *data, struct wl_buffer *object) {
+  (void)object;
+  shm_buffer_t *buffer = data;
+  buffer->busy = false;
+  if (buffer->retired) {
+    destroy(buffer);
+  }
+}
+static const struct wl_buffer_listener LISTENER = {.release = released};
+shm_buffer_t *shm_buffer_create(struct wl_shm *shm, int width, int height) {
+  if (width <= 0 || height <= 0 || width > INT_MAX / 4) {
+    return NULL;
+  }
+  uint64_t wide_size = (uint64_t)width * height * 4;
+  if (wide_size > INT_MAX || wide_size > UINT64_C(256) * 1024 * 1024) {
+    return NULL;
+  }
+  size_t size = (size_t)wide_size;
+  int fd = memfd_create("herdcat", MFD_CLOEXEC);
+  if (fd < 0) {
+    return NULL;
+  }
+  if (ftruncate(fd, (off_t)size) < 0) {
+    close(fd);
+    return NULL;
+  }
+  uint8_t *pixels = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (pixels == MAP_FAILED) {
+    close(fd);
+    return NULL;
+  }
+  shm_buffer_t *buffer = calloc(1, sizeof(*buffer));
+  if (!buffer) {
+    munmap(pixels, size);
+    close(fd);
+    return NULL;
+  }
+  struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, (int)size);
+  if (!pool) {
+    free(buffer);
+    munmap(pixels, size);
+    close(fd);
+    return NULL;
+  }
+  buffer->object = wl_shm_pool_create_buffer(pool, 0, width, height, width * 4,
+                                             WL_SHM_FORMAT_ARGB8888);
+  wl_shm_pool_destroy(pool);
+  close(fd);
+  if (!buffer->object) {
+    free(buffer);
+    munmap(pixels, size);
+    return NULL;
+  }
+  buffer->pixels = pixels;
+  buffer->size = size;
+  buffer->width = width;
+  buffer->height = height;
+  buffer->dirty = (pixel_rect_t){0, 0, width, height};
+  buffer->next = buffers;
+  buffers = buffer;
+  wl_buffer_add_listener(buffer->object, &LISTENER, buffer);
+  return buffer;
+}
+void shm_buffer_damage(shm_buffer_t *buffer, pixel_rect_t damage) {
+  if (buffer)
+    buffer->dirty = pixel_rect_union(
+        buffer->dirty, pixel_rect_clip(damage, buffer->width, buffer->height));
+}
+void shm_buffer_fill(shm_buffer_t *buffer, pixel_rect_t rect, uint32_t color) {
+  if (!buffer || !buffer->pixels)
+    return;
+  rect = pixel_rect_clip(rect, buffer->width, buffer->height);
+  for (int y = rect.y; y < rect.y + rect.h; y++) {
+    uint32_t *line = (uint32_t *)buffer->pixels +
+                     (size_t)y * (size_t)buffer->width + (size_t)rect.x;
+    if (!color)
+      memset(line, 0, (size_t)rect.w * 4);
+    else
+      for (int x = 0; x < rect.w; x++)
+        line[x] = color;
+  }
+}
+pixel_rect_t shm_buffer_begin_draw(shm_buffer_t *buffer) {
+  if (!buffer || buffer->busy)
+    return (pixel_rect_t){0};
+  pixel_rect_t dirty = buffer->dirty;
+  shm_buffer_fill(buffer, dirty, 0);
+  buffer->dirty = (pixel_rect_t){0};
+  return dirty;
+}
+void shm_buffer_retire(shm_buffer_t *buffer) {
+  if (!buffer) {
+    return;
+  }
+  buffer->retired = true;
+  if (!buffer->busy) {
+    destroy(buffer);
+  }
+}
+void shm_buffers_cleanup(void) {
+  while (buffers) {
+    destroy(buffers);
+  }
+}
